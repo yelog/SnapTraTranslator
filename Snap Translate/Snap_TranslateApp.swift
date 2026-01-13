@@ -9,9 +9,13 @@ import SwiftUI
 
 @main
 struct Snap_TranslateApp: App {
+    @StateObject private var model = AppModel()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(model)
         }
+        .windowResizability(.contentSize)
     }
 }
