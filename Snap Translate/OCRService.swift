@@ -9,14 +9,14 @@ struct RecognizedWord: Equatable {
 }
 
 final class OCRService {
-    func recognizeWords(in image: CGImage) async throws -> [RecognizedWord] {
+    func recognizeWords(in image: CGImage, language: String) async throws -> [RecognizedWord] {
         try await Task.detached(priority: .userInitiated) {
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
+            request.recognitionLanguages = [language]
             if #available(macOS 13.0, *) {
                 request.revision = VNRecognizeTextRequestRevision3
-                request.automaticallyDetectsLanguage = true
             }
             let handler = VNImageRequestHandler(cgImage: image)
             try handler.perform([request])

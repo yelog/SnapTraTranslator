@@ -185,7 +185,7 @@ final class AppModel: ObservableObject {
         guard !Task.isCancelled, activeLookupID == lookupID else { return }
         let normalizedPoint = normalizedCursorPoint(mouseLocation, in: capture.region.rect)
         do {
-            let words = try await ocrService.recognizeWords(in: capture.image)
+            let words = try await ocrService.recognizeWords(in: capture.image, language: settings.sourceLanguage)
             guard !Task.isCancelled, activeLookupID == lookupID else { return }
             if settings.debugShowOcrRegion {
                 let wordBoxes = words.map { $0.boundingBox }
