@@ -38,6 +38,12 @@ final class AppModel: ObservableObject {
     private var activeLookupID: UUID?
     private var isHotkeyActive = false
     private var lastAvailabilityKey: String?
+    
+    private var mouseMonitor: Any?
+    private var debounceWorkItem: DispatchWorkItem?
+    private var lastOcrPosition: CGPoint?
+    private let debounceInterval: TimeInterval = 0.3
+    private let positionThreshold: CGFloat = 5.0
 
     private let debugOverlayWindowController = DebugOverlayWindowController()
     lazy var overlayWindowController = OverlayWindowController(model: self)
@@ -67,17 +73,66 @@ final class AppModel: ObservableObject {
 
     func handleHotkeyTrigger() {
         isHotkeyActive = true
+        lastOcrPosition = NSEvent.mouseLocation
+        startMouseTracking()
         startLookup()
     }
 
     func handleHotkeyRelease() {
         isHotkeyActive = false
+        stopMouseTracking()
         lookupTask?.cancel()
         lookupTask = nil
         activeLookupID = nil
         overlayState = .idle
         overlayWindowController.hide()
         debugOverlayWindowController.hide()
+    }
+    
+    private func startMouseTracking() {
+        guard mouseMonitor == nil else { return }
+        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleMouseMoved()
+            }
+        }
+    }
+    
+    private func stopMouseTracking() {
+        if let monitor = mouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseMonitor = nil
+        }
+        debounceWorkItem?.cancel()
+        debounceWorkItem = nil
+        lastOcrPosition = nil
+    }
+    
+    private func handleMouseMoved() {
+        guard isHotkeyActive else { return }
+        
+        debounceWorkItem?.cancel()
+        
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                guard let self = self, self.isHotkeyActive else { return }
+                
+                let currentPosition = NSEvent.mouseLocation
+                if let lastPosition = self.lastOcrPosition {
+                    let dx = abs(currentPosition.x - lastPosition.x)
+                    let dy = abs(currentPosition.y - lastPosition.y)
+                    if dx < self.positionThreshold && dy < self.positionThreshold {
+                        return
+                    }
+                }
+                
+                self.lastOcrPosition = currentPosition
+                self.startLookup()
+            }
+        }
+        debounceWorkItem = workItem
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + debounceInterval, execute: workItem)
     }
 
     private func startLookup() {
