@@ -83,11 +83,12 @@ final class DebugOverlayWindowController: NSWindowController {
 
 final class OverlayWindowController: NSWindowController {
     private let hostingView: NSHostingView<AnyView>
+    private var lastAnchor: CGPoint?
 
     init(model: AppModel) {
         hostingView = NSHostingView(rootView: AnyView(OverlayView().environmentObject(model)))
         let panel = NSPanel(
-            contentRect: CGRect(x: 0, y: 0, width: 320, height: 160),
+            contentRect: CGRect(x: 0, y: 0, width: 380, height: 200),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -96,9 +97,9 @@ final class OverlayWindowController: NSWindowController {
         panel.isReleasedWhenClosed = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
-        panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hasShadow = false
+        panel.level = .screenSaver
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.ignoresMouseEvents = true
         panel.isMovableByWindowBackground = false
         super.init(window: panel)
@@ -111,25 +112,43 @@ final class OverlayWindowController: NSWindowController {
 
     func show(at anchor: CGPoint) {
         guard let window else { return }
+
+        hostingView.layoutSubtreeIfNeeded()
         let size = hostingView.fittingSize
         let screen = NSScreen.screens.first(where: { NSMouseInRect(anchor, $0.frame, false) }) ?? NSScreen.main
-        let screenFrame = screen?.frame ?? .zero
+        let screenFrame = screen?.visibleFrame ?? .zero
         let origin = clampedOrigin(for: anchor, size: size, in: screenFrame)
-        window.setFrame(CGRect(origin: origin, size: size), display: true)
-        window.orderFrontRegardless()
+        let targetFrame = CGRect(origin: origin, size: size)
+
+        let isFirstShow = lastAnchor == nil || !window.isVisible
+        lastAnchor = anchor
+
+        if isFirstShow {
+            window.setFrame(targetFrame, display: true)
+            window.orderFrontRegardless()
+        } else {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.08
+                context.timingFunction = CAMediaTimingFunction(name: .linear)
+                context.allowsImplicitAnimation = true
+                window.animator().setFrame(targetFrame, display: true)
+            }
+        }
     }
 
     func hide() {
+        lastAnchor = nil
         window?.orderOut(nil)
     }
 
     private func clampedOrigin(for anchor: CGPoint, size: CGSize, in screenFrame: CGRect) -> CGPoint {
         let offset = CGPoint(x: 12, y: -12)
         var origin = CGPoint(x: anchor.x + offset.x, y: anchor.y + offset.y - size.height)
-        let minX = screenFrame.minX + 12
-        let maxX = screenFrame.maxX - size.width - 12
-        let minY = screenFrame.minY + 12
-        let maxY = screenFrame.maxY - size.height - 12
+        let shadowMargin: CGFloat = 50
+        let minX = screenFrame.minX + shadowMargin
+        let maxX = screenFrame.maxX - size.width - shadowMargin
+        let minY = screenFrame.minY + shadowMargin
+        let maxY = screenFrame.maxY - size.height - shadowMargin
         origin.x = min(max(origin.x, minX), maxX)
         origin.y = min(max(origin.y, minY), maxY)
         return origin

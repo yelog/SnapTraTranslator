@@ -140,7 +140,13 @@ final class AppModel: ObservableObject {
                 }
                 
                 self.lastOcrPosition = currentPosition
-                self.startLookup()
+                self.overlayAnchor = currentPosition
+                if case .idle = self.overlayState {
+                    self.startLookup()
+                } else {
+                    self.overlayWindowController.show(at: currentPosition)
+                    self.startLookup()
+                }
             }
         }
         debounceWorkItem = workItem

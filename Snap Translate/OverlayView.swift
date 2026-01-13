@@ -14,8 +14,8 @@ struct OverlayView: View {
                 overlayContent
                     .transition(
                         .asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.92, anchor: .top)).combined(with: .offset(y: -6)),
-                            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .top)).combined(with: .offset(y: -2))
+                            insertion: .opacity.combined(with: .scale(scale: 0.92, anchor: .top)),
+                            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
                         )
                     )
             }
@@ -98,7 +98,6 @@ struct OverlayView: View {
                     Text("No word detected")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.primary.opacity(0.7))
-                        .fixedSize(horizontal: true, vertical: false)
                 }
                 .padding(.vertical, 14)
                 .padding(.horizontal, 18)
