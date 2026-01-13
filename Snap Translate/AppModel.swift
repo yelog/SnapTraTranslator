@@ -39,7 +39,8 @@ final class AppModel: ObservableObject {
     private var isHotkeyActive = false
     private var lastAvailabilityKey: String?
     
-    private var mouseMonitor: Any?
+    private var globalMouseMonitor: Any?
+    private var localMouseMonitor: Any?
     private var debounceWorkItem: DispatchWorkItem?
     private var lastOcrPosition: CGPoint?
     private let debounceInterval: TimeInterval = 0.3
@@ -90,18 +91,30 @@ final class AppModel: ObservableObject {
     }
     
     private func startMouseTracking() {
-        guard mouseMonitor == nil else { return }
-        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
+        guard globalMouseMonitor == nil else { return }
+        
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
             Task { @MainActor in
                 self?.handleMouseMoved()
             }
         }
+        
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+            Task { @MainActor in
+                self?.handleMouseMoved()
+            }
+            return event
+        }
     }
     
     private func stopMouseTracking() {
-        if let monitor = mouseMonitor {
+        if let monitor = globalMouseMonitor {
             NSEvent.removeMonitor(monitor)
-            mouseMonitor = nil
+            globalMouseMonitor = nil
+        }
+        if let monitor = localMouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMouseMonitor = nil
         }
         debounceWorkItem?.cancel()
         debounceWorkItem = nil
