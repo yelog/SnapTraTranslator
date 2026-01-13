@@ -89,6 +89,19 @@ struct OverlayView: View {
                 }
                 .padding(.vertical, 14)
                 .padding(.horizontal, 18)
+
+            case .noWord:
+                HStack(spacing: 10) {
+                    Image(systemName: "text.magnifyingglass")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Text("No word detected")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.primary.opacity(0.7))
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                .padding(.vertical, 14)
+                .padding(.horizontal, 18)
             }
         }
         .frame(maxWidth: 380, alignment: .leading)

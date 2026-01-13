@@ -16,6 +16,7 @@ enum OverlayState: Equatable {
     case loading(String?)
     case result(OverlayContent)
     case error(String)
+    case noWord
 }
 
 @MainActor
@@ -89,7 +90,6 @@ final class AppModel: ObservableObject {
     }
 
     func performLookup(lookupID: UUID) async {
-        await permissions.refreshStatusAsync()
         guard !Task.isCancelled, activeLookupID == lookupID else { return }
         guard permissions.status.screenRecording else {
             updateOverlay(state: .error("Enable Screen Recording"))
@@ -118,15 +118,19 @@ final class AppModel: ObservableObject {
                 debugOverlayWindowController.show(at: capture.region.rect, wordBoxes: wordBoxes)
             }
             guard let selected = selectWord(from: words, normalizedPoint: normalizedPoint) else {
-                updateOverlay(state: .error("No word detected"), anchor: mouseLocation)
+                updateOverlay(state: .noWord, anchor: mouseLocation)
                 return
             }
             guard activeLookupID == lookupID else { return }
             updateOverlay(state: .loading(selected.text), anchor: mouseLocation)
-            guard !Task.isCancelled, activeLookupID == lookupID else { return }
-            let phonetic = phoneticService.phonetic(for: selected.text)
             let sourceLanguage = Locale.Language(identifier: settings.sourceLanguage)
             let targetLanguage = Locale.Language(identifier: settings.targetLanguage)
+            if settings.playPronunciation {
+                let languageCode = sourceLanguage.languageCode?.identifier
+                speechService.speak(selected.text, language: languageCode)
+            }
+            guard !Task.isCancelled, activeLookupID == lookupID else { return }
+            let phonetic = phoneticService.phonetic(for: selected.text)
             if #available(macOS 15.0, *) {
                 let availability = LanguageAvailability()
                 let status = await availability.status(from: sourceLanguage, to: targetLanguage)
@@ -141,10 +145,6 @@ final class AppModel: ObservableObject {
                 guard !Task.isCancelled, activeLookupID == lookupID else { return }
                 let content = OverlayContent(word: selected.text, phonetic: phonetic, translation: translated)
                 updateOverlay(state: .result(content), anchor: mouseLocation)
-                if settings.playPronunciation {
-                    let languageCode = sourceLanguage.languageCode?.identifier
-                    speechService.speak(selected.text, language: languageCode)
-                }
             } else {
                 updateOverlay(state: .error("Translation requires macOS 15"), anchor: mouseLocation)
             }
@@ -268,20 +268,6 @@ final class AppModel: ObservableObject {
     }
 
     private func selectWord(from words: [RecognizedWord], normalizedPoint: CGPoint) -> RecognizedWord? {
-        if let direct = words.first(where: { $0.boundingBox.contains(normalizedPoint) }) {
-            return direct
-        }
-        return words.min { lhs, rhs in
-            let leftDistance = distance(from: normalizedPoint, to: lhs.boundingBox)
-            let rightDistance = distance(from: normalizedPoint, to: rhs.boundingBox)
-            return leftDistance < rightDistance
-        }
-    }
-
-    private func distance(from point: CGPoint, to rect: CGRect) -> CGFloat {
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let dx = point.x - center.x
-        let dy = point.y - center.y
-        return sqrt(dx * dx + dy * dy)
+        return words.first(where: { $0.boundingBox.contains(normalizedPoint) })
     }
 }

@@ -26,6 +26,10 @@ final class PhoneticService {
     }
 
     private func extractPhonetic(from html: String) -> String? {
+        #if DEBUG
+        print("[PhoneticService] Raw HTML (\(html.count) chars):\n\(html.prefix(2000))")
+        #endif
+        
         let patterns = [
             "<span class=\"pr\">([^<]+)</span>",
             "<span class=\"ipa\">([^<]+)</span>",
@@ -35,9 +39,15 @@ final class PhoneticService {
         ]
         for pattern in patterns {
             if let match = matchFirst(pattern: pattern, in: html) {
+                #if DEBUG
+                print("[PhoneticService] Found phonetic with pattern '\(pattern)': \(match)")
+                #endif
                 return match.trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
+        #if DEBUG
+        print("[PhoneticService] No phonetic pattern matched")
+        #endif
         return nil
     }
 
