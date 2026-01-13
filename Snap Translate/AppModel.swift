@@ -43,7 +43,7 @@ final class AppModel: ObservableObject {
     private var localMouseMonitor: Any?
     private var debounceWorkItem: DispatchWorkItem?
     private var lastOcrPosition: CGPoint?
-    private let debounceInterval: TimeInterval = 0.3
+    private let debounceInterval: TimeInterval = 0.05
     private let positionThreshold: CGFloat = 5.0
 
     private let debugOverlayWindowController = DebugOverlayWindowController()
