@@ -1,13 +1,12 @@
 import AppKit
-import Carbon
 import Foundation
 
 final class HotkeyManager {
     var onTrigger: (() -> Void)?
     var onRelease: (() -> Void)?
 
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
+    private var globalMonitor: Any?
+    private var localMonitor: Any?
     private var isSingleKeyDown = false
     private var activeSingleKey: SingleKey?
     private var pendingRelease: DispatchWorkItem?
@@ -15,79 +14,43 @@ final class HotkeyManager {
 
     func start(singleKey: SingleKey) {
         stop()
-        startSingleKeyTap(key: singleKey)
+        activeSingleKey = singleKey
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged]) { [weak self] event in
+            self?.handleFlagsChanged(event)
+        }
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged]) { [weak self] event in
+            self?.handleFlagsChanged(event)
+            return event
+        }
     }
 
     func stop() {
         pendingRelease?.cancel()
         pendingRelease = nil
-        stopSingleKeyTap()
-    }
-
-    private func startSingleKeyTap(key: SingleKey) {
-        activeSingleKey = key
-        let mask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: mask,
-            callback: { proxy, type, event, userInfo in
-                guard let userInfo else { return Unmanaged.passRetained(event) }
-                let manager = Unmanaged<HotkeyManager>.fromOpaque(userInfo).takeUnretainedValue()
-                if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-                    manager.enableEventTap()
-                    return Unmanaged.passRetained(event)
-                }
-                manager.handleFlagsChanged(event: event, type: type, proxy: proxy)
-                return Unmanaged.passRetained(event)
-            },
-            userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-        ) else {
-            return
+        if let globalMonitor {
+            NSEvent.removeMonitor(globalMonitor)
+            self.globalMonitor = nil
         }
-        eventTap = tap
-        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        if let runLoopSource {
-            CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-            CGEvent.tapEnable(tap: tap, enable: true)
-        }
-    }
-
-    private func stopSingleKeyTap() {
-        if let runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-            self.runLoopSource = nil
-        }
-        if let eventTap {
-            CFMachPortInvalidate(eventTap)
-            self.eventTap = nil
+        if let localMonitor {
+            NSEvent.removeMonitor(localMonitor)
+            self.localMonitor = nil
         }
         isSingleKeyDown = false
         activeSingleKey = nil
     }
 
-    private func enableEventTap() {
-        if let eventTap {
-            CGEvent.tapEnable(tap: eventTap, enable: true)
-        }
-    }
-
-    private func handleFlagsChanged(event: CGEvent, type: CGEventType, proxy: CGEventTapProxy) {
-        guard type == .flagsChanged else {
-            return
-        }
+    private func handleFlagsChanged(_ event: NSEvent) {
         guard let key = activeSingleKey else {
             return
         }
-        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        let keyCode = Int64(event.keyCode)
         let expectedKeyCode = Int64(SingleKeyMapping.keyCode(for: key))
         let isOptionKey = key == .leftOption || key == .rightOption
-        
+
         let targetFlag = SingleKeyMapping.modifierFlag(for: key)
-        let eventFlags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
+        let eventFlags = event.modifierFlags
         let isTargetFlagPresent = eventFlags.contains(targetFlag)
-        
+
         if isTargetFlagPresent {
             pendingRelease?.cancel()
             pendingRelease = nil
