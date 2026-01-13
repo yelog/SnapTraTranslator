@@ -141,6 +141,28 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
+
+                Divider()
+                    .padding(.horizontal, 14)
+                    .opacity(0.5)
+
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Debug OCR region")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundStyle(.primary)
+                        Text("Show capture area when shortcut is pressed")
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(.tertiary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $model.settings.debugShowOcrRegion)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
             }
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)

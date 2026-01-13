@@ -1,6 +1,63 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Debug OCR Border View
+
+struct DebugOCRBorderView: View {
+    var body: some View {
+        Rectangle()
+            .stroke(Color.red, lineWidth: 3)
+            .background(Color.clear)
+    }
+}
+
+// MARK: - Debug Overlay Window Controller
+
+final class DebugOverlayWindowController: NSWindowController {
+    private let hostingView: NSHostingView<DebugOCRBorderView>
+
+    override init(window: NSWindow?) {
+        hostingView = NSHostingView(rootView: DebugOCRBorderView())
+        let panel = NSPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.contentView = hostingView
+        panel.isReleasedWhenClosed = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.ignoresMouseEvents = true
+        panel.isMovableByWindowBackground = false
+        super.init(window: panel)
+    }
+
+    convenience init() {
+        self.init(window: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func show(at rect: CGRect) {
+        guard let window else { return }
+        window.setFrame(rect, display: true)
+        window.orderFrontRegardless()
+    }
+
+    func hide() {
+        window?.orderOut(nil)
+    }
+}
+
+// MARK: - Overlay Window Controller
+
 final class OverlayWindowController: NSWindowController {
     private let hostingView: NSHostingView<AnyView>
 

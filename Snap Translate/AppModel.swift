@@ -38,6 +38,7 @@ final class AppModel: ObservableObject {
     private var isHotkeyActive = false
     private var lastAvailabilityKey: String?
 
+    private let debugOverlayWindowController = DebugOverlayWindowController()
     lazy var overlayWindowController = OverlayWindowController(model: self)
 
     @MainActor
@@ -75,6 +76,7 @@ final class AppModel: ObservableObject {
         activeLookupID = nil
         overlayState = .idle
         overlayWindowController.hide()
+        debugOverlayWindowController.hide()
     }
 
     private func startLookup() {
@@ -97,8 +99,14 @@ final class AppModel: ObservableObject {
         guard activeLookupID == lookupID else { return }
         updateOverlay(state: .loading(nil), anchor: mouseLocation)
         guard let capture = await captureService.captureAroundCursor() else {
+            debugOverlayWindowController.hide()
             updateOverlay(state: .error("Capture failed"), anchor: mouseLocation)
             return
+        }
+        if settings.debugShowOcrRegion {
+            debugOverlayWindowController.show(at: capture.region.rect)
+        } else {
+            debugOverlayWindowController.hide()
         }
         guard !Task.isCancelled, activeLookupID == lookupID else { return }
         let normalizedPoint = normalizedCursorPoint(mouseLocation, in: capture.region.rect)
@@ -174,6 +182,14 @@ final class AppModel: ObservableObject {
         settings.$launchAtLogin
             .sink { value in
                 LoginItemManager.setEnabled(value)
+            }
+            .store(in: &cancellables)
+
+        settings.$debugShowOcrRegion
+            .sink { [weak self] isEnabled in
+                if !isEnabled {
+                    self?.debugOverlayWindowController.hide()
+                }
             }
             .store(in: &cancellables)
 
