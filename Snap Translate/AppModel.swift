@@ -113,6 +113,10 @@ final class AppModel: ObservableObject {
         do {
             let words = try await ocrService.recognizeWords(in: capture.image)
             guard !Task.isCancelled, activeLookupID == lookupID else { return }
+            if settings.debugShowOcrRegion {
+                let wordBoxes = words.map { $0.boundingBox }
+                debugOverlayWindowController.show(at: capture.region.rect, wordBoxes: wordBoxes)
+            }
             guard let selected = selectWord(from: words, normalizedPoint: normalizedPoint) else {
                 updateOverlay(state: .error("No word detected"), anchor: mouseLocation)
                 return

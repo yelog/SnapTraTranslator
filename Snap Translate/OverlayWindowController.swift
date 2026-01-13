@@ -4,20 +4,42 @@ import SwiftUI
 // MARK: - Debug OCR Border View
 
 struct DebugOCRBorderView: View {
+    var wordBoxes: [CGRect]
+
     var body: some View {
-        Rectangle()
-            .stroke(Color.red, lineWidth: 3)
-            .background(Color.clear)
+        GeometryReader { geometry in
+            ZStack {
+                Rectangle()
+                    .stroke(Color.red, lineWidth: 3)
+                    .background(Color.clear)
+
+                ForEach(Array(wordBoxes.enumerated()), id: \.offset) { _, box in
+                    let converted = convertNormalizedBox(box, in: geometry.size)
+                    Rectangle()
+                        .stroke(Color.green, lineWidth: 1.5)
+                        .frame(width: converted.width, height: converted.height)
+                        .position(x: converted.midX, y: converted.midY)
+                }
+            }
+        }
+    }
+
+    private func convertNormalizedBox(_ box: CGRect, in size: CGSize) -> CGRect {
+        let x = box.origin.x * size.width
+        let y = (1 - box.origin.y - box.height) * size.height
+        let width = box.width * size.width
+        let height = box.height * size.height
+        return CGRect(x: x, y: y, width: width, height: height)
     }
 }
 
 // MARK: - Debug Overlay Window Controller
 
 final class DebugOverlayWindowController: NSWindowController {
-    private let hostingView: NSHostingView<DebugOCRBorderView>
+    private var hostingView: NSHostingView<DebugOCRBorderView>
 
     override init(window: NSWindow?) {
-        hostingView = NSHostingView(rootView: DebugOCRBorderView())
+        hostingView = NSHostingView(rootView: DebugOCRBorderView(wordBoxes: []))
         let panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -45,8 +67,9 @@ final class DebugOverlayWindowController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func show(at rect: CGRect) {
+    func show(at rect: CGRect, wordBoxes: [CGRect] = []) {
         guard let window else { return }
+        hostingView.rootView = DebugOCRBorderView(wordBoxes: wordBoxes)
         window.setFrame(rect, display: true)
         window.orderFrontRegardless()
     }
