@@ -6,6 +6,7 @@ struct CaptureRegion {
     var rect: CGRect
     var screen: NSScreen
     var displayID: CGDirectDisplayID
+    var scaleFactor: CGFloat
 }
 
 final class ScreenCaptureService {
@@ -20,8 +21,9 @@ final class ScreenCaptureService {
             return nil
         }
         let displayID = CGDirectDisplayID(displayNumber.int32Value)
+        let scaleFactor = screen.backingScaleFactor
         let rectInScreen = captureRect(for: mouseLocation, in: screen.frame, size: captureSize)
-        let cgRect = convertToQuartzCoordinates(rectInScreen, screen: screen, displayID: displayID)
+        let cgRect = convertToDisplayLocalCoordinates(rectInScreen, screen: screen)
 
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
@@ -29,9 +31,9 @@ final class ScreenCaptureService {
                 return nil
             }
             let filter = SCContentFilter(display: display, excludingWindows: [])
-            let configuration = makeConfiguration(for: cgRect)
+            let configuration = makeConfiguration(for: cgRect, scaleFactor: scaleFactor)
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-            return (image, CaptureRegion(rect: rectInScreen, screen: screen, displayID: displayID))
+            return (image, CaptureRegion(rect: rectInScreen, screen: screen, displayID: displayID, scaleFactor: scaleFactor))
         } catch {
             return nil
         }
@@ -43,21 +45,21 @@ final class ScreenCaptureService {
         return rawRect.intersection(screenFrame)
     }
 
-    private func convertToQuartzCoordinates(_ rect: CGRect, screen: NSScreen, displayID: CGDirectDisplayID) -> CGRect {
-        let displayBounds = CGDisplayBounds(displayID)
+    private func convertToDisplayLocalCoordinates(_ rect: CGRect, screen: NSScreen) -> CGRect {
         let screenFrame = screen.frame
         let localX = rect.minX - screenFrame.minX
         let localY = rect.minY - screenFrame.minY
-        let cgX = displayBounds.minX + localX
-        let cgY = displayBounds.minY + displayBounds.height - (localY + rect.height)
-        return CGRect(x: cgX, y: cgY, width: rect.width, height: rect.height)
+        let flippedY = screenFrame.height - (localY + rect.height)
+        return CGRect(x: localX, y: flippedY, width: rect.width, height: rect.height)
     }
 
-    private func makeConfiguration(for rect: CGRect) -> SCStreamConfiguration {
+    private func makeConfiguration(for rect: CGRect, scaleFactor: CGFloat) -> SCStreamConfiguration {
         let configuration = SCStreamConfiguration()
         configuration.sourceRect = rect
-        configuration.width = Int(rect.width)
-        configuration.height = Int(rect.height)
+        let pixelWidth = Int(rect.width * scaleFactor)
+        let pixelHeight = Int(rect.height * scaleFactor)
+        configuration.width = pixelWidth
+        configuration.height = pixelHeight
         configuration.queueDepth = 1
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.showsCursor = false

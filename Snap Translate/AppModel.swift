@@ -213,6 +213,22 @@ final class AppModel: ObservableObject {
                 self?.restartHotkey()
             }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .sink { [weak self] _ in
+                self?.handleScreenConfigurationChange()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func handleScreenConfigurationChange() {
+        guard isHotkeyActive else { return }
+        lookupTask?.cancel()
+        lookupTask = nil
+        activeLookupID = nil
+        overlayState = .idle
+        overlayWindowController.hide()
+        debugOverlayWindowController.hide()
     }
 
     private func restartHotkey() {
