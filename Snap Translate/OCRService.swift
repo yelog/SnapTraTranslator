@@ -33,29 +33,27 @@ final class OCRService {
             guard let candidate = observation.topCandidates(1).first else {
                 continue
             }
-            let tokenizer = NLTokenizer(unit: .word)
-            tokenizer.string = candidate.string
-            tokenizer.enumerateTokens(in: candidate.string.startIndex..<candidate.string.endIndex) { range, _ in
-                let token = candidate.string[range]
-                let refinedRanges = refinedTokenRanges(in: token)
-                let tokenBoundingObservation = try? candidate.boundingBox(for: range)
-                for refinedRange in refinedRanges {
-                    let substring = candidate.string[refinedRange]
-                    guard containsLetterOrNumber(in: substring) else {
+            let text = candidate.string
+            let textBoundingBox = observation.boundingBox
+            let refinedRanges = refinedTokenRanges(in: text[...])
+            let textCount = text.count
+            
+            for refinedRange in refinedRanges {
+                let substring = text[refinedRange]
+                guard containsLetterOrNumber(in: substring) else {
+                    continue
+                }
+                let visionBox = try? candidate.boundingBox(for: refinedRange)
+                let boundingBox: CGRect
+                if let visionBox, !areBoundingBoxesSimilar(visionBox.boundingBox, textBoundingBox) {
+                    boundingBox = visionBox.boundingBox
+                } else {
+                    guard let splitBox = boundingBoxBySplitting(textBoundingBox, totalCount: textCount, text: text, for: refinedRange) else {
                         continue
                     }
-                    let refinedObservation = try? candidate.boundingBox(for: refinedRange)
-                    if let boundingBox = refinedBoundingBox(
-                        refinedObservation: refinedObservation,
-                        tokenObservation: tokenBoundingObservation,
-                        token: token,
-                        refinedRange: refinedRange,
-                        hasMultipleRanges: refinedRanges.count > 1
-                    ) {
-                        words.append(RecognizedWord(text: String(substring), boundingBox: boundingBox))
-                    }
+                    boundingBox = splitBox
                 }
-                return true
+                words.append(RecognizedWord(text: String(substring), boundingBox: boundingBox))
             }
         }
         return words
@@ -100,45 +98,26 @@ final class OCRService {
         return ranges
     }
 
-    private static func refinedBoundingBox(
-        refinedObservation: VNRectangleObservation?,
-        tokenObservation: VNRectangleObservation?,
-        token: Substring,
-        refinedRange: Range<String.Index>,
-        hasMultipleRanges: Bool
-    ) -> CGRect? {
-        if let refinedObservation {
-            if !hasMultipleRanges {
-                return refinedObservation.boundingBox
-            }
-            if let tokenObservation, !areBoundingBoxesSimilar(refinedObservation.boundingBox, tokenObservation.boundingBox) {
-                return refinedObservation.boundingBox
-            }
-        }
-        guard hasMultipleRanges, let tokenObservation else {
-            return refinedObservation?.boundingBox
-        }
-        return boundingBoxBySplitting(tokenObservation.boundingBox, in: token, for: refinedRange)
-    }
-
-    private static func boundingBoxBySplitting(_ tokenBox: CGRect, in token: Substring, for range: Range<String.Index>) -> CGRect? {
-        let tokenCount = token.count
-        guard tokenCount > 0 else {
+    private static func boundingBoxBySplitting(_ textBox: CGRect, totalCount: Int, text: String, for range: Range<String.Index>) -> CGRect? {
+        guard totalCount > 0 else {
             return nil
         }
-        let startOffset = token.distance(from: token.startIndex, to: range.lowerBound)
-        let endOffset = token.distance(from: token.startIndex, to: range.upperBound)
-        guard endOffset > startOffset else {
+        guard range.lowerBound >= text.startIndex, range.upperBound <= text.endIndex else {
             return nil
         }
-        let startFraction = CGFloat(startOffset) / CGFloat(tokenCount)
-        let endFraction = CGFloat(endOffset) / CGFloat(tokenCount)
-        let width = tokenBox.width * (endFraction - startFraction)
+        let startOffset = text.distance(from: text.startIndex, to: range.lowerBound)
+        let endOffset = text.distance(from: text.startIndex, to: range.upperBound)
+        guard endOffset > startOffset, startOffset >= 0, endOffset <= totalCount else {
+            return nil
+        }
+        let startFraction = CGFloat(startOffset) / CGFloat(totalCount)
+        let endFraction = CGFloat(endOffset) / CGFloat(totalCount)
+        let width = textBox.width * (endFraction - startFraction)
         guard width > 0 else {
             return nil
         }
-        let x = tokenBox.minX + tokenBox.width * startFraction
-        return CGRect(x: x, y: tokenBox.minY, width: width, height: tokenBox.height)
+        let x = textBox.minX + textBox.width * startFraction
+        return CGRect(x: x, y: textBox.minY, width: width, height: textBox.height)
     }
 
     private static func areBoundingBoxesSimilar(_ lhs: CGRect, _ rhs: CGRect, tolerance: CGFloat = 0.001) -> Bool {
