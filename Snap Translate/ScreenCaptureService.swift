@@ -10,7 +10,7 @@ struct CaptureRegion {
 }
 
 final class ScreenCaptureService {
-    let captureSize = CGSize(width: 260, height: 140)
+    let captureSize = CGSize(width: 520, height: 140)
 
     func captureAroundCursor() async -> (image: CGImage, region: CaptureRegion)? {
         let mouseLocation = NSEvent.mouseLocation
