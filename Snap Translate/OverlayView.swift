@@ -12,15 +12,8 @@ struct OverlayView: View {
         ZStack {
             if isVisible {
                 overlayContent
-                    .transition(
-                        .asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.92, anchor: .top)),
-                            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
-                        )
-                    )
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.75, blendDuration: 0.1), value: isVisible)
     }
 
     @ViewBuilder
