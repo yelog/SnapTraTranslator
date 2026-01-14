@@ -205,6 +205,11 @@ final class AppModel: ObservableObject {
             }
             guard !Task.isCancelled, activeLookupID == lookupID else { return }
             let phonetic = phoneticService.phonetic(for: selected.text)
+            if sourceLanguage.minimalIdentifier == targetLanguage.minimalIdentifier {
+                let content = OverlayContent(word: selected.text, phonetic: phonetic, translation: selected.text)
+                updateOverlay(state: .result(content), anchor: mouseLocation)
+                return
+            }
             if #available(macOS 15.0, *) {
                 let availability = LanguageAvailability()
                 let status = await availability.status(from: sourceLanguage, to: targetLanguage)
@@ -274,7 +279,15 @@ final class AppModel: ObservableObject {
         settings.$sourceLanguage
             .combineLatest(settings.$targetLanguage)
             .sink { [weak self] _, _ in
-                Task { await self?.checkLanguageAvailability() }
+                guard let self = self else { return }
+                // Cancel any ongoing translation when language changes
+                self.lookupTask?.cancel()
+                self.lookupTask = nil
+                self.activeLookupID = nil
+                if self.overlayState != .idle {
+                    self.overlayState = .idle
+                }
+                Task { await self.checkLanguageAvailability() }
             }
             .store(in: &cancellables)
 

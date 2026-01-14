@@ -20,8 +20,8 @@ struct TranslationRequest {
 final class TranslationBridge: ObservableObject {
     @Published var pendingRequest: TranslationRequest?
 
-    private let requestStream: AsyncStream<TranslationRequest>
-    private let requestContinuation: AsyncStream<TranslationRequest>.Continuation
+    private var requestStream: AsyncStream<TranslationRequest>
+    private var requestContinuation: AsyncStream<TranslationRequest>.Continuation
 
     init() {
         var continuation: AsyncStream<TranslationRequest>.Continuation!
@@ -31,6 +31,13 @@ final class TranslationBridge: ObservableObject {
 
     var requests: AsyncStream<TranslationRequest> {
         requestStream
+    }
+
+    func resetStream() {
+        requestContinuation.finish()
+        var continuation: AsyncStream<TranslationRequest>.Continuation!
+        requestStream = AsyncStream { continuation = $0 }
+        requestContinuation = continuation
     }
 
     func translate(text: String, source: Locale.Language?, target: Locale.Language) async throws -> String {
@@ -60,9 +67,23 @@ struct TranslationBridgeView: View {
                 configuration = TranslationSession.Configuration(source: sourceLanguage, target: targetLanguage)
             }
             .onChange(of: sourceLanguage.minimalIdentifier) { _, _ in
+                // Clear pending request when language changes to avoid stuck state
+                if let pending = bridge.pendingRequest {
+                    pending.continuation.resume(throwing: CancellationError())
+                    bridge.pendingRequest = nil
+                }
+                // Reset stream so new translationTask can receive requests
+                bridge.resetStream()
                 configuration = TranslationSession.Configuration(source: sourceLanguage, target: targetLanguage)
             }
             .onChange(of: targetLanguage.minimalIdentifier) { _, _ in
+                // Clear pending request when language changes to avoid stuck state
+                if let pending = bridge.pendingRequest {
+                    pending.continuation.resume(throwing: CancellationError())
+                    bridge.pendingRequest = nil
+                }
+                // Reset stream so new translationTask can receive requests
+                bridge.resetStream()
                 configuration = TranslationSession.Configuration(source: sourceLanguage, target: targetLanguage)
             }
             .translationTask(configuration) { session in
