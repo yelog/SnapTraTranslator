@@ -317,6 +317,9 @@ struct ContentPermissionRow: View {
 struct LanguagePickerSection: View {
     @Binding var sourceLanguage: String
     @Binding var targetLanguage: String
+    @EnvironmentObject var model: AppModel
+    @State private var showingUnavailableAlert = false
+    @State private var unavailableLanguageName = ""
 
     private let commonLanguages: [(id: String, name: String)] = [
         ("zh-Hans", "Chinese (Simplified)"),
@@ -336,54 +339,111 @@ struct LanguagePickerSection: View {
     ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Text("Source Language")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(.primary)
-                Spacer()
-                Picker("", selection: $sourceLanguage) {
-                    ForEach(commonLanguages, id: \.id) { lang in
-                        Text(lang.name).tag(lang.id)
-                    }
+        mainContent
+            .alert("Language Pack Required", isPresented: $showingUnavailableAlert) {
+                Button("Open Settings") {
+                    model.languagePackManager?.openTranslationSettings()
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .tint(.accentColor)
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("The language pack for \(unavailableLanguageName) is not installed. Please download it in System Settings > General > Language & Region > Translation Languages.")
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+    }
 
+    private var mainContent: some View {
+        VStack(spacing: 0) {
+            sourceLanguageRow
             Divider()
                 .padding(.horizontal, 14)
                 .opacity(0.5)
-
-            HStack(spacing: 12) {
-                Text("Target Language")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(.primary)
-                Spacer()
-                Picker("", selection: $targetLanguage) {
-                    ForEach(commonLanguages, id: \.id) { lang in
-                        Text(lang.name).tag(lang.id)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .tint(.accentColor)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            targetLanguageRow
         }
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.background)
-                .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
-                .shadow(color: .black.opacity(0.02), radius: 1, x: 0, y: 1)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
-        )
+        .background(cardBackground)
+        .overlay(cardBorder)
+    }
+
+    private var sourceLanguageRow: some View {
+        HStack(spacing: 12) {
+            Text("Source Language")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(.primary)
+            Spacer()
+            Picker("", selection: $sourceLanguage) {
+                ForEach(commonLanguages, id: \.id) { lang in
+                    Text(lang.name).tag(lang.id)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .tint(.accentColor)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private var targetLanguageRow: some View {
+        HStack(spacing: 12) {
+            Text("Target Language")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            statusIcon
+
+            Picker("", selection: $targetLanguage) {
+                ForEach(commonLanguages, id: \.id) { lang in
+                    Text(lang.name).tag(lang.id)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .tint(.accentColor)
+            .onChange(of: targetLanguage) { _, newValue in
+                checkLanguageAvailability(newValue)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private var statusIcon: some View {
+        if let status = getLanguagePackStatus(targetLanguage) {
+            Image(systemName: status == .installed ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(status == .installed ? .green : .red)
+        }
+    }
+
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(.background)
+            .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
+            .shadow(color: .black.opacity(0.02), radius: 1, x: 0, y: 1)
+    }
+
+    private var cardBorder: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(.quaternary, lineWidth: 0.5)
+    }
+
+    @ViewBuilder
+    private func languageOptionView(for lang: (id: String, name: String)) -> some View {
+        Text(lang.name).tag(lang.id)
+    }
+
+    private func getLanguagePackStatus(_ language: String) -> LanguageAvailability.Status? {
+        guard sourceLanguage != language else { return nil }
+        return model.languagePackManager?.getStatus(from: sourceLanguage, to: language)
+    }
+
+    private func checkLanguageAvailability(_ language: String) {
+        guard let status = getLanguagePackStatus(language) else { return }
+
+        if status != .installed {
+            unavailableLanguageName = commonLanguages.first(where: { $0.id == language })?.name ?? language
+            showingUnavailableAlert = true
+        }
     }
 }

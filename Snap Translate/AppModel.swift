@@ -35,6 +35,13 @@ final class AppModel: ObservableObject {
     @Published var settings: SettingsStore
     let permissions: PermissionManager
     let translationBridge: TranslationBridge
+    private var _languagePackManager: Any?
+
+    @available(macOS 15.0, *)
+    var languagePackManager: LanguagePackManager? {
+        get { _languagePackManager as? LanguagePackManager }
+        set { _languagePackManager = newValue }
+    }
 
     private let hotkeyManager = HotkeyManager()
     private let captureService = ScreenCaptureService()
@@ -64,6 +71,9 @@ final class AppModel: ObservableObject {
         self.settings = resolvedSettings
         self.permissions = resolvedPermissions
         self.translationBridge = TranslationBridge()
+        if #available(macOS 15.0, *) {
+            self.languagePackManager = LanguagePackManager()
+        }
         bindSettings()
         resolvedPermissions.$status
             .sink { [weak self] _ in
@@ -77,7 +87,12 @@ final class AppModel: ObservableObject {
             self?.handleHotkeyRelease()
         }
         resolvedPermissions.refreshStatus()
-        Task { await checkLanguageAvailability() }
+        Task {
+            await checkLanguageAvailability()
+            if #available(macOS 15.0, *) {
+                await languagePackManager?.checkAllLanguages(from: resolvedSettings.sourceLanguage)
+            }
+        }
     }
 
     func handleHotkeyTrigger() {
@@ -294,8 +309,12 @@ final class AppModel: ObservableObject {
             } else {
                 updateOverlay(state: .error("Translation requires macOS 15"), anchor: mouseLocation)
             }
+        } catch is CancellationError {
+            // Task was cancelled, do nothing
+        } catch TranslationError.timeout {
+            updateOverlay(state: .error("Translation timeout. Please try again."), anchor: mouseLocation)
         } catch {
-            updateOverlay(state: .error("OCR or translation failed"), anchor: mouseLocation)
+            updateOverlay(state: .error("Translation failed: \(error.localizedDescription)"), anchor: mouseLocation)
         }
     }
 
@@ -352,7 +371,7 @@ final class AppModel: ObservableObject {
 
         settings.$sourceLanguage
             .combineLatest(settings.$targetLanguage)
-            .sink { [weak self] _, _ in
+            .sink { [weak self] sourceLanguage, _ in
                 guard let self = self else { return }
                 // Cancel any ongoing translation when language changes
                 self.lookupTask?.cancel()
@@ -361,7 +380,12 @@ final class AppModel: ObservableObject {
                 if self.overlayState != .idle {
                     self.overlayState = .idle
                 }
-                Task { await self.checkLanguageAvailability() }
+                Task {
+                    await self.checkLanguageAvailability()
+                    if #available(macOS 15.0, *) {
+                        await self.languagePackManager?.checkAllLanguages(from: sourceLanguage)
+                    }
+                }
             }
             .store(in: &cancellables)
 

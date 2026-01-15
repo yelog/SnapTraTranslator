@@ -6,6 +6,7 @@ import Translation
 enum TranslationError: Error {
     case unsupportedSystem
     case emptyText
+    case timeout
 }
 
 struct TranslationRequest {
@@ -40,15 +41,31 @@ final class TranslationBridge: ObservableObject {
         requestContinuation = continuation
     }
 
-    func translate(text: String, source: Locale.Language?, target: Locale.Language) async throws -> String {
+    func translate(text: String, source: Locale.Language?, target: Locale.Language, timeout: TimeInterval = 10.0) async throws -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw TranslationError.emptyText
         }
-        return try await withCheckedThrowingContinuation { continuation in
-            let request = TranslationRequest(id: UUID(), text: trimmed, source: source, target: target, continuation: continuation)
-            pendingRequest = request
-            requestContinuation.yield(request)
+
+        return try await withThrowingTaskGroup(of: String.self) { group in
+            group.addTask {
+                try await withCheckedThrowingContinuation { continuation in
+                    let request = TranslationRequest(id: UUID(), text: trimmed, source: source, target: target, continuation: continuation)
+                    Task { @MainActor in
+                        self.pendingRequest = request
+                        self.requestContinuation.yield(request)
+                    }
+                }
+            }
+
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                throw TranslationError.timeout
+            }
+
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
         }
     }
 }
@@ -59,6 +76,7 @@ struct TranslationBridgeView: View {
     let sourceLanguage: Locale.Language
     let targetLanguage: Locale.Language
     @State private var configuration: TranslationSession.Configuration?
+    @State private var configurationID = UUID()
 
     var body: some View {
         Color.clear
@@ -67,24 +85,10 @@ struct TranslationBridgeView: View {
                 configuration = TranslationSession.Configuration(source: sourceLanguage, target: targetLanguage)
             }
             .onChange(of: sourceLanguage.minimalIdentifier) { _, _ in
-                // Clear pending request when language changes to avoid stuck state
-                if let pending = bridge.pendingRequest {
-                    pending.continuation.resume(throwing: CancellationError())
-                    bridge.pendingRequest = nil
-                }
-                // Reset stream so new translationTask can receive requests
-                bridge.resetStream()
-                configuration = TranslationSession.Configuration(source: sourceLanguage, target: targetLanguage)
+                resetConfiguration()
             }
             .onChange(of: targetLanguage.minimalIdentifier) { _, _ in
-                // Clear pending request when language changes to avoid stuck state
-                if let pending = bridge.pendingRequest {
-                    pending.continuation.resume(throwing: CancellationError())
-                    bridge.pendingRequest = nil
-                }
-                // Reset stream so new translationTask can receive requests
-                bridge.resetStream()
-                configuration = TranslationSession.Configuration(source: sourceLanguage, target: targetLanguage)
+                resetConfiguration()
             }
             .translationTask(configuration) { session in
                 for await request in bridge.requests {
@@ -99,5 +103,19 @@ struct TranslationBridgeView: View {
                     }
                 }
             }
+            .id(configurationID)
+    }
+
+    private func resetConfiguration() {
+        // Clear pending request when language changes to avoid stuck state
+        if let pending = bridge.pendingRequest {
+            pending.continuation.resume(throwing: CancellationError())
+            bridge.pendingRequest = nil
+        }
+        // Reset stream so new translationTask can receive requests
+        bridge.resetStream()
+        // Force view recreation to ensure translationTask restarts properly
+        configurationID = UUID()
+        configuration = TranslationSession.Configuration(source: sourceLanguage, target: targetLanguage)
     }
 }
