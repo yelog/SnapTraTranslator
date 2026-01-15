@@ -17,8 +17,12 @@ final class LanguagePackManager: ObservableObject {
 
     /// 检查所有常用语言对的可用性
     func checkAllLanguages(from sourceLanguage: String) async {
-        isChecking = true
-        currentSourceLanguage = sourceLanguage
+        await MainActor.run {
+            isChecking = true
+            currentSourceLanguage = sourceLanguage
+            objectWillChange.send()
+        }
+
         for targetLang in commonLanguages {
             if sourceLanguage == targetLang { continue }
 
@@ -26,19 +30,34 @@ final class LanguagePackManager: ObservableObject {
             let target = Locale.Language(identifier: targetLang)
 
             let status = await availability.status(from: source, to: target)
-            languageStatuses["\(sourceLanguage)->\(targetLang)"] = status
+            await MainActor.run {
+                languageStatuses["\(sourceLanguage)->\(targetLang)"] = status
+            }
         }
-        isChecking = false
+
+        await MainActor.run {
+            isChecking = false
+            objectWillChange.send()
+        }
     }
 
     /// 检查特定语言对的可用性
     func checkLanguagePair(from sourceLanguage: String, to targetLanguage: String) async -> LanguageAvailability.Status {
-        isChecking = true
+        await MainActor.run {
+            isChecking = true
+            objectWillChange.send()
+        }
+
         let source = Locale.Language(identifier: sourceLanguage)
         let target = Locale.Language(identifier: targetLanguage)
         let status = await availability.status(from: source, to: target)
-        languageStatuses["\(sourceLanguage)->\(targetLanguage)"] = status
-        isChecking = false
+
+        await MainActor.run {
+            languageStatuses["\(sourceLanguage)->\(targetLanguage)"] = status
+            isChecking = false
+            objectWillChange.send()
+        }
+
         return status
     }
 

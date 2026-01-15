@@ -242,7 +242,7 @@ struct ContentView: View {
                 Spacer()
 
                 Button {
-                    Task {
+                    Task { @MainActor in
                         await model.permissions.refreshStatusAsync()
                         if #available(macOS 15.0, *) {
                             let status = await model.languagePackManager?.checkLanguagePair(
@@ -380,7 +380,7 @@ struct LanguagePickerSection: View {
             }
             .onAppear {
                 // 应用打开时立即检测当前 Target Language
-                Task {
+                Task { @MainActor in
                     let status = await model.languagePackManager?.checkLanguagePair(
                         from: sourceLanguage,
                         to: targetLanguage
@@ -444,7 +444,7 @@ struct LanguagePickerSection: View {
             .pickerStyle(.menu)
             .tint(.accentColor)
             .onChange(of: targetLanguage) { _, newValue in
-                Task {
+                Task { @MainActor in
                     let status = await model.languagePackManager?.checkLanguagePair(
                         from: sourceLanguage,
                         to: newValue
@@ -461,13 +461,16 @@ struct LanguagePickerSection: View {
 
     @ViewBuilder
     private var statusIcon: some View {
-        if model.languagePackManager?.isChecking == true {
+        let isChecking = model.languagePackManager?.isChecking ?? false
+        let status = getLanguagePackStatus(targetLanguage)
+
+        if isChecking {
             ProgressView()
                 .controlSize(.small)
                 .scaleEffect(0.7)
-        } else if let status = getLanguagePackStatus(targetLanguage) {
+        } else if let status = status {
             Button {
-                Task {
+                Task { @MainActor in
                     let newStatus = await model.languagePackManager?.checkLanguagePair(
                         from: sourceLanguage,
                         to: targetLanguage
