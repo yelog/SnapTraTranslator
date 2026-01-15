@@ -94,19 +94,13 @@ final class AppModel: ObservableObject {
         stopMouseTracking()
         debugOverlayWindowController.hide()
 
-        // 如果开启了持续翻译，释放快捷键时隐藏气泡
-        // 如果关闭了持续翻译，气泡保持显示（用户可以点击复制按钮）
-        if settings.continuousTranslation {
-            lookupTask?.cancel()
-            lookupTask = nil
-            activeLookupID = nil
-            overlayState = .idle
-            overlayWindowController.setInteractive(false)
-            overlayWindowController.hide()
-        } else {
-            // 非持续翻译模式：启用鼠标交互，让用户可以点击复制按钮
-            overlayWindowController.setInteractive(true)
-        }
+        // 松开快捷键时隐藏气泡
+        lookupTask?.cancel()
+        lookupTask = nil
+        activeLookupID = nil
+        overlayState = .idle
+        overlayWindowController.setInteractive(false)
+        overlayWindowController.hide()
     }
 
     /// 手动关闭气泡（用于非持续翻译模式）
