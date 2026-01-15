@@ -291,7 +291,7 @@ final class AppModel: ObservableObject {
                 // 如果词典有释义，尝试翻译每个释义
                 if !definitions.isEmpty {
                     var translatedDefinitions: [DictionaryEntry.Definition] = []
-                    for def in definitions.prefix(3) {
+                    for def in definitions {
                         if let translation = def.translation, !translation.isEmpty {
                             translatedDefinitions.append(def)
                             continue
