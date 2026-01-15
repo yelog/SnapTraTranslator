@@ -27,33 +27,43 @@ final class OCRService {
     }
 
     nonisolated private static func extractWords(from observations: [VNRecognizedTextObservation]) -> [RecognizedWord] {
+        #if DEBUG
+        print("[OCR] ========== New OCR Result ==========")
+        print("[OCR] Total observations: \(observations.count)")
+        #endif
+
         var words: [RecognizedWord] = []
-        for observation in observations {
+        for (obsIndex, observation) in observations.enumerated() {
             guard let candidate = observation.topCandidates(1).first else {
                 continue
             }
             let text = candidate.string
             let textBoundingBox = observation.boundingBox
             let refinedRanges = refinedTokenRanges(in: text[...])
+
+            #if DEBUG
+            print("[OCR] Observation \(obsIndex): '\(text)', tokenized into \(refinedRanges.count) parts")
+            for (i, range) in refinedRanges.enumerated() {
+                print("[OCR]   Token \(i): '\(text[range])'")
+            }
+            #endif
             
+            // 始终使用字符比例计算边界框，确保稳定性
+            // Vision 的 boundingBox(for:) 对自定义分词（CamelCase）支持不稳定
             for refinedRange in refinedRanges {
                 let substring = text[refinedRange]
                 guard containsLetter(in: substring) else {
                     continue
                 }
-                // 优先使用 Vision 提供的精确边界框，但需要验证是否真的是子范围边界框
-                let boundingBox: CGRect
-                if let visionBox = try? candidate.boundingBox(for: refinedRange),
-                   !areBoundingBoxesSimilar(visionBox.boundingBox, textBoundingBox) {
-                    // Vision 返回了不同于整体的边界框，说明是精确的子范围边界框
-                    boundingBox = visionBox.boundingBox
-                } else {
-                    // Vision 返回的边界框与整体相似，或者调用失败，使用 Core Text 计算
-                    guard let splitBox = boundingBoxBySplittingWithCoreText(textBoundingBox, text: text, for: refinedRange) else {
-                        continue
-                    }
-                    boundingBox = splitBox
+
+                guard let boundingBox = boundingBoxByCharacterRatio(textBoundingBox, text: text, for: refinedRange) else {
+                    continue
                 }
+
+                #if DEBUG
+                print("[OCR]   '\(substring)' box: x=\(String(format: "%.4f", boundingBox.minX)), w=\(String(format: "%.4f", boundingBox.width))")
+                #endif
+
                 words.append(RecognizedWord(text: String(substring), boundingBox: boundingBox))
             }
         }
@@ -100,7 +110,29 @@ final class OCRService {
         return ranges
     }
 
-    // 方案 1：使用 Core Text 测量实际字符宽度来计算边界框
+    // 使用简单的字符比例计算边界框（最稳定的方法）
+    private static func boundingBoxByCharacterRatio(_ textBox: CGRect, text: String, for range: Range<String.Index>) -> CGRect? {
+        let totalCount = text.count
+        guard totalCount > 0 else { return nil }
+        guard range.lowerBound >= text.startIndex, range.upperBound <= text.endIndex else { return nil }
+
+        let startOffset = text.distance(from: text.startIndex, to: range.lowerBound)
+        let endOffset = text.distance(from: text.startIndex, to: range.upperBound)
+
+        guard endOffset > startOffset else { return nil }
+
+        let startFraction = CGFloat(startOffset) / CGFloat(totalCount)
+        let endFraction = CGFloat(endOffset) / CGFloat(totalCount)
+
+        let x = textBox.minX + textBox.width * startFraction
+        let width = textBox.width * (endFraction - startFraction)
+
+        guard width > 0 else { return nil }
+
+        return CGRect(x: x, y: textBox.minY, width: width, height: textBox.height)
+    }
+
+    // 使用 Core Text 测量实际字符宽度来计算边界框（备用方法）
     private static func boundingBoxBySplittingWithCoreText(_ textBox: CGRect, text: String, for range: Range<String.Index>) -> CGRect? {
         guard range.lowerBound >= text.startIndex, range.upperBound <= text.endIndex else {
             return nil
