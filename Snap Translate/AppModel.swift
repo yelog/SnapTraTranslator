@@ -354,7 +354,25 @@ final class AppModel: ObservableObject {
         return CGPoint(x: x, y: y)
     }
 
+    // 选择光标所在的单词，当多个边界框重叠时选择中心点最近的
     private func selectWord(from words: [RecognizedWord], normalizedPoint: CGPoint) -> RecognizedWord? {
-        return words.first(where: { $0.boundingBox.contains(normalizedPoint) })
+        let tolerance: CGFloat = 0.01
+
+        // 筛选边界框包含光标的所有候选单词
+        let candidates = words.filter { word in
+            let expandedBox = word.boundingBox.insetBy(dx: -tolerance, dy: -tolerance)
+            return expandedBox.contains(normalizedPoint)
+        }
+
+        guard !candidates.isEmpty else { return nil }
+
+        // 选择边界框中心距离光标最近的单词
+        return candidates.min { word1, word2 in
+            let dist1 = hypot(word1.boundingBox.midX - normalizedPoint.x,
+                              word1.boundingBox.midY - normalizedPoint.y)
+            let dist2 = hypot(word2.boundingBox.midX - normalizedPoint.x,
+                              word2.boundingBox.midY - normalizedPoint.y)
+            return dist1 < dist2
+        }
     }
 }
