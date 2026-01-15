@@ -285,15 +285,6 @@ struct ContentView: View {
                 appeared = true
             }
         }
-        .background {
-            if #available(macOS 15.0, *) {
-                TranslationBridgeView(
-                    bridge: model.translationBridge,
-                    sourceLanguage: Locale.Language(identifier: model.settings.sourceLanguage),
-                    targetLanguage: Locale.Language(identifier: model.settings.targetLanguage)
-                )
-            }
-        }
     }
 }
 
