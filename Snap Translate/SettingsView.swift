@@ -34,6 +34,15 @@ struct SettingsView: View {
                 ) {
                     VStack(spacing: 14) {
                         SettingsToggleRow(
+                            title: "Continuous translation",
+                            subtitle: "Keep translating as mouse moves",
+                            isOn: $model.settings.continuousTranslation
+                        )
+
+                        Divider()
+                            .opacity(0.5)
+
+                        SettingsToggleRow(
                             title: "Play pronunciation",
                             subtitle: "Audio playback after translation",
                             isOn: $model.settings.playPronunciation

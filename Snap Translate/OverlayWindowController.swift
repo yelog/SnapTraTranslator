@@ -105,6 +105,11 @@ final class OverlayWindowController: NSWindowController {
         super.init(window: panel)
     }
 
+    /// 设置窗口是否接受鼠标事件
+    func setInteractive(_ interactive: Bool) {
+        window?.ignoresMouseEvents = !interactive
+    }
+
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")

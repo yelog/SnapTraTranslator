@@ -126,6 +126,28 @@ struct ContentView: View {
 
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
+                        Text("Continuous translation")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundStyle(.primary)
+                        Text("Keep translating as mouse moves")
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(.tertiary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $model.settings.continuousTranslation)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+
+                Divider()
+                    .padding(.horizontal, 14)
+                    .opacity(0.5)
+
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("Launch at login")
                             .font(.system(size: 13, weight: .regular))
                             .foregroundStyle(.primary)

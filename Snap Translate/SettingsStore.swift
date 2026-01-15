@@ -21,6 +21,9 @@ final class SettingsStore: ObservableObject {
     @Published var debugShowOcrRegion: Bool {
         didSet { defaults.set(debugShowOcrRegion, forKey: AppSettingKey.debugShowOcrRegion) }
     }
+    @Published var continuousTranslation: Bool {
+        didSet { defaults.set(continuousTranslation, forKey: AppSettingKey.continuousTranslation) }
+    }
 
     private let defaults: UserDefaults
 
@@ -31,6 +34,7 @@ final class SettingsStore: ObservableObject {
         let loginStatus = LoginItemManager.isEnabled()
         let singleKeyValue = defaults.string(forKey: AppSettingKey.singleKey)
         let debugShowOcrRegionValue = defaults.object(forKey: AppSettingKey.debugShowOcrRegion) as? Bool
+        let continuousTranslationValue = defaults.object(forKey: AppSettingKey.continuousTranslation) as? Bool
 
         playPronunciation = playPronunciationValue ?? true
         launchAtLogin = launchAtLoginValue ?? loginStatus
@@ -38,6 +42,7 @@ final class SettingsStore: ObservableObject {
         sourceLanguage = defaults.string(forKey: AppSettingKey.sourceLanguage) ?? "en"
         targetLanguage = defaults.string(forKey: AppSettingKey.targetLanguage) ?? "zh-Hans"
         debugShowOcrRegion = debugShowOcrRegionValue ?? false
+        continuousTranslation = continuousTranslationValue ?? true
     }
 
     var hotkeyDisplayText: String {

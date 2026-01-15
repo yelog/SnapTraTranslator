@@ -83,6 +83,8 @@ final class AppModel: ObservableObject {
     func handleHotkeyTrigger() {
         isHotkeyActive = true
         lastOcrPosition = NSEvent.mouseLocation
+        // 按下快捷键时，窗口不接受鼠标事件（避免干扰翻译流程）
+        overlayWindowController.setInteractive(false)
         startMouseTracking()
         startLookup()
     }
@@ -90,12 +92,31 @@ final class AppModel: ObservableObject {
     func handleHotkeyRelease() {
         isHotkeyActive = false
         stopMouseTracking()
+        debugOverlayWindowController.hide()
+
+        // 如果开启了持续翻译，释放快捷键时隐藏气泡
+        // 如果关闭了持续翻译，气泡保持显示（用户可以点击复制按钮）
+        if settings.continuousTranslation {
+            lookupTask?.cancel()
+            lookupTask = nil
+            activeLookupID = nil
+            overlayState = .idle
+            overlayWindowController.setInteractive(false)
+            overlayWindowController.hide()
+        } else {
+            // 非持续翻译模式：启用鼠标交互，让用户可以点击复制按钮
+            overlayWindowController.setInteractive(true)
+        }
+    }
+
+    /// 手动关闭气泡（用于非持续翻译模式）
+    func dismissOverlay() {
         lookupTask?.cancel()
         lookupTask = nil
         activeLookupID = nil
         overlayState = .idle
+        overlayWindowController.setInteractive(false)
         overlayWindowController.hide()
-        debugOverlayWindowController.hide()
     }
     
     private func startMouseTracking() {
@@ -131,13 +152,16 @@ final class AppModel: ObservableObject {
     
     private func handleMouseMoved() {
         guard isHotkeyActive else { return }
-        
+
+        // 如果关闭了持续翻译，鼠标移动不触发翻译
+        guard settings.continuousTranslation else { return }
+
         debounceWorkItem?.cancel()
-        
+
         let workItem = DispatchWorkItem { [weak self] in
             Task { @MainActor in
                 guard let self = self, self.isHotkeyActive else { return }
-                
+
                 let currentPosition = NSEvent.mouseLocation
                 if let lastPosition = self.lastOcrPosition {
                     let dx = abs(currentPosition.x - lastPosition.x)
@@ -146,7 +170,7 @@ final class AppModel: ObservableObject {
                         return
                     }
                 }
-                
+
                 self.lastOcrPosition = currentPosition
                 self.overlayAnchor = currentPosition
                 if case .idle = self.overlayState {
@@ -158,7 +182,7 @@ final class AppModel: ObservableObject {
             }
         }
         debounceWorkItem = workItem
-        
+
         DispatchQueue.main.asyncAfter(deadline: .now() + debounceInterval, execute: workItem)
     }
 
@@ -290,6 +314,13 @@ final class AppModel: ObservableObject {
             sendNotification(title: "Snap Translate", body: message)
         case .idle:
             break
+        case .result:
+            overlayState = state
+            overlayWindowController.show(at: overlayAnchor)
+            // 非持续翻译模式下，显示结果后立即启用鼠标交互，让用户可以点击复制按钮
+            if !settings.continuousTranslation {
+                overlayWindowController.setInteractive(true)
+            }
         default:
             overlayState = state
             overlayWindowController.show(at: overlayAnchor)

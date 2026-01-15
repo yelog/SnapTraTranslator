@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct OverlayView: View {
@@ -119,6 +120,11 @@ struct OverlayView: View {
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
 
+            // 非持续模式下显示复制按钮
+            if !model.settings.continuousTranslation {
+                CopyButton(text: content.word)
+            }
+
             if let phonetic = content.phonetic, !phonetic.isEmpty {
                 Text(phonetic)
                     .font(.system(size: 12, weight: .regular, design: .monospaced))
@@ -132,6 +138,23 @@ struct OverlayView: View {
             }
 
             Spacer()
+
+            // 非持续模式下显示关闭按钮
+            if !model.settings.continuousTranslation {
+                Button {
+                    model.dismissOverlay()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .background(
+                            Circle()
+                                .fill(.secondary.opacity(0.1))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
@@ -140,21 +163,28 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func primaryTranslationSection(content: OverlayContent) -> some View {
-        if !content.definitions.isEmpty {
-            // 如果有详细定义，显示简洁的主翻译
-            Text(content.translation)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.blue)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
-        } else {
-            // 没有详细定义时，显示更大的翻译
-            Text(content.translation)
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 14)
+        HStack(spacing: 6) {
+            if !content.definitions.isEmpty {
+                // 如果有详细定义，显示简洁的主翻译
+                Text(content.translation)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.blue)
+            } else {
+                // 没有详细定义时，显示更大的翻译
+                Text(content.translation)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(.primary)
+            }
+
+            // 非持续模式下显示复制按钮
+            if !model.settings.continuousTranslation {
+                CopyButton(text: content.translation)
+            }
+
+            Spacer()
         }
+        .padding(.horizontal, 16)
+        .padding(.bottom, content.definitions.isEmpty ? 14 : 12)
     }
 
     @ViewBuilder
@@ -290,6 +320,44 @@ struct LoadingDotsView: View {
         .onAppear {
             animating = true
         }
+    }
+}
+
+// MARK: - Copy Button
+
+struct CopyButton: View {
+    let text: String
+    @State private var copied = false
+
+    var body: some View {
+        Button {
+            copyToClipboard(text)
+            withAnimation(.easeInOut(duration: 0.2)) {
+                copied = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    copied = false
+                }
+            }
+        } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(copied ? .green : .secondary)
+                .frame(width: 18, height: 18)
+                .background(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(copied ? Color.green.opacity(0.1) : Color.secondary.opacity(0.1))
+                )
+        }
+        .buttonStyle(.plain)
+        .help("Copy to clipboard")
+    }
+
+    private func copyToClipboard(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 }
 
