@@ -34,6 +34,21 @@ struct ContentView: View {
         return allPermissionsGranted
     }
 
+    private var engineDescription: String {
+        switch model.settings.translationEngine {
+        case .apple:
+            return "macOS built-in translation"
+        case .google:
+            return "Google Translate"
+        case .bing:
+            return "Bing Translator"
+        case .baidu:
+            return "Baidu Translate"
+        case .youdao:
+            return "Youdao Dictionary"
+        }
+    }
+
 
 
     var body: some View {
@@ -107,6 +122,32 @@ struct ContentView: View {
                     Picker("", selection: $model.settings.singleKey) {
                         ForEach(SingleKey.allCases) { key in
                             Text(key.title).tag(key)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .tint(.accentColor)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+
+                Divider()
+                    .padding(.horizontal, 14)
+                    .opacity(0.5)
+
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Translation Engine")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundStyle(.primary)
+                        Text(engineDescription)
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(.tertiary)
+                    }
+                    Spacer()
+                    Picker("", selection: $model.settings.translationEngine) {
+                        ForEach(TranslationEngineType.allCases) { engine in
+                            Text(engine.displayName).tag(engine)
                         }
                     }
                     .labelsHidden()

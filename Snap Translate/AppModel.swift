@@ -35,6 +35,7 @@ final class AppModel: ObservableObject {
     @Published var settings: SettingsStore
     let permissions: PermissionManager
     let translationBridge: TranslationBridge
+    let engineManager: TranslationEngineManager
     private var _languagePackManager: Any?
 
     @available(macOS 15.0, *)
@@ -71,6 +72,11 @@ final class AppModel: ObservableObject {
         self.settings = resolvedSettings
         self.permissions = resolvedPermissions
         self.translationBridge = TranslationBridge()
+        self.engineManager = TranslationEngineManager(
+            bridge: translationBridge,
+            configurations: resolvedSettings.engineConfigurations
+        )
+        engineManager.selectedEngineType = resolvedSettings.translationEngine
         if #available(macOS 15.0, *) {
             self.languagePackManager = LanguagePackManager()
         }
@@ -251,80 +257,64 @@ final class AppModel: ObservableObject {
             updateOverlay(state: .loading(selected.text), anchor: mouseLocation)
             let sourceLanguage = Locale.Language(identifier: settings.sourceLanguage)
             let targetLanguage = Locale.Language(identifier: settings.targetLanguage)
-            if settings.playPronunciation {
-                let languageCode = sourceLanguage.languageCode?.identifier
-                speechService.speak(selected.text, language: languageCode)
-            }
             guard !Task.isCancelled, activeLookupID == lookupID else { return }
 
-            // 从系统词典获取完整信息
-            let dictEntry = dictionaryService.lookup(selected.text)
-            let phonetic = dictEntry?.phonetic
-            var definitions = dictEntry?.definitions ?? []
-
             if sourceLanguage.minimalIdentifier == targetLanguage.minimalIdentifier {
+                let dictEntry = dictionaryService.lookup(selected.text)
                 let content = OverlayContent(
                     word: selected.text,
-                    phonetic: phonetic,
+                    phonetic: dictEntry?.phonetic,
                     translation: selected.text,
-                    definitions: definitions
+                    definitions: dictEntry?.definitions ?? []
                 )
                 updateOverlay(state: .result(content), anchor: mouseLocation)
+                if settings.playPronunciation {
+                    let languageCode = sourceLanguage.languageCode?.identifier
+                    speechService.speak(selected.text, language: languageCode)
+                }
                 return
             }
 
-            if #available(macOS 15.0, *) {
-                let availability = LanguageAvailability()
-                let status = await availability.status(from: sourceLanguage, to: targetLanguage)
-                guard status == .installed else {
-                    let message = status == .supported
-                        ? "Language pack required. Please download in System Settings > General > Language & Region > Translation."
-                        : "Translation not supported for this language pair."
-                    updateOverlay(state: .error(message), anchor: mouseLocation)
-                    return
+            // Use translation engine manager for translation
+            print("🔍 Starting translation with engine: \(settings.translationEngine)")
+            print("🔍 Text: \(selected.text), From: \(settings.sourceLanguage), To: \(settings.targetLanguage)")
+            let result = try await engineManager.translate(
+                text: selected.text,
+                from: settings.sourceLanguage,
+                to: settings.targetLanguage
+            )
+            print("✅ Translation successful: \(result.translation)")
+            guard !Task.isCancelled, activeLookupID == lookupID else { return }
+
+            // Play pronunciation
+            if settings.playPronunciation {
+                if let audioURL = result.audioURL {
+                    speechService.playAudio(from: audioURL)
+                } else {
+                    let languageCode = sourceLanguage.languageCode?.identifier
+                    speechService.speak(selected.text, language: languageCode)
                 }
-
-                // 翻译单词
-                let translated = try await translationBridge.translate(text: selected.text, source: sourceLanguage, target: targetLanguage)
-                guard !Task.isCancelled, activeLookupID == lookupID else { return }
-
-                // 如果词典有释义，尝试翻译每个释义
-                if !definitions.isEmpty {
-                    var translatedDefinitions: [DictionaryEntry.Definition] = []
-                    for def in definitions.prefix(3) {
-                        var translatedDef = def
-                        if let meaningTranslation = try? await translationBridge.translate(
-                            text: def.meaning,
-                            source: sourceLanguage,
-                            target: targetLanguage
-                        ) {
-                            translatedDef = DictionaryEntry.Definition(
-                                partOfSpeech: def.partOfSpeech,
-                                meaning: def.meaning,
-                                translation: meaningTranslation,
-                                examples: def.examples
-                            )
-                        }
-                        translatedDefinitions.append(translatedDef)
-                    }
-                    definitions = translatedDefinitions
-                }
-
-                let content = OverlayContent(
-                    word: selected.text,
-                    phonetic: phonetic,
-                    translation: translated,
-                    definitions: definitions
-                )
-                updateOverlay(state: .result(content), anchor: mouseLocation)
-            } else {
-                updateOverlay(state: .error("Translation requires macOS 15"), anchor: mouseLocation)
             }
+
+            let content = OverlayContent(
+                word: result.word,
+                phonetic: result.phonetic,
+                translation: result.translation,
+                definitions: result.definitions
+            )
+            updateOverlay(state: .result(content), anchor: mouseLocation)
         } catch is CancellationError {
             // Task was cancelled, do nothing
+            print("⚠️ Translation cancelled")
+        } catch let error as TranslationEngineError {
+            print("❌ TranslationEngineError: \(error)")
+            let errorMessage = error.errorDescription ?? "Translation engine error"
+            updateOverlay(state: .error(errorMessage), anchor: mouseLocation)
         } catch TranslationError.timeout {
+            print("❌ Translation timeout")
             updateOverlay(state: .error("Translation timeout. Please try again."), anchor: mouseLocation)
         } catch {
+            print("❌ Unexpected error: \(error)")
             updateOverlay(state: .error("Translation failed: \(error.localizedDescription)"), anchor: mouseLocation)
         }
     }
@@ -376,6 +366,21 @@ final class AppModel: ObservableObject {
             .sink { [weak self] isEnabled in
                 if !isEnabled {
                     self?.debugOverlayWindowController.hide()
+                }
+            }
+            .store(in: &cancellables)
+
+        settings.$translationEngine
+            .sink { [weak self] engineType in
+                self?.engineManager.switchEngine(to: engineType)
+            }
+            .store(in: &cancellables)
+
+        settings.$engineConfigurations
+            .sink { [weak self] configs in
+                guard let self = self else { return }
+                for engineType in TranslationEngineType.allCases {
+                    self.engineManager.updateConfiguration(for: engineType, config: configs[engineType])
                 }
             }
             .store(in: &cancellables)

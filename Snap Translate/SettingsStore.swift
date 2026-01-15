@@ -24,6 +24,16 @@ final class SettingsStore: ObservableObject {
     @Published var continuousTranslation: Bool {
         didSet { defaults.set(continuousTranslation, forKey: AppSettingKey.continuousTranslation) }
     }
+    @Published var translationEngine: TranslationEngineType {
+        didSet { defaults.set(translationEngine.rawValue, forKey: AppSettingKey.translationEngine) }
+    }
+    @Published var engineConfigurations: EngineConfigurations {
+        didSet {
+            if let data = try? JSONEncoder().encode(engineConfigurations) {
+                defaults.set(data, forKey: AppSettingKey.engineConfigurations)
+            }
+        }
+    }
 
     private let defaults: UserDefaults
 
@@ -43,6 +53,18 @@ final class SettingsStore: ObservableObject {
         targetLanguage = defaults.string(forKey: AppSettingKey.targetLanguage) ?? "zh-Hans"
         debugShowOcrRegion = debugShowOcrRegionValue ?? false
         continuousTranslation = continuousTranslationValue ?? true
+
+        // Translation engine
+        let engineRawValue = defaults.string(forKey: AppSettingKey.translationEngine) ?? "apple"
+        translationEngine = TranslationEngineType(rawValue: engineRawValue) ?? .apple
+
+        // Engine configurations
+        if let data = defaults.data(forKey: AppSettingKey.engineConfigurations),
+           let configs = try? JSONDecoder().decode(EngineConfigurations.self, from: data) {
+            engineConfigurations = configs
+        } else {
+            engineConfigurations = EngineConfigurations()
+        }
     }
 
     var hotkeyDisplayText: String {

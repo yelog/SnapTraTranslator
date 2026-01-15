@@ -27,10 +27,13 @@ struct SettingsView: View {
                     }
                 }
 
+                TranslationEngineSettingsView()
+                    .environmentObject(model.settings)
+
                 SettingsSectionCard(
                     title: "Behavior",
                     icon: "gearshape",
-                    delay: 0.05
+                    delay: 0.1
                 ) {
                     VStack(spacing: 14) {
                         SettingsToggleRow(
@@ -62,7 +65,7 @@ struct SettingsView: View {
                 SettingsSectionCard(
                     title: "Permissions",
                     icon: "lock.shield",
-                    delay: 0.1
+                    delay: 0.15
                 ) {
                     VStack(spacing: 14) {
                         PermissionRow(
