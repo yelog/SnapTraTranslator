@@ -9,6 +9,14 @@ struct OverlayContent: Equatable {
     var word: String
     var phonetic: String?
     var translation: String
+    var definitions: [DictionaryEntry.Definition]
+
+    init(word: String, phonetic: String?, translation: String, definitions: [DictionaryEntry.Definition] = []) {
+        self.word = word
+        self.phonetic = phonetic
+        self.translation = translation
+        self.definitions = definitions
+    }
 }
 
 enum OverlayState: Equatable {
@@ -31,7 +39,7 @@ final class AppModel: ObservableObject {
     private let hotkeyManager = HotkeyManager()
     private let captureService = ScreenCaptureService()
     private let ocrService = OCRService()
-    private let phoneticService = PhoneticService()
+    private let dictionaryService = DictionaryService()
     private let speechService = SpeechService()
     private var cancellables = Set<AnyCancellable>()
     private var lookupTask: Task<Void, Never>?
@@ -204,12 +212,23 @@ final class AppModel: ObservableObject {
                 speechService.speak(selected.text, language: languageCode)
             }
             guard !Task.isCancelled, activeLookupID == lookupID else { return }
-            let phonetic = phoneticService.phonetic(for: selected.text)
+
+            // 从系统词典获取完整信息
+            let dictEntry = dictionaryService.lookup(selected.text)
+            let phonetic = dictEntry?.phonetic
+            var definitions = dictEntry?.definitions ?? []
+
             if sourceLanguage.minimalIdentifier == targetLanguage.minimalIdentifier {
-                let content = OverlayContent(word: selected.text, phonetic: phonetic, translation: selected.text)
+                let content = OverlayContent(
+                    word: selected.text,
+                    phonetic: phonetic,
+                    translation: selected.text,
+                    definitions: definitions
+                )
                 updateOverlay(state: .result(content), anchor: mouseLocation)
                 return
             }
+
             if #available(macOS 15.0, *) {
                 let availability = LanguageAvailability()
                 let status = await availability.status(from: sourceLanguage, to: targetLanguage)
@@ -220,9 +239,39 @@ final class AppModel: ObservableObject {
                     updateOverlay(state: .error(message), anchor: mouseLocation)
                     return
                 }
+
+                // 翻译单词
                 let translated = try await translationBridge.translate(text: selected.text, source: sourceLanguage, target: targetLanguage)
                 guard !Task.isCancelled, activeLookupID == lookupID else { return }
-                let content = OverlayContent(word: selected.text, phonetic: phonetic, translation: translated)
+
+                // 如果词典有释义，尝试翻译每个释义
+                if !definitions.isEmpty {
+                    var translatedDefinitions: [DictionaryEntry.Definition] = []
+                    for def in definitions.prefix(3) {
+                        var translatedDef = def
+                        if let meaningTranslation = try? await translationBridge.translate(
+                            text: def.meaning,
+                            source: sourceLanguage,
+                            target: targetLanguage
+                        ) {
+                            translatedDef = DictionaryEntry.Definition(
+                                partOfSpeech: def.partOfSpeech,
+                                meaning: def.meaning,
+                                translation: meaningTranslation,
+                                examples: def.examples
+                            )
+                        }
+                        translatedDefinitions.append(translatedDef)
+                    }
+                    definitions = translatedDefinitions
+                }
+
+                let content = OverlayContent(
+                    word: selected.text,
+                    phonetic: phonetic,
+                    translation: translated,
+                    definitions: definitions
+                )
                 updateOverlay(state: .result(content), anchor: mouseLocation)
             } else {
                 updateOverlay(state: .error("Translation requires macOS 15"), anchor: mouseLocation)
