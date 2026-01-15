@@ -16,6 +16,24 @@ struct ContentView: View {
         model.permissions.status.screenRecording && model.permissions.status.inputMonitoring
     }
 
+    @available(macOS 15.0, *)
+    private var targetLanguageReady: Bool {
+        guard let status = model.languagePackManager?.getStatus(
+            from: model.settings.sourceLanguage,
+            to: model.settings.targetLanguage
+        ) else {
+            return false
+        }
+        return status == .installed
+    }
+
+    private var allReady: Bool {
+        if #available(macOS 15.0, *) {
+            return allPermissionsGranted && targetLanguageReady
+        }
+        return allPermissionsGranted
+    }
+
 
 
     var body: some View {
@@ -209,7 +227,7 @@ struct ContentView: View {
             }
 
             HStack(spacing: 12) {
-                if allPermissionsGranted {
+                if allReady {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 12, weight: .medium))
@@ -224,7 +242,19 @@ struct ContentView: View {
                 Spacer()
 
                 Button {
-                    Task { await model.permissions.refreshStatusAsync() }
+                    Task {
+                        await model.permissions.refreshStatusAsync()
+                        if #available(macOS 15.0, *) {
+                            let status = await model.languagePackManager?.checkLanguagePair(
+                                from: model.settings.sourceLanguage,
+                                to: model.settings.targetLanguage
+                            )
+                            // 检查后如果未安装，提示用户
+                            if status != .installed {
+                                // 这里会触发 LanguagePickerSection 的检测和弹窗
+                            }
+                        }
+                    }
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "arrow.clockwise")
@@ -244,7 +274,7 @@ struct ContentView: View {
                 .contentShape(Capsule())
             }
             .opacity(appeared ? 1 : 0)
-            .animation(.easeInOut(duration: 0.2), value: allPermissionsGranted)
+            .animation(.easeInOut(duration: 0.2), value: allReady)
         }
         .padding(24)
         .frame(width: 360)
@@ -348,6 +378,18 @@ struct LanguagePickerSection: View {
             } message: {
                 Text("The language pack for \(unavailableLanguageName) is not installed. Please download it in System Settings > General > Language & Region > Translation Languages.")
             }
+            .onAppear {
+                // 应用打开时立即检测当前 Target Language
+                Task {
+                    let status = await model.languagePackManager?.checkLanguagePair(
+                        from: sourceLanguage,
+                        to: targetLanguage
+                    )
+                    if status != .installed {
+                        checkLanguageAvailability(targetLanguage)
+                    }
+                }
+            }
     }
 
     private var mainContent: some View {
@@ -376,6 +418,8 @@ struct LanguagePickerSection: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .tint(.accentColor)
+            .disabled(true)
+            .opacity(0.6)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -400,7 +444,15 @@ struct LanguagePickerSection: View {
             .pickerStyle(.menu)
             .tint(.accentColor)
             .onChange(of: targetLanguage) { _, newValue in
-                checkLanguageAvailability(newValue)
+                Task {
+                    let status = await model.languagePackManager?.checkLanguagePair(
+                        from: sourceLanguage,
+                        to: newValue
+                    )
+                    if status != .installed {
+                        checkLanguageAvailability(newValue)
+                    }
+                }
             }
         }
         .padding(.horizontal, 14)
@@ -409,10 +461,28 @@ struct LanguagePickerSection: View {
 
     @ViewBuilder
     private var statusIcon: some View {
-        if let status = getLanguagePackStatus(targetLanguage) {
-            Image(systemName: status == .installed ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(status == .installed ? .green : .red)
+        if model.languagePackManager?.isChecking == true {
+            ProgressView()
+                .controlSize(.small)
+                .scaleEffect(0.7)
+        } else if let status = getLanguagePackStatus(targetLanguage) {
+            Button {
+                Task {
+                    let newStatus = await model.languagePackManager?.checkLanguagePair(
+                        from: sourceLanguage,
+                        to: targetLanguage
+                    )
+                    if newStatus != .installed {
+                        checkLanguageAvailability(targetLanguage)
+                    }
+                }
+            } label: {
+                Image(systemName: status == .installed ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(status == .installed ? .green : .red)
+            }
+            .buttonStyle(.plain)
+            .help(status == .installed ? "Language pack installed" : "Click to check and download")
         }
     }
 

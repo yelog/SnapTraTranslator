@@ -89,9 +89,6 @@ final class AppModel: ObservableObject {
         resolvedPermissions.refreshStatus()
         Task {
             await checkLanguageAvailability()
-            if #available(macOS 15.0, *) {
-                await languagePackManager?.checkAllLanguages(from: resolvedSettings.sourceLanguage)
-            }
         }
     }
 
@@ -371,7 +368,7 @@ final class AppModel: ObservableObject {
 
         settings.$sourceLanguage
             .combineLatest(settings.$targetLanguage)
-            .sink { [weak self] sourceLanguage, _ in
+            .sink { [weak self] _, _ in
                 guard let self = self else { return }
                 // Cancel any ongoing translation when language changes
                 self.lookupTask?.cancel()
@@ -382,9 +379,6 @@ final class AppModel: ObservableObject {
                 }
                 Task {
                     await self.checkLanguageAvailability()
-                    if #available(macOS 15.0, *) {
-                        await self.languagePackManager?.checkAllLanguages(from: sourceLanguage)
-                    }
                 }
             }
             .store(in: &cancellables)
