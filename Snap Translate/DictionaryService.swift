@@ -128,11 +128,12 @@ final class DictionaryService {
 
         // 如果没有提取到词性分组，尝试直接提取释义
         if definitions.isEmpty {
+            let fallbackPOS = extractPlainTextPartOfSpeech(from: html) ?? ""
             let plainMeanings = extractPlainTextMeanings(from: html)
             if !plainMeanings.isEmpty {
                 for meaning in plainMeanings.prefix(3) {
                     definitions.append(DictionaryEntry.Definition(
-                        partOfSpeech: "",
+                        partOfSpeech: fallbackPOS,
                         meaning: meaning.meaning,
                         translation: meaning.translation,
                         examples: []
@@ -144,7 +145,7 @@ final class DictionaryService {
 
                 for meaning in allMeanings.prefix(3) {
                     definitions.append(DictionaryEntry.Definition(
-                        partOfSpeech: "",
+                        partOfSpeech: fallbackPOS,
                         meaning: meaning,
                         translation: nil,
                         examples: allExamples
@@ -231,6 +232,40 @@ final class DictionaryService {
         let translation: String?
     }
 
+    private func extractPlainTextPartOfSpeech(from html: String) -> String? {
+        let text = stripHTML(html)
+        guard !text.isEmpty else { return nil }
+        let header = splitPlainTextSenses(text).first ?? text
+        if let headerPOS = findFirstPartOfSpeech(in: header) {
+            return headerPOS
+        }
+        return findFirstPartOfSpeech(in: text)
+    }
+
+    private func findFirstPartOfSpeech(in text: String) -> String? {
+        guard let range = findFirstPartOfSpeechRange(in: text) else { return nil }
+        let label = String(text[range])
+        return normalizePOS(label)
+    }
+
+    private func findFirstPartOfSpeechRange(in text: String) -> Range<String.Index>? {
+        let pattern = "(transitive verb|intransitive verb|noun|verb|adjective|adverb|preposition|conjunction|pronoun|interjection|vt\\.?|vi\\.?|n\\.|v\\.|adj\\.|adv\\.|名词|动词|形容词|副词)"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return nil
+        }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              match.numberOfRanges > 1,
+              let matchRange = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return matchRange
+    }
+
+    private func isHeaderLine(_ text: String) -> Bool {
+        text.contains("BrE") || text.contains("AmE")
+    }
+
     private func extractPlainTextPartOfSpeechGroups(from html: String) -> [(String, String)] {
         let text = stripHTML(html)
         guard !text.isEmpty else { return [] }
@@ -239,40 +274,59 @@ final class DictionaryService {
         }
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         let matches = regex.matches(in: text, options: [], range: range)
-        guard !matches.isEmpty else { return [] }
 
         var groups: [(String, String)] = []
-        for (index, match) in matches.enumerated() {
-            let startIndex = match.range.upperBound
-            guard let contentStart = text.index(text.startIndex, offsetBy: startIndex, limitedBy: text.endIndex) else {
-                continue
-            }
-            let (posLabel, posEndIndex) = parsePOSLabel(in: text, from: contentStart)
-            let normalizedPOS = normalizePOS(posLabel)
-            guard isValidPartOfSpeech(posLabel), !normalizedPOS.isEmpty else { continue }
+        if !matches.isEmpty {
+            for (index, match) in matches.enumerated() {
+                let startIndex = match.range.upperBound
+                guard let contentStart = text.index(text.startIndex, offsetBy: startIndex, limitedBy: text.endIndex) else {
+                    continue
+                }
+                let (posLabel, posEndIndex) = parsePOSLabel(in: text, from: contentStart)
+                let normalizedPOS = normalizePOS(posLabel)
+                guard isValidPartOfSpeech(posLabel), !normalizedPOS.isEmpty else { continue }
 
-            let contentStartIndex = skipWhitespace(in: text, from: posEndIndex)
-            let endIndex: Int
-            if index + 1 < matches.count {
-                endIndex = matches[index + 1].range.lowerBound
-            } else {
-                endIndex = text.utf16.count
-            }
+                let contentStartIndex = skipWhitespace(in: text, from: posEndIndex)
+                let endIndex: Int
+                if index + 1 < matches.count {
+                    endIndex = matches[index + 1].range.lowerBound
+                } else {
+                    endIndex = text.utf16.count
+                }
 
-            if let contentEndIndex = text.index(text.startIndex, offsetBy: min(endIndex, text.utf16.count), limitedBy: text.endIndex),
-               contentStartIndex < contentEndIndex {
-                let content = String(text[contentStartIndex..<contentEndIndex])
-                groups.append((normalizedPOS, content))
+                if let contentEndIndex = text.index(text.startIndex, offsetBy: min(endIndex, text.utf16.count), limitedBy: text.endIndex),
+                   contentStartIndex < contentEndIndex {
+                    let content = String(text[contentStartIndex..<contentEndIndex])
+                    groups.append((normalizedPOS, content))
+                }
             }
         }
 
-        return groups
+        if !groups.isEmpty {
+            return groups
+        }
+
+        if let posRange = findFirstPartOfSpeechRange(in: text) {
+            let posLabel = String(text[posRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalizedPOS = normalizePOS(posLabel)
+            let contentStartIndex = skipWhitespace(in: text, from: posRange.upperBound)
+            let content = String(text[contentStartIndex...])
+            if !content.isEmpty, isValidPartOfSpeech(posLabel) {
+                return [(normalizedPOS, content)]
+            }
+        }
+
+        return []
     }
 
     private func extractPlainTextMeanings(from html: String) -> [PlainTextMeaning] {
         let text = stripHTML(html)
-        let senses = splitPlainTextSenses(text)
+        var senses = splitPlainTextSenses(text)
         guard !senses.isEmpty else { return [] }
+
+        if let first = senses.first, isHeaderLine(first) {
+            senses.removeFirst()
+        }
 
         var meanings: [PlainTextMeaning] = []
         for sense in senses {
@@ -322,7 +376,19 @@ final class DictionaryService {
         guard !englishPart.isEmpty else {
             return PlainTextMeaning(meaning: trimmed, translation: nil)
         }
-        return PlainTextMeaning(meaning: englishPart, translation: chinesePart.isEmpty ? nil : chinesePart)
+        let cleanedTranslation = sanitizePlainTextTranslation(chinesePart)
+        return PlainTextMeaning(meaning: englishPart, translation: cleanedTranslation.isEmpty ? nil : cleanedTranslation)
+    }
+
+    private func sanitizePlainTextTranslation(_ text: String) -> String {
+        var result = text
+        let latinPattern = "[A-Za-z\\u00C0-\\u024F\\u1E00-\\u1EFF]+"
+        result = result.replacingOccurrences(of: "«[^»]*»", with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "‹[^›]*›", with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "\\([^\\)]*[A-Za-z\\u00C0-\\u024F\\u1E00-\\u1EFF][^\\)]*\\)", with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: latinPattern, with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func parsePOSLabel(in text: String, from startIndex: String.Index) -> (String, String.Index) {

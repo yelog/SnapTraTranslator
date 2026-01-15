@@ -189,66 +189,67 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func definitionsSection(definitions: [DictionaryEntry.Definition]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Divider()
-                .padding(.horizontal, 16)
+        let grouped = groupedTranslations(from: definitions)
+        if grouped.isEmpty {
+            EmptyView()
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                Divider()
+                    .padding(.horizontal, 16)
 
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(Array(definitions.enumerated()), id: \.offset) { index, def in
-                    definitionRow(definition: def, index: index)
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(grouped.enumerated()), id: \.offset) { _, group in
+                        definitionGroupRow(partOfSpeech: group.0, translations: group.1)
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
         }
     }
 
     @ViewBuilder
-    private func definitionRow(definition: DictionaryEntry.Definition, index: Int) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                // 词性标签
-                if !definition.partOfSpeech.isEmpty {
-                    Text(definition.partOfSpeech)
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(posColor(for: definition.partOfSpeech))
-                        )
-                }
-
-                // 翻译
-                if let translation = definition.translation {
-                    Text(translation)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.primary.opacity(0.9))
-                }
+    private func definitionGroupRow(partOfSpeech: String, translations: [String]) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if !partOfSpeech.isEmpty {
+                Text(partOfSpeech)
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(posColor(for: partOfSpeech))
+                    )
             }
 
-            // 英文释义
-            Text(definition.meaning)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(.secondary)
-                .lineSpacing(2)
-                .lineLimit(3)
+            Text(translations.joined(separator: "；"))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.9))
+                .lineLimit(2)
+        }
+    }
 
-            // 例句
-            if let example = definition.examples.first {
-                HStack(alignment: .top, spacing: 4) {
-                    Text("▸")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary.opacity(0.6))
-                    Text(example)
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(.secondary.opacity(0.7))
-                        .italic()
-                        .lineLimit(2)
-                }
-                .padding(.top, 2)
+    private func groupedTranslations(from definitions: [DictionaryEntry.Definition]) -> [(String, [String])] {
+        var order: [String] = []
+        var grouped: [String: [String]] = [:]
+
+        for definition in definitions {
+            guard let translation = definition.translation?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !translation.isEmpty else { continue }
+            let key = definition.partOfSpeech
+            if grouped[key] == nil {
+                order.append(key)
+                grouped[key] = []
             }
+            if grouped[key]?.contains(translation) == false {
+                grouped[key]?.append(translation)
+            }
+        }
+
+        return order.compactMap { key in
+            guard let translations = grouped[key], !translations.isEmpty else { return nil }
+            return (key, translations)
         }
     }
 
