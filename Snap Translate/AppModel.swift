@@ -292,6 +292,10 @@ final class AppModel: ObservableObject {
                 if !definitions.isEmpty {
                     var translatedDefinitions: [DictionaryEntry.Definition] = []
                     for def in definitions.prefix(3) {
+                        if let translation = def.translation, !translation.isEmpty {
+                            translatedDefinitions.append(def)
+                            continue
+                        }
                         var translatedDef = def
                         if let meaningTranslation = try? await translationBridge.translate(
                             text: def.meaning,
