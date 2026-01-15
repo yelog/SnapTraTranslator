@@ -209,10 +209,17 @@ final class AppModel: ObservableObject {
         }
         let mouseLocation = NSEvent.mouseLocation
         guard activeLookupID == lookupID else { return }
-        updateOverlay(state: .loading(nil), anchor: mouseLocation)
+
+        // 只在调试模式下显示初始 loading 状态
+        if settings.debugShowOcrRegion {
+            updateOverlay(state: .loading(nil), anchor: mouseLocation)
+        }
+
         guard let capture = await captureService.captureAroundCursor() else {
             debugOverlayWindowController.hide()
-            updateOverlay(state: .error("Capture failed"), anchor: mouseLocation)
+            if settings.debugShowOcrRegion {
+                updateOverlay(state: .error("Capture failed"), anchor: mouseLocation)
+            }
             return
         }
         if settings.debugShowOcrRegion {
@@ -230,7 +237,14 @@ final class AppModel: ObservableObject {
                 debugOverlayWindowController.show(at: capture.region.rect, wordBoxes: wordBoxes)
             }
             guard let selected = selectWord(from: words, normalizedPoint: normalizedPoint) else {
-                updateOverlay(state: .noWord, anchor: mouseLocation)
+                // 只在调试模式下显示 "No word detected" 气泡
+                if settings.debugShowOcrRegion {
+                    updateOverlay(state: .noWord, anchor: mouseLocation)
+                } else {
+                    // 非调试模式下，隐藏气泡
+                    overlayState = .idle
+                    overlayWindowController.hide()
+                }
                 return
             }
             guard activeLookupID == lookupID else { return }
