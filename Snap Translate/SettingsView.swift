@@ -211,6 +211,7 @@ struct HotkeyKeycapSelector: View {
         } label: {
             HotkeyKeycapButton(
                 symbol: symbol(for: key),
+                tooltip: tooltip(for: key),
                 isSelected: selectedKey == key
             )
         }
@@ -231,11 +232,39 @@ struct HotkeyKeycapSelector: View {
             return "Fn"
         }
     }
+
+    private func tooltip(for key: SingleKey) -> String {
+        switch key {
+        case .leftShift:
+            return "Left Shift"
+        case .rightShift:
+            return "Right Shift"
+        case .leftControl:
+            return "Left Control"
+        case .rightControl:
+            return "Right Control"
+        case .leftOption:
+            return "Left Option"
+        case .rightOption:
+            return "Right Option"
+        case .leftCommand:
+            return "Left Command"
+        case .rightCommand:
+            return "Right Command"
+        case .fn:
+            return "Fn"
+        }
+    }
 }
 
 private struct HotkeyKeycapButton: View {
     let symbol: String
+    let tooltip: String
     let isSelected: Bool
+
+    @State private var isHovering = false
+    @State private var showTooltip = false
+    @State private var hoverWorkItem: DispatchWorkItem?
 
     var body: some View {
         Text(symbol)
@@ -251,7 +280,40 @@ private struct HotkeyKeycapButton: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(isSelected ? Color.accentColor.opacity(0.5) : Color.secondary.opacity(0.2), lineWidth: 1)
             )
+            .overlay(alignment: .top) {
+                if showTooltip {
+                    Text(tooltip)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color(nsColor: .windowBackgroundColor))
+                                .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+                        )
+                        .offset(y: -26)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
             .animation(.easeInOut(duration: 0.2), value: isSelected)
+            .onHover { hovering in
+                isHovering = hovering
+                hoverWorkItem?.cancel()
+                if hovering {
+                    let workItem = DispatchWorkItem {
+                        if isHovering {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showTooltip = true
+                            }
+                        }
+                    }
+                    hoverWorkItem = workItem
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
+                } else {
+                    showTooltip = false
+                }
+            }
     }
 }
 

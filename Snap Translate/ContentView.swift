@@ -110,7 +110,7 @@ struct ContentView: View {
 
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Play pronunciation")
+                        Text("Play Pronunciation")
                             .font(.system(size: 13, weight: .regular))
                             .foregroundStyle(.primary)
                         Text("Audio playback after translation")
@@ -132,7 +132,7 @@ struct ContentView: View {
 
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Continuous translation")
+                        Text("Continuous Translation")
                             .font(.system(size: 13, weight: .regular))
                             .foregroundStyle(.primary)
                         Text("Keep translating as mouse moves")
@@ -154,7 +154,7 @@ struct ContentView: View {
 
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Launch at login")
+                        Text("Launch at Login")
                             .font(.system(size: 13, weight: .regular))
                             .foregroundStyle(.primary)
                         Text("Start automatically when you log in")
@@ -176,7 +176,7 @@ struct ContentView: View {
 
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Debug OCR region")
+                        Text("Debug OCR Region")
                             .font(.system(size: 13, weight: .regular))
                             .foregroundStyle(.primary)
                         Text("Show capture area when shortcut is pressed")
@@ -191,6 +191,17 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
+
+                if #available(macOS 15.0, *) {
+                    Divider()
+                        .padding(.horizontal, 14)
+                        .opacity(0.5)
+
+                    TranslationLanguageRow(
+                        targetLanguage: $model.settings.targetLanguage,
+                        sourceLanguage: $model.settings.sourceLanguage
+                    )
+                }
             }
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -204,15 +215,6 @@ struct ContentView: View {
             )
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 8)
-
-            if #available(macOS 15.0, *) {
-                LanguagePickerSection(
-                    sourceLanguage: $model.settings.sourceLanguage,
-                    targetLanguage: $model.settings.targetLanguage
-                )
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 6)
-            }
 
             HStack(spacing: 12) {
                 if allReady {
@@ -323,9 +325,9 @@ struct ContentPermissionRow: View {
 }
 
 @available(macOS 15.0, *)
-struct LanguagePickerSection: View {
-    @Binding var sourceLanguage: String
+struct TranslationLanguageRow: View {
     @Binding var targetLanguage: String
+    @Binding var sourceLanguage: String
     @EnvironmentObject var model: AppModel
     @State private var showingUnavailableAlert = false
     @State private var unavailableLanguageName = ""
@@ -348,65 +350,8 @@ struct LanguagePickerSection: View {
     ]
 
     var body: some View {
-        mainContent
-            .alert("Language Pack Required", isPresented: $showingUnavailableAlert) {
-                Button("Open Settings") {
-                    model.languagePackManager?.openTranslationSettings()
-                }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("The language pack for \(unavailableLanguageName) is not installed. Please download it in System Settings > General > Language & Region > Translation Languages.")
-            }
-            .onAppear {
-                // 应用打开时立即检测当前 Target Language
-                Task { @MainActor in
-                    let status = await model.languagePackManager?.checkLanguagePair(
-                        from: sourceLanguage,
-                        to: targetLanguage
-                    )
-                    if status != .installed {
-                        checkLanguageAvailability(targetLanguage)
-                    }
-                }
-            }
-    }
-
-    private var mainContent: some View {
-        VStack(spacing: 0) {
-            sourceLanguageRow
-            Divider()
-                .padding(.horizontal, 14)
-                .opacity(0.5)
-            targetLanguageRow
-        }
-        .background(cardBackground)
-        .overlay(cardBorder)
-    }
-
-    private var sourceLanguageRow: some View {
         HStack(spacing: 12) {
-            Text("Source Language")
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(.primary)
-            Spacer()
-            Picker("", selection: $sourceLanguage) {
-                ForEach(commonLanguages, id: \.id) { lang in
-                    Text(lang.name).tag(lang.id)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .tint(.accentColor)
-            .disabled(true)
-            .opacity(0.6)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-    }
-
-    private var targetLanguageRow: some View {
-        HStack(spacing: 12) {
-            Text("Target Language")
+            Text("Translation Language")
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(.primary)
 
@@ -436,6 +381,25 @@ struct LanguagePickerSection: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .alert("Language Pack Required", isPresented: $showingUnavailableAlert) {
+            Button("Open Settings") {
+                model.languagePackManager?.openTranslationSettings()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("The language pack for \(unavailableLanguageName) is not installed. Please download it in System Settings > General > Language & Region > Translation Languages.")
+        }
+        .onAppear {
+            Task { @MainActor in
+                let status = await model.languagePackManager?.checkLanguagePair(
+                    from: sourceLanguage,
+                    to: targetLanguage
+                )
+                if status != .installed {
+                    checkLanguageAvailability(targetLanguage)
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -466,23 +430,6 @@ struct LanguagePickerSection: View {
             .buttonStyle(.plain)
             .help(status == .installed ? "Language pack installed" : "Click to check and download")
         }
-    }
-
-    private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(.background)
-            .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
-            .shadow(color: .black.opacity(0.02), radius: 1, x: 0, y: 1)
-    }
-
-    private var cardBorder: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .strokeBorder(.quaternary, lineWidth: 0.5)
-    }
-
-    @ViewBuilder
-    private func languageOptionView(for lang: (id: String, name: String)) -> some View {
-        Text(lang.name).tag(lang.id)
     }
 
     private func getLanguagePackStatus(_ language: String) -> LanguageAvailability.Status? {
