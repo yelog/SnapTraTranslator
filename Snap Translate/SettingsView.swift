@@ -285,6 +285,8 @@ private struct HotkeyKeycapButton: View {
                     Text(tooltip)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.primary)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .lineLimit(1)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 4)
                         .background(
