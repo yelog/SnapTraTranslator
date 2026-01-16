@@ -6,40 +6,180 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
+import Translation
 
 @main
 struct Snap_TranslateApp: App {
-    @StateObject private var model = AppModel()
-    @State private var hasInitialized = false
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        WindowGroup {
-            ContentView()
-                .environmentObject(model)
-                .onAppear {
-                    // 应用启动后立即初始化（只执行一次）
-                    guard !hasInitialized else { return }
-                    hasInitialized = true
-
-                    if #available(macOS 15.0, *) {
-                        // 1. 先创建后台翻译服务窗口
-                        createTranslationServiceWindow(model: model)
-
-                        // 2. 等待窗口创建完成后预热服务
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                            warmupServices(model: model)
-                        }
-                    }
-                }
+        Settings {
+            EmptyView()
         }
-        .windowResizability(.contentSize)
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    private let model = AppModel()
+    private var cancellables = Set<AnyCancellable>()
+    private var statusItem: NSStatusItem?
+    private var settingsWindowController: SettingsWindowController?
+    private var visibilityTask: Task<Void, Never>?
+
+    private var settingsWindow: NSWindow? {
+        settingsWindowController?.window
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        configureStatusItem()
+
+        if #available(macOS 15.0, *) {
+            createTranslationServiceWindow(model: model)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self else { return }
+                warmupServices(model: self.model)
+            }
+        }
+
+        model.permissions.$status
+            .sink { [weak self] _ in
+                self?.scheduleVisibilityUpdate()
+            }
+            .store(in: &cancellables)
+
+        model.settings.$continuousTranslation
+            .sink { [weak self] _ in
+                self?.scheduleVisibilityUpdate()
+            }
+            .store(in: &cancellables)
+
+        model.settings.$sourceLanguage
+            .combineLatest(model.settings.$targetLanguage)
+            .sink { [weak self] _, _ in
+                self?.scheduleVisibilityUpdate()
+            }
+            .store(in: &cancellables)
+
+        Task {
+            await refreshAndUpdateVisibility()
+        }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        hideDockIcon()
+    }
+
+    private func configureStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        if let button = item.button {
+            if let image = NSApp.applicationIconImage {
+                image.size = NSSize(width: 18, height: 18)
+                image.isTemplate = false
+                button.image = image
+            }
+            button.imagePosition = .imageOnly
+            button.target = self
+            button.action = #selector(statusItemClicked)
+            button.toolTip = "Snap Translate"
+        }
+        statusItem = item
+    }
+
+    @objc private func statusItemClicked() {
+        showSettingsWindow()
+    }
+
+    private func refreshAndUpdateVisibility() async {
+        await model.permissions.refreshStatusAsync()
+        await updateVisibilityFromCurrentState()
+    }
+
+    private func scheduleVisibilityUpdate() {
+        visibilityTask?.cancel()
+        visibilityTask = Task { [weak self] in
+            guard let self else { return }
+            await self.updateVisibilityFromCurrentState()
+        }
+    }
+
+    private func updateVisibilityFromCurrentState() async {
+        var needsSettings = !(model.permissions.status.screenRecording && model.permissions.status.inputMonitoring)
+
+        if #available(macOS 15.0, *) {
+            let status = await model.languagePackManager?.checkLanguagePairQuiet(
+                from: model.settings.sourceLanguage,
+                to: model.settings.targetLanguage
+            )
+            if let status {
+                needsSettings = needsSettings || status != .installed
+            } else {
+                needsSettings = true
+            }
+        }
+
+        if needsSettings {
+            showSettingsWindow()
+        } else {
+            hideDockIcon()
+        }
+    }
+
+    private func showSettingsWindow() {
+        let windowController = settingsWindowController ?? SettingsWindowController(model: model)
+        settingsWindowController = windowController
+        settingsWindow?.delegate = self
+        NSApp.setActivationPolicy(.regular)
+        windowController.showWindow(nil)
+        settingsWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func hideDockIcon() {
+        settingsWindow?.orderOut(nil)
+        NSApp.setActivationPolicy(.accessory)
+    }
+}
+
+@MainActor
+final class SettingsWindowController: NSWindowController {
+    init(model: AppModel) {
+        let contentView = ContentView()
+            .environmentObject(model)
+        let hostingView = NSHostingView(rootView: contentView)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 360, height: 640)
+
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.title = "Snap Translate"
+        window.isReleasedWhenClosed = false
+        window.center()
+
+        super.init(window: window)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }
 
 @available(macOS 15.0, *)
 func createTranslationServiceWindow(model: AppModel) {
-    // 如果已经创建，不重复创建
     guard TranslationServiceWindowHolder.shared.window == nil else { return }
 
     let translationView = TranslationBridgeView(
@@ -64,11 +204,9 @@ func createTranslationServiceWindow(model: AppModel) {
     window.backgroundColor = .clear
     window.setIsVisible(false)
 
-    // 保持窗口引用，防止被释放
     TranslationServiceWindowHolder.shared.window = window
 }
 
-// 单例来持有后台窗口的强引用
 @available(macOS 15.0, *)
 class TranslationServiceWindowHolder {
     static let shared = TranslationServiceWindowHolder()
@@ -76,30 +214,21 @@ class TranslationServiceWindowHolder {
     private init() {}
 }
 
-// 预热翻译服务，减少首次使用延迟
 @available(macOS 15.0, *)
 func warmupServices(model: AppModel) {
     Task { @MainActor in
-        // 延迟一点执行，避免阻塞应用启动
-        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
+        try? await Task.sleep(nanoseconds: 500_000_000)
 
-        do {
-            // 预热翻译服务 - 执行一次虚拟翻译来加载语言模型
-            let sourceLanguage = Locale.Language(identifier: model.settings.sourceLanguage)
-            let targetLanguage = Locale.Language(identifier: model.settings.targetLanguage)
+        let sourceLanguage = Locale.Language(identifier: model.settings.sourceLanguage)
+        let targetLanguage = Locale.Language(identifier: model.settings.targetLanguage)
 
-            // 执行一次简单翻译来初始化 Translation 框架和加载语言模型
-            _ = try? await model.translationBridge.translate(
-                text: "hello",
-                source: sourceLanguage,
-                target: targetLanguage,
-                timeout: 10.0
-            )
+        _ = try? await model.translationBridge.translate(
+            text: "hello",
+            source: sourceLanguage,
+            target: targetLanguage,
+            timeout: 10.0
+        )
 
-            print("✅ Translation service warmed up (source: \(model.settings.sourceLanguage), target: \(model.settings.targetLanguage))")
-
-        } catch {
-            print("⚠️ Warmup failed: \(error)")
-        }
+        print("✅ Translation service warmed up (source: \(model.settings.sourceLanguage), target: \(model.settings.targetLanguage))")
     }
 }
