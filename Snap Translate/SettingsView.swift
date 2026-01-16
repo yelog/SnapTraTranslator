@@ -179,7 +179,7 @@ struct HotkeyKeycapSelector: View {
 
                 Text("Hotkey")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity)
 
                 button(for: SingleKey.rightShift)
