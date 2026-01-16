@@ -404,8 +404,26 @@ final class DictionaryService {
             }
         }
 
-        let label = String(text[labelStart..<index]).trimmingCharacters(in: CharacterSet(charactersIn: " ."))
-        return (label, index)
+        let rawLabel = String(text[labelStart..<index]).trimmingCharacters(in: CharacterSet(charactersIn: " ."))
+        let normalizedLabel = normalizePOSLabel(rawLabel)
+        let labelEndIndex = text.index(labelStart, offsetBy: normalizedLabel.count, limitedBy: index) ?? index
+        return (normalizedLabel, labelEndIndex)
+    }
+
+    private func normalizePOSLabel(_ label: String) -> String {
+        let lowercased = label.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefixes = ["transitive verb", "intransitive verb", "noun", "verb", "adjective", "adverb",
+                        "preposition", "conjunction", "pronoun", "interjection", "vt", "vi", "n.", "v.",
+                        "adj.", "adv.", "n", "v", "adj", "adv", "名词", "动词", "形容词", "副词"]
+        for prefix in prefixes {
+            if lowercased.hasPrefix(prefix) {
+                return prefix
+            }
+        }
+        if let range = findFirstPartOfSpeechRange(in: label) {
+            return String(label[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return label.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func skipWhitespace(in text: String, from index: String.Index) -> String.Index {
