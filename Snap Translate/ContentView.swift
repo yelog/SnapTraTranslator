@@ -108,6 +108,17 @@ struct ContentView: View {
                     .padding(.horizontal, 14)
                     .opacity(0.5)
 
+                if #available(macOS 15.0, *) {
+                    TranslationLanguageRow(
+                        targetLanguage: $model.settings.targetLanguage,
+                        sourceLanguage: $model.settings.sourceLanguage
+                    )
+
+                    Divider()
+                        .padding(.horizontal, 14)
+                        .opacity(0.5)
+                }
+
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Play Pronunciation")
@@ -191,17 +202,6 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-
-                if #available(macOS 15.0, *) {
-                    Divider()
-                        .padding(.horizontal, 14)
-                        .opacity(0.5)
-
-                    TranslationLanguageRow(
-                        targetLanguage: $model.settings.targetLanguage,
-                        sourceLanguage: $model.settings.sourceLanguage
-                    )
-                }
             }
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -351,7 +351,7 @@ struct TranslationLanguageRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text("Translation Language")
+            Text("Translate to")
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(.primary)
 

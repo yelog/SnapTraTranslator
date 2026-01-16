@@ -38,7 +38,7 @@ final class SettingsStore: ObservableObject {
 
         playPronunciation = playPronunciationValue ?? true
         launchAtLogin = launchAtLoginValue ?? loginStatus
-        singleKey = SingleKey(rawValue: singleKeyValue ?? "rightOption") ?? .rightOption
+        singleKey = SingleKey(rawValue: singleKeyValue ?? "leftControl") ?? .leftControl
         sourceLanguage = defaults.string(forKey: AppSettingKey.sourceLanguage) ?? "en"
         targetLanguage = defaults.string(forKey: AppSettingKey.targetLanguage) ?? "zh-Hans"
         debugShowOcrRegion = debugShowOcrRegionValue ?? false
