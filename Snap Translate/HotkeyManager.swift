@@ -45,7 +45,6 @@ final class HotkeyManager {
         }
         let keyCode = Int64(event.keyCode)
         let expectedKeyCode = Int64(SingleKeyMapping.keyCode(for: key))
-        let isOptionKey = key == .leftOption || key == .rightOption
 
         let targetFlag = SingleKeyMapping.modifierFlag(for: key)
         let eventFlags = event.modifierFlags
@@ -56,10 +55,8 @@ final class HotkeyManager {
             pendingRelease = nil
         }
         if isTargetFlagPresent && !isSingleKeyDown {
-            if !isOptionKey {
-                guard keyCode == expectedKeyCode else {
-                    return
-                }
+            guard keyCode == expectedKeyCode else {
+                return
             }
             let relevantFlags: NSEvent.ModifierFlags = [.shift, .control, .option, .command]
             let otherFlags = eventFlags.intersection(relevantFlags).subtracting(targetFlag)
