@@ -99,22 +99,10 @@ struct ContentView: View {
             .offset(y: appeared ? 0 : 10)
 
             VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Text("Hotkey")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Picker("", selection: $model.settings.singleKey) {
-                        ForEach(SingleKey.allCases) { key in
-                            Text(key.title).tag(key)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .tint(.accentColor)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+                HotkeyKeycapSelector(selectedKey: $model.settings.singleKey)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
 
                 Divider()
                     .padding(.horizontal, 14)

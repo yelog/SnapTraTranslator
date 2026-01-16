@@ -13,17 +13,8 @@ struct SettingsView: View {
                     delay: 0
                 ) {
                     SettingsRowView {
-                        Text("Hotkey")
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        Picker("", selection: $model.settings.singleKey) {
-                            ForEach(SingleKey.allCases) { key in
-                                Text(key.title).tag(key)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .tint(.accentColor)
+                        HotkeyKeycapSelector(selectedKey: $model.settings.singleKey)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
 
@@ -177,6 +168,93 @@ struct SettingsRowView<Content: View>: View {
         .font(.system(size: 13))
     }
 }
+
+struct HotkeyKeycapSelector: View {
+    @Binding var selectedKey: SingleKey
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                button(for: SingleKey.leftShift)
+
+                Text("Hotkey")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+
+                button(for: SingleKey.rightShift)
+            }
+
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    button(for: SingleKey.fn)
+                    button(for: SingleKey.leftControl)
+                    button(for: SingleKey.leftOption)
+                    button(for: SingleKey.leftCommand)
+                }
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 6) {
+                    button(for: SingleKey.rightCommand)
+                    button(for: SingleKey.rightOption)
+                    button(for: SingleKey.rightControl)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func button(for key: SingleKey) -> some View {
+        Button {
+            selectedKey = key
+        } label: {
+            HotkeyKeycapButton(
+                symbol: symbol(for: key),
+                isSelected: selectedKey == key
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func symbol(for key: SingleKey) -> String {
+        switch key {
+        case .leftShift, .rightShift:
+            return "⇧"
+        case .leftControl, .rightControl:
+            return "⌃"
+        case .leftOption, .rightOption:
+            return "⌥"
+        case .leftCommand, .rightCommand:
+            return "⌘"
+        case .fn:
+            return "Fn"
+        }
+    }
+}
+
+private struct HotkeyKeycapButton: View {
+    let symbol: String
+    let isSelected: Bool
+
+    var body: some View {
+        Text(symbol)
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .foregroundStyle(isSelected ? Color.accentColor : .primary)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(isSelected ? Color.accentColor.opacity(0.5) : Color.secondary.opacity(0.2), lineWidth: 1)
+            )
+            .animation(.easeInOut(duration: 0.2), value: isSelected)
+    }
+}
+
 
 struct SettingsToggleRow: View {
     let title: String
