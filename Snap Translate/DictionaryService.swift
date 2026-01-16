@@ -165,7 +165,7 @@ final class DictionaryService {
             // 匹配 <span class="posg">noun</span> 或类似格式
             "<span[^>]*class=\"[^\"]*(?:posg|pos|fg)[^\"]*\"[^>]*>([^<]+)</span>",
             // 匹配 <b>noun</b> 格式
-            "<b>\\s*(noun|verb|adjective|adverb|preposition|conjunction|pronoun|interjection|n\\.|v\\.|adj\\.|adv\\.)\\s*</b>"
+            "<b>\\s*(transitive verb|intransitive verb|vt\\.?|vi\\.?|noun|verb|adjective|adverb|preposition|conjunction|pronoun|interjection|n\\.|v\\.|adj\\.|adv\\.)\\s*</b>"
         ]
 
         for pattern in posPatterns {
@@ -216,7 +216,9 @@ final class DictionaryService {
         let lowercased = pos.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         switch lowercased {
         case "n", "n.", "noun", "名词": return "n."
-        case "v", "v.", "verb", "动词", "vt", "vt.", "vi", "vi.", "transitive verb", "intransitive verb": return "v."
+        case "vt", "vt.", "transitive verb", "及物动词": return "vt."
+        case "vi", "vi.", "intransitive verb", "不及物动词": return "vi."
+        case "v", "v.", "verb", "动词": return "v."
         case "adj", "adj.", "adjective", "形容词": return "adj."
         case "adv", "adv.", "adverb", "副词": return "adv."
         case "prep", "prep.", "preposition": return "prep."
@@ -249,7 +251,7 @@ final class DictionaryService {
     }
 
     private func findFirstPartOfSpeechRange(in text: String) -> Range<String.Index>? {
-        let pattern = "(transitive verb|intransitive verb|noun|verb|adjective|adverb|preposition|conjunction|pronoun|interjection|vt\\.?|vi\\.?|n\\.|v\\.|adj\\.|adv\\.|名词|动词|形容词|副词)"
+        let pattern = "(transitive verb|intransitive verb|vt\\.?|vi\\.?|noun|verb|adjective|adverb|preposition|conjunction|pronoun|interjection|n\\.|v\\.|adj\\.|adv\\.|名词|动词|形容词|副词|及物动词|不及物动词)"
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
             return nil
         }
@@ -412,9 +414,9 @@ final class DictionaryService {
 
     private func normalizePOSLabel(_ label: String) -> String {
         let lowercased = label.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        let prefixes = ["transitive verb", "intransitive verb", "noun", "verb", "adjective", "adverb",
-                        "preposition", "conjunction", "pronoun", "interjection", "vt", "vi", "n.", "v.",
-                        "adj.", "adv.", "n", "v", "adj", "adv", "名词", "动词", "形容词", "副词"]
+        let prefixes = ["transitive verb", "intransitive verb", "vt", "vi", "noun", "verb", "adjective", "adverb",
+                        "preposition", "conjunction", "pronoun", "interjection", "n.", "v.", "adj.", "adv.",
+                        "n", "v", "adj", "adv", "名词", "动词", "形容词", "副词", "及物动词", "不及物动词"]
         for prefix in prefixes {
             if lowercased.hasPrefix(prefix) {
                 return prefix
@@ -448,7 +450,7 @@ final class DictionaryService {
         let lowercased = pos.lowercased()
         let knownPOS = ["noun", "verb", "adjective", "adverb", "preposition", "conjunction",
                         "pronoun", "interjection", "transitive verb", "intransitive verb", "vt", "vi",
-                        "n.", "v.", "adj.", "adv.", "n", "v", "adj", "adv", "名词", "动词", "形容词", "副词"]
+                        "n.", "v.", "adj.", "adv.", "n", "v", "adj", "adv", "名词", "动词", "形容词", "副词", "及物动词", "不及物动词"]
         return knownPOS.contains { lowercased.contains($0) }
     }
 

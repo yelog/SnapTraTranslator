@@ -212,7 +212,7 @@ struct OverlayView: View {
     private func definitionGroupRow(partOfSpeech: String, translations: [String]) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             if !partOfSpeech.isEmpty {
-                Text(partOfSpeech)
+                Text(displayedPartOfSpeech(for: partOfSpeech))
                     .font(.system(size: 10, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6)
@@ -227,6 +227,18 @@ struct OverlayView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.primary.opacity(0.9))
                 .lineLimit(2)
+        }
+    }
+
+    private func displayedPartOfSpeech(for pos: String) -> String {
+        let lowercased = pos.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        switch lowercased {
+        case "vt", "vt.", "transitive verb":
+            return "vt."
+        case "vi", "vi.", "intransitive verb":
+            return "vi."
+        default:
+            return pos
         }
     }
 
