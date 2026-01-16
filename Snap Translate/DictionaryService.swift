@@ -269,7 +269,7 @@ final class DictionaryService {
     private func extractPlainTextPartOfSpeechGroups(from html: String) -> [(String, String)] {
         let text = stripHTML(html)
         guard !text.isEmpty else { return [] }
-        guard let regex = try? NSRegularExpression(pattern: "(^|\\s)([A-Z])\\.", options: []) else {
+        guard let regex = try? NSRegularExpression(pattern: "(?:^|[^A-Za-z])([A-Z])\\.", options: []) else {
             return []
         }
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
