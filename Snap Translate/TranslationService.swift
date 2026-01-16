@@ -3,6 +3,7 @@ import Foundation
 import SwiftUI
 import Translation
 
+
 enum TranslationError: Error {
     case unsupportedSystem
     case emptyText
@@ -73,21 +74,28 @@ final class TranslationBridge: ObservableObject {
 @available(macOS 15.0, *)
 struct TranslationBridgeView: View {
     @ObservedObject var bridge: TranslationBridge
-    let sourceLanguage: Locale.Language
-    let targetLanguage: Locale.Language
+    @ObservedObject var settings: SettingsStore
     @State private var configuration: TranslationSession.Configuration?
     @State private var configurationID = UUID()
+
+    private var sourceLocale: Locale.Language {
+        Locale.Language(identifier: settings.sourceLanguage)
+    }
+
+    private var targetLocale: Locale.Language {
+        Locale.Language(identifier: settings.targetLanguage)
+    }
 
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
             .onAppear {
-                configuration = TranslationSession.Configuration(source: sourceLanguage, target: targetLanguage)
+                configuration = TranslationSession.Configuration(source: sourceLocale, target: targetLocale)
             }
-            .onChange(of: sourceLanguage.minimalIdentifier) { _, _ in
+            .onChange(of: settings.sourceLanguage) { _, _ in
                 resetConfiguration()
             }
-            .onChange(of: targetLanguage.minimalIdentifier) { _, _ in
+            .onChange(of: settings.targetLanguage) { _, _ in
                 resetConfiguration()
             }
             .translationTask(configuration) { session in
@@ -116,6 +124,6 @@ struct TranslationBridgeView: View {
         bridge.resetStream()
         // Force view recreation to ensure translationTask restarts properly
         configurationID = UUID()
-        configuration = TranslationSession.Configuration(source: sourceLanguage, target: targetLanguage)
+        configuration = TranslationSession.Configuration(source: sourceLocale, target: targetLocale)
     }
 }

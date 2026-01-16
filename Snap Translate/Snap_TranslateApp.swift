@@ -44,8 +44,7 @@ func createTranslationServiceWindow(model: AppModel) {
 
     let translationView = TranslationBridgeView(
         bridge: model.translationBridge,
-        sourceLanguage: Locale.Language(identifier: model.settings.sourceLanguage),
-        targetLanguage: Locale.Language(identifier: model.settings.targetLanguage)
+        settings: model.settings
     )
 
     let hostingView = NSHostingView(rootView: translationView)

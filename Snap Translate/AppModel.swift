@@ -290,25 +290,38 @@ final class AppModel: ObservableObject {
 
                 // 如果词典有释义，尝试翻译每个释义
                 if !definitions.isEmpty {
+                    let targetIsChinese = targetLanguage.minimalIdentifier == "zh"
+                    let isSameLanguage = sourceLanguage.minimalIdentifier == targetLanguage.minimalIdentifier
                     var translatedDefinitions: [DictionaryEntry.Definition] = []
                     for def in definitions {
-                        if let translation = def.translation, !translation.isEmpty {
+                        let trimmedTranslation = def.translation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        let hasDictionaryTranslation = !trimmedTranslation.isEmpty
+                        let shouldKeepDictionaryTranslation = targetIsChinese && hasDictionaryTranslation
+
+                        if shouldKeepDictionaryTranslation {
                             translatedDefinitions.append(def)
                             continue
                         }
-                        var translatedDef = def
-                        if let meaningTranslation = try? await translationBridge.translate(
+
+                        let translatedText: String
+                        if isSameLanguage {
+                            translatedText = def.meaning
+                        } else if let meaningTranslation = try? await translationBridge.translate(
                             text: def.meaning,
                             source: sourceLanguage,
                             target: targetLanguage
                         ) {
-                            translatedDef = DictionaryEntry.Definition(
-                                partOfSpeech: def.partOfSpeech,
-                                meaning: def.meaning,
-                                translation: meaningTranslation,
-                                examples: def.examples
-                            )
+                            translatedText = meaningTranslation
+                        } else {
+                            translatedText = def.meaning
                         }
+
+                        let translatedDef = DictionaryEntry.Definition(
+                            partOfSpeech: def.partOfSpeech,
+                            meaning: def.meaning,
+                            translation: translatedText,
+                            examples: def.examples
+                        )
                         translatedDefinitions.append(translatedDef)
                     }
                     definitions = translatedDefinitions
