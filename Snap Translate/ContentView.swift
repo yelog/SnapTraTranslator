@@ -405,12 +405,20 @@ struct TranslationLanguageRow: View {
     @ViewBuilder
     private var statusIcon: some View {
         let isChecking = model.languagePackManager?.isChecking ?? false
+        let isSameLanguage = sourceLanguage == targetLanguage || 
+            (sourceLanguage.hasPrefix("en") && targetLanguage.hasPrefix("en")) ||
+            (sourceLanguage.hasPrefix("zh") && targetLanguage.hasPrefix("zh"))
         let status = getLanguagePackStatus(targetLanguage)
 
         if isChecking {
             ProgressView()
                 .controlSize(.small)
                 .scaleEffect(0.7)
+        } else if isSameLanguage {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.green)
+                .help("Same language - no translation needed")
         } else if let status = status {
             Button {
                 Task { @MainActor in
