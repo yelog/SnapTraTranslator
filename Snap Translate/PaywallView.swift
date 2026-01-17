@@ -78,8 +78,8 @@ struct PaywallView: View {
             
             if let lifetimeProduct = storeKit.lifetimeProduct {
                 PurchaseButton(
-                    title: "Buy Lifetime Pro",
-                    subtitle: lifetimeProduct.displayPrice,
+                    title: "Lifetime Pro — \(lifetimeProduct.displayPrice)",
+                    subtitle: "One-time purchase, forever access",
                     isPrimary: !entitlement.canStartTrial,
                     isLoading: isPurchasing
                 ) {
@@ -87,12 +87,34 @@ struct PaywallView: View {
                 }
             }
             
+            // App Store required disclosure
+            disclosureText
+            
             if let error = errorMessage {
                 Text(error)
                     .font(.system(size: 12))
                     .foregroundStyle(.red)
             }
         }
+    }
+    
+    @ViewBuilder
+    private var disclosureText: some View {
+        VStack(spacing: 4) {
+            if entitlement.canStartTrial {
+                Text("Free for 30 days. After the trial ends, translation features will be locked until you purchase Lifetime Pro.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text("Your trial has ended. Purchase Lifetime Pro to unlock all features.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 4)
     }
     
     @ViewBuilder
