@@ -99,6 +99,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func makeStatusBarImage() -> NSImage? {
+        if let image = NSImage(named: "StatusBarIcon")?.copy() as? NSImage {
+            image.size = NSSize(width: 18, height: 18)
+            image.isTemplate = false
+            return image
+        }
+
         if let sourceImage = NSApp.applicationIconImage,
            let image = sourceImage.copy() as? NSImage {
             image.size = NSSize(width: 18, height: 18)
