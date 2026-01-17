@@ -35,6 +35,7 @@ final class AppModel: ObservableObject {
     @Published var settings: SettingsStore
     let permissions: PermissionManager
     let translationBridge: TranslationBridge
+    let entitlementManager = EntitlementManager.shared
     private var _languagePackManager: Any?
 
     @available(macOS 15.0, *)
@@ -93,9 +94,12 @@ final class AppModel: ObservableObject {
     }
 
     func handleHotkeyTrigger() {
+        guard entitlementManager.isUnlocked else {
+            NotificationCenter.default.post(name: .showPaywall, object: nil)
+            return
+        }
         isHotkeyActive = true
         lastOcrPosition = NSEvent.mouseLocation
-        // 按下快捷键时，窗口不接受鼠标事件（避免干扰翻译流程）
         overlayWindowController.setInteractive(false)
         startMouseTracking()
         startLookup()

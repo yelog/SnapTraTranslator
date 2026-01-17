@@ -23,9 +23,11 @@ struct Snap_TranslateApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let model = AppModel()
+    private let entitlementManager = EntitlementManager.shared
     private var cancellables = Set<AnyCancellable>()
     private var statusItem: NSStatusItem?
     private var settingsWindowController: SettingsWindowController?
+    private var paywallWindowController: PaywallWindowController?
     private var visibilityTask: Task<Void, Never>?
     private var isManualWindowOpen = false
 
@@ -67,7 +69,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             .store(in: &cancellables)
 
+        entitlementManager.$isUnlocked
+            .dropFirst()
+            .sink { [weak self] (isUnlocked: Bool) in
+                if isUnlocked {
+                    self?.dismissPaywallIfNeeded()
+                }
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .showPaywall)
+            .sink { [weak self] _ in
+                self?.showPaywallWindow()
+            }
+            .store(in: &cancellables)
+
         Task {
+            await entitlementManager.refresh()
             await refreshAndUpdateVisibility()
         }
     }
@@ -175,6 +193,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settingsWindow?.orderOut(nil)
         NSApp.setActivationPolicy(.accessory)
     }
+
+    private func showPaywallWindow() {
+        let windowController = paywallWindowController ?? PaywallWindowController()
+        paywallWindowController = windowController
+        NSApp.setActivationPolicy(.regular)
+        windowController.showWindow(nil)
+        windowController.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func dismissPaywallIfNeeded() {
+        paywallWindowController?.window?.orderOut(nil)
+        paywallWindowController = nil
+    }
 }
 
 @MainActor
@@ -193,6 +225,33 @@ final class SettingsWindowController: NSWindowController {
         )
         window.contentView = hostingView
         window.title = "Snap Translate"
+        window.isReleasedWhenClosed = false
+        window.center()
+
+        super.init(window: window)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+@MainActor
+final class PaywallWindowController: NSWindowController {
+    init() {
+        let contentView = PaywallView()
+        let hostingView = NSHostingView(rootView: contentView)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 400, height: 520)
+
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.title = "Snap Translate Pro"
         window.isReleasedWhenClosed = false
         window.center()
 
