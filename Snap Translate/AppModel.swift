@@ -382,6 +382,8 @@ final class AppModel: ObservableObject {
     }
 
     func updateOverlay(state: OverlayState, anchor: CGPoint? = nil) {
+        guard isHotkeyActive || !settings.continuousTranslation else { return }
+        
         if let anchor {
             overlayAnchor = anchor
         }
@@ -393,7 +395,6 @@ final class AppModel: ObservableObject {
         case .result:
             overlayState = state
             overlayWindowController.show(at: overlayAnchor)
-            // 非持续翻译模式下，显示结果后立即启用鼠标交互，让用户可以点击复制按钮
             if !settings.continuousTranslation {
                 overlayWindowController.setInteractive(true)
             }
