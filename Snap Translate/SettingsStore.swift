@@ -40,12 +40,38 @@ final class SettingsStore: ObservableObject {
         launchAtLogin = launchAtLoginValue ?? loginStatus
         singleKey = SingleKey(rawValue: singleKeyValue ?? "leftControl") ?? .leftControl
         sourceLanguage = defaults.string(forKey: AppSettingKey.sourceLanguage) ?? "en"
-        targetLanguage = defaults.string(forKey: AppSettingKey.targetLanguage) ?? "zh-Hans"
+        let defaultTarget = Self.defaultTargetLanguage()
+        targetLanguage = defaults.string(forKey: AppSettingKey.targetLanguage) ?? defaultTarget
         debugShowOcrRegion = debugShowOcrRegionValue ?? false
         continuousTranslation = continuousTranslationValue ?? true
     }
 
     var hotkeyDisplayText: String {
         singleKey.title
+    }
+
+    private static func defaultTargetLanguage() -> String {
+        let commonLanguages: Set<String> = [
+            "zh-Hans",
+            "zh-Hant",
+            "en",
+            "ja",
+            "ko",
+            "fr",
+            "de",
+            "es",
+            "it",
+            "pt",
+            "ru",
+            "ar",
+            "th",
+            "vi",
+        ]
+        let systemLanguage = Locale.current.language.languageCode?.identifier ?? "en"
+        if systemLanguage != "en", commonLanguages.contains(systemLanguage) {
+            return systemLanguage
+        }
+
+        return "zh-Hans"
     }
 }
