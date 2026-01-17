@@ -51,7 +51,7 @@ final class SettingsStore: ObservableObject {
     }
 
     private static func defaultTargetLanguage() -> String {
-        let supportedLanguages = [
+        let supportedLanguages: Set<String> = [
             "zh-Hans",
             "zh-Hant",
             "en",
@@ -69,23 +69,20 @@ final class SettingsStore: ObservableObject {
         ]
         
         let preferredLanguages = Locale.preferredLanguages
-        for preferred in preferredLanguages {
-            let identifier = Locale(identifier: preferred).language.minimalIdentifier
-            
-            if supportedLanguages.contains(identifier) {
-                if identifier != "en" {
-                    return identifier
-                }
-            }
-            
-            if identifier.hasPrefix("zh") {
-                let script = Locale(identifier: preferred).language.script?.identifier
-                if script == "Hant" {
-                    return "zh-Hant"
-                } else {
-                    return "zh-Hans"
-                }
-            }
+        guard let firstPreferred = preferredLanguages.first else {
+            return "zh-Hans"
+        }
+        
+        let locale = Locale(identifier: firstPreferred)
+        let languageCode = locale.language.languageCode?.identifier ?? ""
+        
+        if languageCode == "zh" {
+            let script = locale.language.script?.identifier
+            return script == "Hant" ? "zh-Hant" : "zh-Hans"
+        }
+        
+        if supportedLanguages.contains(languageCode) {
+            return languageCode
         }
 
         return "zh-Hans"
