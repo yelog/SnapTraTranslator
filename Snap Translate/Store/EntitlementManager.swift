@@ -18,8 +18,22 @@ final class EntitlementManager: ObservableObject {
     private let storeKit = StoreKitManager.shared
     private var cancellables = Set<AnyCancellable>()
     
+    private var bypassLicenseCheck: Bool {
+        #if DEBUG
+        return true
+        #else
+        return isAppStoreReviewBuild
+        #endif
+    }
+    
+    private var isAppStoreReviewBuild: Bool {
+        guard let receiptURL = Bundle.main.appStoreReceiptURL else { return false }
+        return receiptURL.lastPathComponent == "sandboxReceipt"
+    }
+    
     private init() {
         setupBindings()
+        updateEntitlement()
     }
     
     private func setupBindings() {
@@ -39,6 +53,12 @@ final class EntitlementManager: ObservableObject {
     }
     
     private func updateEntitlement() {
+        if bypassLicenseCheck {
+            entitlement = .lifetime
+            isUnlocked = true
+            return
+        }
+        
         if storeKit.hasLifetime {
             entitlement = .lifetime
             isUnlocked = true
@@ -61,6 +81,9 @@ final class EntitlementManager: ObservableObject {
     }
     
     var statusText: String {
+        #if DEBUG
+        return "Debug Mode"
+        #else
         switch entitlement {
         case .noTrial:
             return "No active license"
@@ -71,9 +94,12 @@ final class EntitlementManager: ObservableObject {
         case .lifetime:
             return "Lifetime Pro"
         }
+        #endif
     }
     
     var needsPaywall: Bool {
+        if bypassLicenseCheck { return false }
+        
         switch entitlement {
         case .noTrial, .trialExpired:
             return true
