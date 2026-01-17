@@ -117,7 +117,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func statusItemClicked() {
         isManualWindowOpen = true
-        showSettingsWindow()
+        if let window = settingsWindow, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            showSettingsWindow()
+        }
     }
 
     private func refreshAndUpdateVisibility() async {
