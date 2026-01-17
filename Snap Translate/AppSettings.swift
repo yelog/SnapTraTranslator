@@ -45,4 +45,5 @@ enum AppSettingKey {
     static let targetLanguage = "targetLanguage"
     static let debugShowOcrRegion = "debugShowOcrRegion"
     static let continuousTranslation = "continuousTranslation"
+    static let lastScreenRecordingStatus = "lastScreenRecordingStatus"
 }

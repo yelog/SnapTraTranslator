@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var paywallWindowController: PaywallWindowController?
     private var visibilityTask: Task<Void, Never>?
     private var isManualWindowOpen = false
+    private var shouldShowWindowAfterPermissionGrant = false
 
     private var settingsWindow: NSWindow? {
         settingsWindowController?.window
@@ -41,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureStatusItem()
+        checkPermissionGrantRestart()
 
         if #available(macOS 15.0, *) {
             createTranslationServiceWindow(model: model)
@@ -135,12 +137,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func statusItemClicked() {
         isManualWindowOpen = true
+        NSApp.setActivationPolicy(.regular)
         if let window = settingsWindow, window.isVisible {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
         } else {
             showSettingsWindow()
         }
+    }
+
+    private func checkPermissionGrantRestart() {
+        let lastStatus = UserDefaults.standard.bool(forKey: AppSettingKey.lastScreenRecordingStatus)
+        let currentStatus = CGPreflightScreenCaptureAccess()
+        
+        if !lastStatus && currentStatus {
+            shouldShowWindowAfterPermissionGrant = true
+        }
+        
+        UserDefaults.standard.set(currentStatus, forKey: AppSettingKey.lastScreenRecordingStatus)
     }
 
     private func refreshAndUpdateVisibility() async {
@@ -172,6 +186,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         if needsSettings {
+            showSettingsWindow()
+        } else if shouldShowWindowAfterPermissionGrant {
+            shouldShowWindowAfterPermissionGrant = false
+            isManualWindowOpen = true
             showSettingsWindow()
         } else if !isManualWindowOpen {
             hideDockIcon()
