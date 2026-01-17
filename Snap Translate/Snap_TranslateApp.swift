@@ -82,17 +82,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func configureStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
-            if let image = NSApp.applicationIconImage {
-                image.size = NSSize(width: 18, height: 18)
-                image.isTemplate = false
-                button.image = image
-            }
+            button.image = makeStatusBarImage()
             button.imagePosition = .imageOnly
             button.target = self
             button.action = #selector(statusItemClicked)
             button.toolTip = "Snap Translate"
         }
         statusItem = item
+    }
+
+    private func makeStatusBarImage() -> NSImage? {
+        if let sourceImage = NSApp.applicationIconImage,
+           let image = sourceImage.copy() as? NSImage {
+            image.size = NSSize(width: 18, height: 18)
+            image.isTemplate = false
+            return image
+        }
+
+        return nil
     }
 
     @objc private func statusItemClicked() {
