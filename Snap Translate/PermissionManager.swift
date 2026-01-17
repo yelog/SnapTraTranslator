@@ -2,17 +2,15 @@ import AppKit
 import ApplicationServices
 import Combine
 import Foundation
-import IOKit.hid
 import ScreenCaptureKit
 
 struct PermissionStatus: Equatable {
     var screenRecording: Bool
-    var inputMonitoring: Bool
 }
 
 @MainActor
 final class PermissionManager: ObservableObject {
-    @Published private(set) var status: PermissionStatus = PermissionStatus(screenRecording: false, inputMonitoring: false)
+    @Published private(set) var status: PermissionStatus = PermissionStatus(screenRecording: false)
 
     func refreshStatus() {
         Task { await refreshStatusAsync() }
@@ -20,8 +18,7 @@ final class PermissionManager: ObservableObject {
 
     func refreshStatusAsync() async {
         let screenRecordingAllowed = await screenRecordingStatus()
-        let inputMonitoringAllowed = inputMonitoringStatus()
-        status = PermissionStatus(screenRecording: screenRecordingAllowed, inputMonitoring: inputMonitoringAllowed)
+        status = PermissionStatus(screenRecording: screenRecordingAllowed)
     }
 
     func requestScreenRecording() {
@@ -34,18 +31,8 @@ final class PermissionManager: ObservableObject {
         refreshAfterDelay()
     }
 
-    func requestAndOpenInputMonitoring() {
-        IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
-        openInputMonitoringSettings()
-        refreshAfterDelay()
-    }
-
     func openScreenRecordingSettings() {
         openPrivacyPane(anchor: "Privacy_ScreenCapture")
-    }
-
-    func openInputMonitoringSettings() {
-        openPrivacyPane(anchor: "Privacy_ListenEvent")
     }
 
     private func openPrivacyPane(anchor: String) {
@@ -74,29 +61,6 @@ final class PermissionManager: ObservableObject {
         } catch {
             return false
         }
-    }
-
-    private func inputMonitoringStatus() -> Bool {
-        let access = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
-        if access == kIOHIDAccessTypeGranted {
-            return true
-        }
-        let mask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
-        let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: mask,
-            callback: { _, _, event, _ in
-                Unmanaged.passRetained(event)
-            },
-            userInfo: nil
-        )
-        guard let tap else {
-            return false
-        }
-        CFMachPortInvalidate(tap)
-        return true
     }
 
     private func refreshAfterDelay() {

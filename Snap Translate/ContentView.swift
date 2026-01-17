@@ -14,7 +14,7 @@ struct ContentView: View {
     @State private var appeared = false
 
     private var allPermissionsGranted: Bool {
-        model.permissions.status.screenRecording && model.permissions.status.inputMonitoring
+        model.permissions.status.screenRecording
     }
 
     @available(macOS 15.0, *)
@@ -73,17 +73,6 @@ struct ContentView: View {
                     title: "Screen Recording",
                     isGranted: model.permissions.status.screenRecording,
                     action: { model.permissions.requestAndOpenScreenRecording() }
-                )
-
-                Divider()
-                    .padding(.horizontal, 14)
-                    .opacity(0.5)
-
-                ContentPermissionRow(
-                    icon: "keyboard",
-                    title: "Input Monitoring",
-                    isGranted: model.permissions.status.inputMonitoring,
-                    action: { model.permissions.requestAndOpenInputMonitoring() }
                 )
             }
             .background(

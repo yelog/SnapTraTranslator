@@ -157,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func updateVisibilityFromCurrentState() async {
-        var needsSettings = !(model.permissions.status.screenRecording && model.permissions.status.inputMonitoring)
+        var needsSettings = !model.permissions.status.screenRecording
 
         if #available(macOS 15.0, *) {
             let status = await model.languagePackManager?.checkLanguagePairQuiet(

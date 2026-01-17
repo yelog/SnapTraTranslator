@@ -456,7 +456,7 @@ final class AppModel: ObservableObject {
 
         permissions.$status
             .sink { [weak self] status in
-                if status.inputMonitoring {
+                if status.screenRecording {
                     self?.restartHotkey()
                 }
             }

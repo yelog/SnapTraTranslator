@@ -66,16 +66,6 @@ struct SettingsView: View {
                         Divider()
                             .opacity(0.5)
 
-                        PermissionRow(
-                            title: "Input Monitoring",
-                            isGranted: model.permissions.status.inputMonitoring,
-                            actionTitle: "Open Settings",
-                            action: { model.permissions.requestAndOpenInputMonitoring() }
-                        )
-
-                        Divider()
-                            .opacity(0.5)
-
                         HStack {
                             Spacer()
                             Button {
