@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
     private var settingsWindowController: SettingsWindowController?
     private var visibilityTask: Task<Void, Never>?
+    private var isManualWindowOpen = false
 
     private var settingsWindow: NSWindow? {
         settingsWindowController?.window
@@ -79,6 +80,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hideDockIcon()
     }
 
+    func windowDidBecomeKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              window == settingsWindow else { return }
+        isManualWindowOpen = true
+    }
+
     private func configureStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
@@ -103,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func statusItemClicked() {
+        isManualWindowOpen = true
         showSettingsWindow()
     }
 
@@ -136,7 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         if needsSettings {
             showSettingsWindow()
-        } else {
+        } else if !isManualWindowOpen {
             hideDockIcon()
         }
     }
@@ -152,6 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func hideDockIcon() {
+        isManualWindowOpen = false
         settingsWindow?.orderOut(nil)
         NSApp.setActivationPolicy(.accessory)
     }
