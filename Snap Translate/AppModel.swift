@@ -257,17 +257,34 @@ final class AppModel: ObservableObject {
             }
             guard !Task.isCancelled, activeLookupID == lookupID else { return }
 
-            // 从系统词典获取完整信息
-            let dictEntry = dictionaryService.lookup(selected.text)
+            let targetIsEnglish = targetLanguage.minimalIdentifier == "en"
+            let dictEntry = dictionaryService.lookup(selected.text, preferEnglish: targetIsEnglish)
             let phonetic = dictEntry?.phonetic
             var definitions = dictEntry?.definitions ?? []
 
             if sourceLanguage.minimalIdentifier == targetLanguage.minimalIdentifier {
+                var processedDefinitions = definitions
+                let isEnglish = sourceLanguage.minimalIdentifier == "en"
+                
+                if isEnglish && !definitions.isEmpty {
+                    processedDefinitions = definitions.compactMap { def in
+                        let trimmedMeaning = def.meaning.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let hasEnglishContent = trimmedMeaning.range(of: "[a-zA-Z]{3,}", options: .regularExpression) != nil
+                        guard hasEnglishContent else { return nil }
+                        return DictionaryEntry.Definition(
+                            partOfSpeech: def.partOfSpeech,
+                            meaning: def.meaning,
+                            translation: trimmedMeaning,
+                            examples: def.examples
+                        )
+                    }
+                }
+                
                 let content = OverlayContent(
                     word: selected.text,
                     phonetic: phonetic,
                     translation: selected.text,
-                    definitions: definitions
+                    definitions: processedDefinitions
                 )
                 updateOverlay(state: .result(content), anchor: mouseLocation)
                 return
@@ -288,9 +305,10 @@ final class AppModel: ObservableObject {
                 let translated = try await translationBridge.translate(text: selected.text, source: sourceLanguage, target: targetLanguage)
                 guard !Task.isCancelled, activeLookupID == lookupID else { return }
 
-                // 如果词典有释义，尝试翻译每个释义
+                // 如果词典有释义，根据目标语言处理每个释义
                 if !definitions.isEmpty {
                     let targetIsChinese = targetLanguage.minimalIdentifier == "zh"
+                    let targetIsEnglish = targetLanguage.minimalIdentifier == "en"
                     let isSameLanguage = sourceLanguage.minimalIdentifier == targetLanguage.minimalIdentifier
                     var translatedDefinitions: [DictionaryEntry.Definition] = []
                     for def in definitions {
@@ -300,6 +318,23 @@ final class AppModel: ObservableObject {
 
                         if shouldKeepDictionaryTranslation {
                             translatedDefinitions.append(def)
+                            continue
+                        }
+
+                        // 如果目标语言是英语，使用英文释义
+                        if targetIsEnglish {
+                            let trimmedMeaning = def.meaning.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let hasEnglishContent = trimmedMeaning.range(of: "[a-zA-Z]{3,}", options: .regularExpression) != nil
+                            
+                            if hasEnglishContent {
+                                let translatedDef = DictionaryEntry.Definition(
+                                    partOfSpeech: def.partOfSpeech,
+                                    meaning: def.meaning,
+                                    translation: trimmedMeaning,
+                                    examples: def.examples
+                                )
+                                translatedDefinitions.append(translatedDef)
+                            }
                             continue
                         }
 

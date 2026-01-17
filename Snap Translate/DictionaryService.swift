@@ -1,16 +1,70 @@
 import CoreServices
 import Foundation
 
-/// 词典服务，从 macOS 系统词典获取单词的完整信息
 final class DictionaryService {
 
-    /// 查询单词的词典信息
-    func lookup(_ word: String) -> DictionaryEntry? {
+    enum DictionaryKind {
+        case englishEnglish
+        case englishChinese
+        case `default`
+    }
+    
+    private var englishDictionary: DCSDictionary?
+    private var chineseDictionary: DCSDictionary?
+    
+    init() {
+        initializeDictionaries()
+    }
+    
+    private func initializeDictionaries() {
+        guard let unmanagedDictionaries = DCSCopyAvailableDictionaries() else {
+            return
+        }
+        let dictionaries = unmanagedDictionaries.takeRetainedValue() as NSArray
+        
+        for dict in dictionaries {
+            let dictRef = dict as! DCSDictionary
+            guard let unmanagedName = DCSDictionaryGetName(dictRef),
+                  let name = unmanagedName.takeUnretainedValue() as String? else {
+                continue
+            }
+            
+            #if DEBUG
+            print("[DictionaryService] Found dictionary: \(name)")
+            #endif
+            
+            if name.contains("New Oxford American Dictionary") || name.contains("Oxford Dictionary of English") {
+                englishDictionary = dictRef
+            } else if name.contains("牛津") || name.contains("Oxford English-Chinese") || name.contains("英汉") {
+                chineseDictionary = dictRef
+            }
+        }
+        
+        #if DEBUG
+        print("[DictionaryService] English dictionary: \(englishDictionary != nil ? "found" : "not found")")
+        print("[DictionaryService] Chinese dictionary: \(chineseDictionary != nil ? "found" : "not found")")
+        #endif
+    }
+
+    func lookup(_ word: String, preferEnglish: Bool = false) -> DictionaryEntry? {
         guard let normalized = normalizeWord(word) else {
             return nil
         }
-
+        
         let range = CFRange(location: 0, length: normalized.utf16.count)
+        
+        if preferEnglish, let englishDict = englishDictionary {
+            if let definition = DCSCopyTextDefinition(englishDict, normalized as CFString, range) {
+                let html = definition.takeRetainedValue() as String
+                
+                #if DEBUG
+                print("[DictionaryService] English dictionary result for '\(normalized)' (\(html.count) chars):\n\(html.prefix(2000))")
+                #endif
+                
+                return parseEnglishHTML(html, word: normalized)
+            }
+        }
+        
         guard let definition = DCSCopyTextDefinition(nil, normalized as CFString, range) else {
             return nil
         }
@@ -18,7 +72,7 @@ final class DictionaryService {
         let html = definition.takeRetainedValue() as String
 
         #if DEBUG
-        print("[DictionaryService] Raw HTML for '\(normalized)' (\(html.count) chars):\n\(html.prefix(3000))")
+        print("[DictionaryService] Default dictionary result for '\(normalized)' (\(html.count) chars):\n\(html.prefix(2000))")
         #endif
 
         return parseHTML(html, word: normalized)
@@ -46,6 +100,184 @@ final class DictionaryService {
             phonetic: phonetic,
             definitions: definitions
         )
+    }
+    
+    private func parseEnglishHTML(_ html: String, word: String) -> DictionaryEntry {
+        let phonetic = extractPhonetic(from: html)
+        let definitions = extractEnglishDefinitions(from: html)
+
+        return DictionaryEntry(
+            word: word,
+            phonetic: phonetic,
+            definitions: definitions
+        )
+    }
+    
+    private func extractEnglishDefinitions(from html: String) -> [DictionaryEntry.Definition] {
+        var definitions: [DictionaryEntry.Definition] = []
+        let text = stripHTML(html)
+        
+        let posPattern = "(plural noun|noun|verb|adjective|adverb|preposition|conjunction|pronoun|interjection)"
+        guard let posRegex = try? NSRegularExpression(pattern: posPattern, options: .caseInsensitive) else {
+            return definitions
+        }
+        
+        let posMatches = posRegex.matches(in: text, options: [], range: NSRange(text.startIndex..., in: text))
+        
+        for (index, match) in posMatches.enumerated() {
+            guard let posRange = Range(match.range, in: text) else { continue }
+            let pos = normalizePOS(String(text[posRange]))
+            
+            let contentStart = posRange.upperBound
+            let contentEnd: String.Index
+            if index + 1 < posMatches.count, let nextRange = Range(posMatches[index + 1].range, in: text) {
+                contentEnd = nextRange.lowerBound
+            } else {
+                let phrasesRange = text.range(of: "PHRASES", options: .caseInsensitive, range: contentStart..<text.endIndex)
+                let originRange = text.range(of: "ORIGIN", options: .caseInsensitive, range: contentStart..<text.endIndex)
+                if let phrases = phrasesRange, let origin = originRange {
+                    contentEnd = min(phrases.lowerBound, origin.lowerBound)
+                } else {
+                    contentEnd = phrasesRange?.lowerBound ?? originRange?.lowerBound ?? text.endIndex
+                }
+            }
+            
+            let content = String(text[contentStart..<contentEnd])
+            
+            let numberedPattern = "(?:^|\\s)(\\d+)\\s+(.+?)(?=(?:\\s+\\d+\\s+)|$)"
+            guard let numRegex = try? NSRegularExpression(pattern: numberedPattern, options: [.dotMatchesLineSeparators]) else { continue }
+            
+            let numMatches = numRegex.matches(in: content, options: [], range: NSRange(content.startIndex..., in: content))
+            
+            for numMatch in numMatches {
+                guard numMatch.numberOfRanges >= 3,
+                      let meaningRange = Range(numMatch.range(at: 2), in: content) else { continue }
+                
+                var meaning = String(content[meaningRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+                meaning = cleanEnglishDefinition(meaning)
+                
+                if meaning.count > 5, meaning.range(of: "[a-zA-Z]{3,}", options: .regularExpression) != nil {
+                    definitions.append(DictionaryEntry.Definition(
+                        partOfSpeech: pos,
+                        meaning: meaning,
+                        translation: meaning,
+                        examples: []
+                    ))
+                }
+            }
+            
+            if numMatches.isEmpty {
+                var meaning = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                meaning = cleanEnglishDefinition(meaning)
+                
+                if meaning.count > 5, meaning.range(of: "[a-zA-Z]{3,}", options: .regularExpression) != nil {
+                    definitions.append(DictionaryEntry.Definition(
+                        partOfSpeech: pos,
+                        meaning: meaning,
+                        translation: meaning,
+                        examples: []
+                    ))
+                }
+            }
+        }
+        
+        if definitions.isEmpty {
+            let fallbackDefs = extractFallbackEnglishDefinitions(from: text)
+            definitions.append(contentsOf: fallbackDefs)
+        }
+        
+        return definitions
+    }
+    
+    private func cleanEnglishDefinition(_ text: String) -> String {
+        var result = text
+        
+        if let colonIndex = result.firstIndex(of: ":") {
+            result = String(result[..<colonIndex])
+        }
+        
+        result = result.replacingOccurrences(of: "\\s*\\|.*", with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "\\([^)]*\\)", with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "\\[[^\\]]*\\]", with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private func detectPartOfSpeech(_ text: String) -> String? {
+        let posPatterns = [
+            "^(noun|verb|adjective|adverb|preposition|conjunction|pronoun|interjection)\\s*$",
+            "^(n\\.|v\\.|adj\\.|adv\\.|prep\\.|conj\\.|pron\\.|interj\\.)\\s*$"
+        ]
+        
+        let lowercased = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        for pattern in posPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+               regex.firstMatch(in: lowercased, options: [], range: NSRange(lowercased.startIndex..., in: lowercased)) != nil {
+                return normalizePOS(lowercased)
+            }
+        }
+        return nil
+    }
+    
+    private func extractNumberedMeaning(_ text: String) -> (Int, String)? {
+        let pattern = "^(\\d+)\\s+(.+)"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
+              let match = regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)),
+              match.numberOfRanges == 3,
+              let numRange = Range(match.range(at: 1), in: text),
+              let meaningRange = Range(match.range(at: 2), in: text),
+              let number = Int(String(text[numRange])) else {
+            return nil
+        }
+        return (number, String(text[meaningRange]))
+    }
+    
+    private func cleanEnglishMeaning(_ text: String) -> String {
+        var result = text
+        result = result.replacingOccurrences(of: ":\\s*$", with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "\\s*\\|.*$", with: "", options: .regularExpression)
+        
+        if let colonIndex = result.firstIndex(of: ":") {
+            result = String(result[..<colonIndex])
+        }
+        
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private func extractFallbackEnglishDefinitions(from text: String) -> [DictionaryEntry.Definition] {
+        var definitions: [DictionaryEntry.Definition] = []
+        
+        let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".;"))
+        var currentPOS = ""
+        
+        for sentence in sentences {
+            let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.count > 10, trimmed.count < 200 else { continue }
+            
+            let containsChinese = trimmed.range(of: "\\p{Han}", options: .regularExpression) != nil
+            guard !containsChinese else { continue }
+            
+            if let pos = detectPartOfSpeech(trimmed) {
+                currentPOS = pos
+                continue
+            }
+            
+            let hasEnglishContent = trimmed.range(of: "[a-zA-Z]{4,}", options: .regularExpression) != nil
+            if hasEnglishContent {
+                definitions.append(DictionaryEntry.Definition(
+                    partOfSpeech: currentPOS,
+                    meaning: trimmed,
+                    translation: trimmed,
+                    examples: []
+                ))
+                if definitions.count >= 3 {
+                    break
+                }
+            }
+        }
+        
+        return definitions
     }
 
     // MARK: - Phonetic Extraction

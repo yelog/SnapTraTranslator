@@ -163,28 +163,30 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func primaryTranslationSection(content: OverlayContent) -> some View {
-        HStack(spacing: 6) {
-            if !content.definitions.isEmpty {
-                // 如果有详细定义，显示简洁的主翻译
-                Text(content.translation)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.blue)
-            } else {
-                // 没有详细定义时，显示更大的翻译
-                Text(content.translation)
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.primary)
-            }
+        let targetIsEnglish = model.settings.targetLanguage.hasPrefix("en")
+        let shouldHideTranslation = targetIsEnglish && !content.definitions.isEmpty
+        
+        if !shouldHideTranslation {
+            HStack(spacing: 6) {
+                if !content.definitions.isEmpty {
+                    Text(content.translation)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.blue)
+                } else {
+                    Text(content.translation)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.primary)
+                }
 
-            // 非持续模式下显示复制按钮
-            if !model.settings.continuousTranslation {
-                CopyButton(text: content.translation)
-            }
+                if !model.settings.continuousTranslation {
+                    CopyButton(text: content.translation)
+                }
 
-            Spacer()
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, content.definitions.isEmpty ? 14 : 12)
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, content.definitions.isEmpty ? 14 : 12)
     }
 
     @ViewBuilder
@@ -233,10 +235,26 @@ struct OverlayView: View {
     private func displayedPartOfSpeech(for pos: String) -> String {
         let lowercased = pos.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         switch lowercased {
-        case "vt", "vt.", "transitive verb":
+        case "n", "noun":
+            return "n."
+        case "v", "verb":
+            return "v."
+        case "vt", "transitive verb":
             return "vt."
-        case "vi", "vi.", "intransitive verb":
+        case "vi", "intransitive verb":
             return "vi."
+        case "adj", "adjective":
+            return "adj."
+        case "adv", "adverb":
+            return "adv."
+        case "prep", "preposition":
+            return "prep."
+        case "conj", "conjunction":
+            return "conj."
+        case "pron", "pronoun":
+            return "pron."
+        case "interj", "interjection":
+            return "interj."
         default:
             return pos
         }
@@ -267,12 +285,16 @@ struct OverlayView: View {
 
     private func posColor(for pos: String) -> Color {
         switch pos.lowercased() {
-        case "n.", "noun": return .blue
-        case "v.", "verb": return .green
-        case "adj.", "adjective": return .orange
-        case "adv.", "adverb": return .purple
-        case "prep.", "preposition": return .pink
-        case "conj.", "conjunction": return .cyan
+        case "n.", "n", "noun": return .blue
+        case "v.", "v", "verb": return .green
+        case "vt.", "vt", "transitive verb": return .green
+        case "vi.", "vi", "intransitive verb": return .green
+        case "adj.", "adj", "adjective": return .orange
+        case "adv.", "adv", "adverb": return .purple
+        case "prep.", "prep", "preposition": return .pink
+        case "conj.", "conj", "conjunction": return .cyan
+        case "pron.", "pron", "pronoun": return .teal
+        case "interj.", "interj", "interjection": return .red
         default: return .gray
         }
     }
