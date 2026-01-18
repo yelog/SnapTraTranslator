@@ -11,8 +11,8 @@ final class OCRService {
     func recognizeWords(in image: CGImage, language: String) async throws -> [RecognizedWord] {
         try await Task.detached(priority: .userInitiated) {
             let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
+            request.recognitionLevel = .fast
+            request.usesLanguageCorrection = false
             request.recognitionLanguages = [language]
             if #available(macOS 13.0, *) {
                 request.revision = VNRecognizeTextRequestRevision3

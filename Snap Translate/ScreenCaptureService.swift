@@ -11,6 +11,11 @@ struct CaptureRegion {
 
 final class ScreenCaptureService {
     let captureSize = CGSize(width: 520, height: 140)
+    
+    private var cachedDisplay: SCDisplay?
+    private var cachedDisplayID: CGDirectDisplayID?
+    private var lastCacheTime: Date?
+    private let cacheExpiration: TimeInterval = 5.0
 
     func captureAroundCursor() async -> (image: CGImage, region: CaptureRegion)? {
         let mouseLocation = NSEvent.mouseLocation
@@ -26,10 +31,9 @@ final class ScreenCaptureService {
         let cgRect = convertToDisplayLocalCoordinates(rectInScreen, screen: screen)
 
         do {
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
-                return nil
-            }
+            let display = try await getDisplay(for: displayID)
+            guard let display else { return nil }
+            
             let filter = SCContentFilter(display: display, excludingWindows: [])
             let configuration = makeConfiguration(for: cgRect, scaleFactor: scaleFactor)
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
@@ -37,6 +41,33 @@ final class ScreenCaptureService {
         } catch {
             return nil
         }
+    }
+    
+    func invalidateCache() {
+        cachedDisplay = nil
+        cachedDisplayID = nil
+        lastCacheTime = nil
+    }
+    
+    private func getDisplay(for displayID: CGDirectDisplayID) async throws -> SCDisplay? {
+        let now = Date()
+        if let cached = cachedDisplay,
+           let cachedID = cachedDisplayID,
+           cachedID == displayID,
+           let cacheTime = lastCacheTime,
+           now.timeIntervalSince(cacheTime) < cacheExpiration {
+            return cached
+        }
+        
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+            return nil
+        }
+        
+        cachedDisplay = display
+        cachedDisplayID = displayID
+        lastCacheTime = now
+        return display
     }
 
     private func captureRect(for point: CGPoint, in screenFrame: CGRect, size: CGSize) -> CGRect {

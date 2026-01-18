@@ -54,6 +54,7 @@ final class AppModel: ObservableObject {
     private var activeLookupID: UUID?
     private var isHotkeyActive = false
     private var lastAvailabilityKey: String?
+    private var cachedLanguageStatus: (key: String, isInstalled: Bool)?
     
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
@@ -295,13 +296,28 @@ final class AppModel: ObservableObject {
             }
 
             if #available(macOS 15.0, *) {
-                let availability = LanguageAvailability()
-                let status = await availability.status(from: sourceLanguage, to: targetLanguage)
-                guard status == .installed else {
-                    let message = status == .supported
-                        ? "Language pack required. Please download in System Settings > General > Language & Region > Translation."
-                        : "Translation not supported for this language pair."
-                    updateOverlay(state: .error(message), anchor: mouseLocation)
+                let languageKey = "\(sourceLanguage.minimalIdentifier)->\(targetLanguage.minimalIdentifier)"
+                
+                let isInstalled: Bool
+                if let cached = cachedLanguageStatus, cached.key == languageKey {
+                    isInstalled = cached.isInstalled
+                } else {
+                    let availability = LanguageAvailability()
+                    let status = await availability.status(from: sourceLanguage, to: targetLanguage)
+                    isInstalled = status == .installed
+                    cachedLanguageStatus = (languageKey, isInstalled)
+                    
+                    if !isInstalled {
+                        let message = status == .supported
+                            ? "Language pack required. Please download in System Settings > General > Language & Region > Translation."
+                            : "Translation not supported for this language pair."
+                        updateOverlay(state: .error(message), anchor: mouseLocation)
+                        return
+                    }
+                }
+                
+                guard isInstalled else {
+                    updateOverlay(state: .error("Language pack not installed."), anchor: mouseLocation)
                     return
                 }
 
@@ -311,59 +327,11 @@ final class AppModel: ObservableObject {
 
                 // 如果词典有释义，根据目标语言处理每个释义
                 if !definitions.isEmpty {
-                    let targetIsChinese = targetLanguage.minimalIdentifier == "zh"
-                    let targetIsEnglish = targetLanguage.minimalIdentifier == "en"
-                    let isSameLanguage = sourceLanguage.minimalIdentifier == targetLanguage.minimalIdentifier
-                    var translatedDefinitions: [DictionaryEntry.Definition] = []
-                    for def in definitions {
-                        let trimmedTranslation = def.translation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                        let hasDictionaryTranslation = !trimmedTranslation.isEmpty
-                        let shouldKeepDictionaryTranslation = targetIsChinese && hasDictionaryTranslation
-
-                        if shouldKeepDictionaryTranslation {
-                            translatedDefinitions.append(def)
-                            continue
-                        }
-
-                        // 如果目标语言是英语，使用英文释义
-                        if targetIsEnglish {
-                            let trimmedMeaning = def.meaning.trimmingCharacters(in: .whitespacesAndNewlines)
-                            let hasEnglishContent = trimmedMeaning.range(of: "[a-zA-Z]{3,}", options: .regularExpression) != nil
-                            
-                            if hasEnglishContent {
-                                let translatedDef = DictionaryEntry.Definition(
-                                    partOfSpeech: def.partOfSpeech,
-                                    meaning: def.meaning,
-                                    translation: trimmedMeaning,
-                                    examples: def.examples
-                                )
-                                translatedDefinitions.append(translatedDef)
-                            }
-                            continue
-                        }
-
-                        let translatedText: String
-                        if isSameLanguage {
-                            translatedText = def.meaning
-                        } else if let meaningTranslation = try? await translationBridge.translate(
-                            text: def.meaning,
-                            source: sourceLanguage,
-                            target: targetLanguage
-                        ) {
-                            translatedText = meaningTranslation
-                        } else {
-                            translatedText = def.meaning
-                        }
-
-                        let translatedDef = DictionaryEntry.Definition(
-                            partOfSpeech: def.partOfSpeech,
-                            meaning: def.meaning,
-                            translation: translatedText,
-                            examples: def.examples
-                        )
-                        translatedDefinitions.append(translatedDef)
-                    }
-                    definitions = translatedDefinitions
+                    definitions = await translateDefinitionsInParallel(
+                        definitions: definitions,
+                        sourceLanguage: sourceLanguage,
+                        targetLanguage: targetLanguage
+                    )
                 }
 
                 let content = OverlayContent(
@@ -476,6 +444,7 @@ final class AppModel: ObservableObject {
     }
 
     private func handleScreenConfigurationChange() {
+        captureService.invalidateCache()
         guard isHotkeyActive else { return }
         lookupTask?.cancel()
         lookupTask = nil
@@ -496,7 +465,11 @@ final class AppModel: ObservableObject {
         let targetLanguage = Locale.Language(identifier: settings.targetLanguage)
         let availability = LanguageAvailability()
         let status = await availability.status(from: sourceLanguage, to: targetLanguage)
-        let key = "\(sourceLanguage.minimalIdentifier)->\(targetLanguage.minimalIdentifier)-\(status)"
+        let languageKey = "\(sourceLanguage.minimalIdentifier)->\(targetLanguage.minimalIdentifier)"
+        let key = "\(languageKey)-\(status)"
+        
+        cachedLanguageStatus = (languageKey, status == .installed)
+        
         guard key != lastAvailabilityKey else { return }
         lastAvailabilityKey = key
         switch status {
@@ -517,7 +490,72 @@ final class AppModel: ObservableObject {
         return CGPoint(x: x, y: y)
     }
 
-    // 选择光标所在的单词，当多个边界框重叠时选择中心点最近的
+    private func translateDefinitionsInParallel(
+        definitions: [DictionaryEntry.Definition],
+        sourceLanguage: Locale.Language,
+        targetLanguage: Locale.Language
+    ) async -> [DictionaryEntry.Definition] {
+        let targetIsChinese = targetLanguage.minimalIdentifier == "zh"
+        let targetIsEnglish = targetLanguage.minimalIdentifier == "en"
+        let isSameLanguage = sourceLanguage.minimalIdentifier == targetLanguage.minimalIdentifier
+
+        return await withTaskGroup(of: (Int, DictionaryEntry.Definition?).self) { group in
+            for (index, def) in definitions.enumerated() {
+                group.addTask { [translationBridge] in
+                    let trimmedTranslation = def.translation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    let hasDictionaryTranslation = !trimmedTranslation.isEmpty
+                    let shouldKeepDictionaryTranslation = targetIsChinese && hasDictionaryTranslation
+
+                    if shouldKeepDictionaryTranslation {
+                        return (index, def)
+                    }
+
+                    if targetIsEnglish {
+                        let trimmedMeaning = def.meaning.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let hasEnglishContent = trimmedMeaning.range(of: "[a-zA-Z]{3,}", options: .regularExpression) != nil
+                        if hasEnglishContent {
+                            return (index, DictionaryEntry.Definition(
+                                partOfSpeech: def.partOfSpeech,
+                                meaning: def.meaning,
+                                translation: trimmedMeaning,
+                                examples: def.examples
+                            ))
+                        }
+                        return (index, nil)
+                    }
+
+                    let translatedText: String
+                    if isSameLanguage {
+                        translatedText = def.meaning
+                    } else if let meaningTranslation = try? await translationBridge.translate(
+                        text: def.meaning,
+                        source: sourceLanguage,
+                        target: targetLanguage
+                    ) {
+                        translatedText = meaningTranslation
+                    } else {
+                        translatedText = def.meaning
+                    }
+
+                    return (index, DictionaryEntry.Definition(
+                        partOfSpeech: def.partOfSpeech,
+                        meaning: def.meaning,
+                        translation: translatedText,
+                        examples: def.examples
+                    ))
+                }
+            }
+
+            var results: [(Int, DictionaryEntry.Definition)] = []
+            for await (index, def) in group {
+                if let def {
+                    results.append((index, def))
+                }
+            }
+            return results.sorted { $0.0 < $1.0 }.map { $0.1 }
+        }
+    }
+
     private func selectWord(from words: [RecognizedWord], normalizedPoint: CGPoint) -> RecognizedWord? {
         let tolerance: CGFloat = 0.01
 

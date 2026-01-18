@@ -11,13 +11,20 @@ final class DictionaryService {
     
     private var englishDictionary: DCSDictionary?
     private var chineseDictionary: DCSDictionary?
+    private var isInitialized = false
+    private let initQueue = DispatchQueue(label: "DictionaryService.init", qos: .userInitiated)
     
     init() {
-        initializeDictionaries()
+        initQueue.async { [weak self] in
+            self?.initializeDictionaries()
+        }
     }
     
     private func initializeDictionaries() {
+        guard !isInitialized else { return }
+        
         guard let unmanagedDictionaries = DCSCopyAvailableDictionaries() else {
+            isInitialized = true
             return
         }
         let dictionaries = unmanagedDictionaries.takeRetainedValue() as NSArray
@@ -40,13 +47,25 @@ final class DictionaryService {
             }
         }
         
+        isInitialized = true
+        
         #if DEBUG
         print("[DictionaryService] English dictionary: \(englishDictionary != nil ? "found" : "not found")")
         print("[DictionaryService] Chinese dictionary: \(chineseDictionary != nil ? "found" : "not found")")
         #endif
     }
+    
+    private func ensureInitialized() {
+        initQueue.sync {
+            if !isInitialized {
+                initializeDictionaries()
+            }
+        }
+    }
 
     func lookup(_ word: String, preferEnglish: Bool = false) -> DictionaryEntry? {
+        ensureInitialized()
+        
         guard let normalized = normalizeWord(word) else {
             return nil
         }
