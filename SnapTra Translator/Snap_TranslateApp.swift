@@ -113,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.imagePosition = .imageOnly
             button.target = self
             button.action = #selector(statusItemClicked)
-            button.toolTip = "Snap Translate"
+            button.toolTip = "SnapTra Translator"
         }
         statusItem = item
     }
@@ -242,7 +242,7 @@ final class SettingsWindowController: NSWindowController {
             defer: false
         )
         window.contentView = hostingView
-        window.title = "Snap Translate"
+        window.title = "SnapTra Translator"
         window.isReleasedWhenClosed = false
         window.center()
 
@@ -269,7 +269,7 @@ final class PaywallWindowController: NSWindowController {
             defer: false
         )
         window.contentView = hostingView
-        window.title = "Snap Translate Pro"
+        window.title = "SnapTra Translator Pro"
         window.isReleasedWhenClosed = false
         window.center()
 

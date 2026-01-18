@@ -363,7 +363,7 @@ final class AppModel: ObservableObject {
         }
         switch state {
         case .error(let message):
-            sendNotification(title: "Snap Translate", body: message)
+            sendNotification(title: "SnapTra Translator", body: message)
         case .idle:
             break
         case .result:
@@ -478,9 +478,9 @@ final class AppModel: ObservableObject {
         case .installed:
             break
         case .supported:
-            sendNotification(title: "Snap Translate", body: "Language pack required. Please download in System Settings > General > Language & Region > Translation.")
+            sendNotification(title: "SnapTra Translator", body: "Language pack required. Please download in System Settings > General > Language & Region > Translation.")
         case .unsupported:
-            sendNotification(title: "Snap Translate", body: "Translation not supported for this language pair.")
+            sendNotification(title: "SnapTra Translator", body: "Translation not supported for this language pair.")
         @unknown default:
             break
         }

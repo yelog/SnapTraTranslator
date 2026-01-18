@@ -52,7 +52,7 @@ struct ContentView: View {
                     .opacity(appeared ? 1 : 0)
                     .scaleEffect(appeared ? 1 : 0.8)
 
-                Text("Snap Translate")
+                Text("SnapTra Translator")
                     .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
                     .opacity(appeared ? 1 : 0)

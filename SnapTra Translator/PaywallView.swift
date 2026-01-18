@@ -37,7 +37,7 @@ struct PaywallView: View {
                 .frame(width: 64, height: 64)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             
-            Text("Snap Translate Pro")
+            Text("SnapTra Translator Pro")
                 .font(.system(size: 20, weight: .bold))
             
             Text("Translate any text on screen instantly")
