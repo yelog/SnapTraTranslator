@@ -75,24 +75,25 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func loadingView(word: String?) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             if let word {
                 Text(word)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.primary.opacity(0.8))
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .tracking(0.2)
             }
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                    .scaleEffect(0.8)
+                    .scaleEffect(0.85)
                 Text("Translating")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                 LoadingDotsView()
             }
         }
-        .padding(.vertical, 14)
-        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+        .padding(.horizontal, 18)
     }
 
     // MARK: - Result View
@@ -115,77 +116,103 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func headerSection(content: OverlayContent) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(content.word)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
+        VStack(alignment: .leading, spacing: 8) {
+            // Word title with copy button
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(content.word)
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .tracking(0.3)
 
-            // 非持续模式下显示复制按钮
-            if !model.settings.continuousTranslation {
-                CopyButton(text: content.word)
+                // 非持续模式下显示复制按钮
+                if !model.settings.continuousTranslation {
+                    CopyButton(text: content.word)
+                }
+
+                Spacer()
+
+                // 非持续模式下显示关闭按钮
+                if !model.settings.continuousTranslation {
+                    Button {
+                        model.dismissOverlay()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 20, height: 20)
+                            .background(
+                                Circle()
+                                    .fill(.secondary.opacity(0.1))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
+            // Phonetic notation
             if let phonetic = content.phonetic, !phonetic.isEmpty {
                 Text(phonetic)
-                    .font(.system(size: 12, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.secondary.opacity(0.8))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
                     .background(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(.secondary.opacity(0.1))
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(.secondary.opacity(0.25), lineWidth: 0.5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(.secondary.opacity(0.06))
+                            )
                     )
             }
-
-            Spacer()
-
-            // 非持续模式下显示关闭按钮
-            if !model.settings.continuousTranslation {
-                Button {
-                    model.dismissOverlay()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20, height: 20)
-                        .background(
-                            Circle()
-                                .fill(.secondary.opacity(0.1))
-                        )
-                }
-                .buttonStyle(.plain)
-            }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 10)
+        .padding(.horizontal, 18)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
     }
 
     @ViewBuilder
     private func primaryTranslationSection(content: OverlayContent) -> some View {
         let targetIsEnglish = model.settings.targetLanguage.hasPrefix("en")
         let shouldHideTranslation = targetIsEnglish && !content.definitions.isEmpty
-        
-        if !shouldHideTranslation {
-            HStack(spacing: 6) {
-                if !content.definitions.isEmpty {
-                    Text(content.translation)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.blue)
-                } else {
-                    Text(content.translation)
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(.primary)
-                }
 
-                if !model.settings.continuousTranslation {
-                    CopyButton(text: content.translation)
+        if !shouldHideTranslation {
+            HStack(spacing: 8) {
+                if !content.definitions.isEmpty {
+                    // Clean gradient translation text (no background container)
+                    Text(content.translation)
+                        .font(.system(size: 17, weight: .medium, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.2, green: 0.6, blue: 1.0),   // Lighter blue
+                                    Color(red: 0.5, green: 0.5, blue: 0.95)   // Soft purple-blue
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .tracking(0.3)
+
+                    if !model.settings.continuousTranslation {
+                        CopyButton(text: content.translation)
+                    }
+                } else {
+                    // Large primary translation (when no definitions)
+                    Text(content.translation)
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .tracking(0.2)
+
+                    if !model.settings.continuousTranslation {
+                        CopyButton(text: content.translation)
+                    }
                 }
 
                 Spacer()
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, content.definitions.isEmpty ? 14 : 12)
+            .padding(.horizontal, 18)
+            .padding(.bottom, content.definitions.isEmpty ? 16 : 8)
         }
     }
 
@@ -197,38 +224,40 @@ struct OverlayView: View {
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 Divider()
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 18)
+                    .opacity(0.6)
 
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 14) {
                     ForEach(Array(grouped.enumerated()), id: \.offset) { _, group in
                         definitionGroupRow(partOfSpeech: group.0, translations: group.1)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 14)
             }
         }
     }
 
     @ViewBuilder
     private func definitionGroupRow(partOfSpeech: String, translations: [String]) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             if !partOfSpeech.isEmpty {
                 Text(displayedPartOfSpeech(for: partOfSpeech))
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
                     .background(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(posColor(for: partOfSpeech))
+                            .shadow(color: posColor(for: partOfSpeech).opacity(0.3), radius: 2, x: 0, y: 1)
                     )
             }
 
             Text(translations.joined(separator: "；"))
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.primary.opacity(0.9))
-                .lineLimit(2)
+                .font(.system(size: 14, weight: .regular, design: .rounded))
+                .foregroundStyle(.primary)
+                .lineLimit(3)
         }
     }
 
@@ -285,17 +314,28 @@ struct OverlayView: View {
 
     private func posColor(for pos: String) -> Color {
         switch pos.lowercased() {
-        case "n.", "n", "noun": return .blue
-        case "v.", "v", "verb": return .green
-        case "vt.", "vt", "transitive verb": return .green
-        case "vi.", "vi", "intransitive verb": return .green
-        case "adj.", "adj", "adjective": return .orange
-        case "adv.", "adv", "adverb": return .purple
-        case "prep.", "prep", "preposition": return .pink
-        case "conj.", "conj", "conjunction": return .cyan
-        case "pron.", "pron", "pronoun": return .teal
-        case "interj.", "interj", "interjection": return .red
-        default: return .gray
+        case "n.", "n", "noun":
+            return Color(red: 0.2, green: 0.6, blue: 1.0)  // Modern blue
+        case "v.", "v", "verb":
+            return Color(red: 0.2, green: 0.78, blue: 0.35)  // Modern green
+        case "vt.", "vt", "transitive verb":
+            return Color(red: 0.2, green: 0.78, blue: 0.35)  // Modern green
+        case "vi.", "vi", "intransitive verb":
+            return Color(red: 0.2, green: 0.78, blue: 0.35)  // Modern green
+        case "adj.", "adj", "adjective":
+            return Color(red: 1.0, green: 0.58, blue: 0.0)  // Vibrant orange
+        case "adv.", "adv", "adverb":
+            return Color(red: 0.69, green: 0.32, blue: 0.87)  // Modern purple
+        case "prep.", "prep", "preposition":
+            return Color(red: 1.0, green: 0.27, blue: 0.58)  // Modern pink
+        case "conj.", "conj", "conjunction":
+            return Color(red: 0.2, green: 0.78, blue: 0.87)  // Modern cyan
+        case "pron.", "pron", "pronoun":
+            return Color(red: 0.2, green: 0.69, blue: 0.64)  // Modern teal
+        case "interj.", "interj", "interjection":
+            return Color(red: 1.0, green: 0.27, blue: 0.27)  // Modern red
+        default:
+            return Color(red: 0.56, green: 0.56, blue: 0.58)  // Modern gray
         }
     }
 
@@ -303,31 +343,31 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func errorView(message: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.orange)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Color(red: 1.0, green: 0.58, blue: 0.0))
             Text(message)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.primary.opacity(0.8))
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(.primary)
         }
-        .padding(.vertical, 14)
-        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+        .padding(.horizontal, 18)
     }
 
     // MARK: - No Word View
 
     private var noWordView: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: "text.magnifyingglass")
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.secondary)
             Text("No word detected")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.primary.opacity(0.7))
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(.primary.opacity(0.8))
         }
-        .padding(.vertical, 14)
-        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+        .padding(.horizontal, 18)
     }
 }
 
@@ -337,17 +377,17 @@ struct LoadingDotsView: View {
     @State private var animating = false
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 4) {
             ForEach(0..<3, id: \.self) { index in
                 Circle()
-                    .fill(Color.secondary.opacity(0.7))
-                    .frame(width: 4, height: 4)
+                    .fill(Color.secondary)
+                    .frame(width: 4.5, height: 4.5)
                     .scaleEffect(animating ? 1.0 : 0.5)
-                    .opacity(animating ? 1 : 0.3)
+                    .opacity(animating ? 0.8 : 0.3)
                     .animation(
-                        .easeInOut(duration: 0.5)
+                        .easeInOut(duration: 0.6)
                             .repeatForever(autoreverses: true)
-                            .delay(Double(index) * 0.15),
+                            .delay(Double(index) * 0.2),
                         value: animating
                     )
             }
@@ -367,23 +407,24 @@ struct CopyButton: View {
     var body: some View {
         Button {
             copyToClipboard(text)
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 copied = true
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.easeInOut(duration: 0.25)) {
                     copied = false
                 }
             }
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(copied ? .green : .secondary)
+                .foregroundStyle(copied ? Color(red: 0.2, green: 0.78, blue: 0.35) : .secondary)
                 .frame(width: 18, height: 18)
                 .background(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .fill(copied ? Color.green.opacity(0.1) : Color.secondary.opacity(0.1))
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(copied ? Color(red: 0.2, green: 0.78, blue: 0.35).opacity(0.12) : Color.secondary.opacity(0.08))
                 )
+                .scaleEffect(copied ? 1.1 : 1.0)
         }
         .buttonStyle(.plain)
         .help("Copy to clipboard")
