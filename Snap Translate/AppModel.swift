@@ -60,9 +60,8 @@ final class AppModel: ObservableObject {
     private var localMouseMonitor: Any?
     private var debounceWorkItem: DispatchWorkItem?
     private var lastOcrPosition: CGPoint?
-    private var currentWordScreenBounds: CGRect?
-    private let debounceInterval: TimeInterval = 0.05
-    private let positionThreshold: CGFloat = 5.0
+    private let debounceInterval: TimeInterval = 0.1
+    private let positionThreshold: CGFloat = 10.0
 
     private let debugOverlayWindowController = DebugOverlayWindowController()
     lazy var overlayWindowController = OverlayWindowController(model: self)
@@ -116,7 +115,6 @@ final class AppModel: ObservableObject {
         lookupTask?.cancel()
         lookupTask = nil
         activeLookupID = nil
-        currentWordScreenBounds = nil
         overlayState = .idle
         overlayWindowController.setInteractive(false)
         overlayWindowController.hide()
@@ -161,7 +159,6 @@ final class AppModel: ObservableObject {
         debounceWorkItem?.cancel()
         debounceWorkItem = nil
         lastOcrPosition = nil
-        currentWordScreenBounds = nil
     }
     
     private func handleMouseMoved() {
@@ -177,19 +174,6 @@ final class AppModel: ObservableObject {
                 guard let self = self, self.isHotkeyActive else { return }
 
                 let currentPosition = NSEvent.mouseLocation
-
-                // 检查鼠标是否还在当前单词的边界框内
-                if let wordBounds = self.currentWordScreenBounds {
-                    // 添加一些容差以提供更好的用户体验
-                    let tolerance: CGFloat = 2.0
-                    let expandedBounds = wordBounds.insetBy(dx: -tolerance, dy: -tolerance)
-                    if expandedBounds.contains(currentPosition) {
-                        // 仍在同一单词内，只更新气泡位置，不触发新的 OCR+翻译
-                        self.overlayAnchor = currentPosition
-                        self.overlayWindowController.show(at: currentPosition)
-                        return
-                    }
-                }
 
                 if let lastPosition = self.lastOcrPosition {
                     let dx = abs(currentPosition.x - lastPosition.x)
@@ -267,13 +251,10 @@ final class AppModel: ObservableObject {
                     overlayState = .idle
                     overlayWindowController.hide()
                 }
-                currentWordScreenBounds = nil
                 return
             }
             guard activeLookupID == lookupID else { return }
 
-            // 保存当前单词在屏幕坐标系中的边界框，用于连续翻译模式下的优化
-            currentWordScreenBounds = convertToScreenBounds(normalizedBox: selected.boundingBox, screenRect: capture.region.rect)
             updateOverlay(state: .loading(selected.text), anchor: mouseLocation)
             let sourceLanguage = Locale.Language(identifier: settings.sourceLanguage)
             let targetLanguage = Locale.Language(identifier: settings.targetLanguage)
@@ -596,14 +577,5 @@ final class AppModel: ObservableObject {
                               word2.boundingBox.midY - normalizedPoint.y)
             return dist1 < dist2
         }
-    }
-
-    /// 将标准化的边界框（0-1范围）转换为屏幕坐标
-    private func convertToScreenBounds(normalizedBox: CGRect, screenRect: CGRect) -> CGRect {
-        let x = screenRect.minX + normalizedBox.minX * screenRect.width
-        let y = screenRect.minY + normalizedBox.minY * screenRect.height
-        let width = normalizedBox.width * screenRect.width
-        let height = normalizedBox.height * screenRect.height
-        return CGRect(x: x, y: y, width: width, height: height)
     }
 }
