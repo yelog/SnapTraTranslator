@@ -1,0 +1,3 @@
+[submodule "SnapTraTranslator-doc"]
+	path = SnapTraTranslator-doc
+	url = git@github.com:yelog/SnapTraTranslator-doc.git
