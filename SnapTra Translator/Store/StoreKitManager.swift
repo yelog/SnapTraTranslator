@@ -8,7 +8,6 @@ final class StoreKitManager: ObservableObject {
     
     @Published private(set) var products: [Product] = []
     @Published private(set) var purchasedProductIDs: Set<String> = []
-    @Published private(set) var trialPurchaseDate: Date?
     @Published private(set) var isLoading = false
     
     private var updateListenerTask: Task<Void, Error>?
@@ -25,32 +24,12 @@ final class StoreKitManager: ObservableObject {
         updateListenerTask?.cancel()
     }
     
-    var trialProduct: Product? {
-        products.first { $0.id == ProductID.trial }
-    }
-    
     var lifetimeProduct: Product? {
         products.first { $0.id == ProductID.lifetime }
     }
-    
+
     var hasLifetime: Bool {
         purchasedProductIDs.contains(ProductID.lifetime)
-    }
-    
-    var hasTrial: Bool {
-        purchasedProductIDs.contains(ProductID.trial)
-    }
-    
-    var trialDaysRemaining: Int? {
-        guard let purchaseDate = trialPurchaseDate else { return nil }
-        let expirationDate = Calendar.current.date(byAdding: .day, value: TrialConfig.durationDays, to: purchaseDate)!
-        let remaining = Calendar.current.dateComponents([.day], from: Date(), to: expirationDate).day ?? 0
-        return max(0, remaining)
-    }
-    
-    var isTrialExpired: Bool {
-        guard hasTrial, let remaining = trialDaysRemaining else { return false }
-        return remaining <= 0
     }
     
     func loadProducts() async {
@@ -96,22 +75,16 @@ final class StoreKitManager: ObservableObject {
     
     private func updatePurchasedProducts() async {
         var purchased: Set<String> = []
-        var trialDate: Date?
-        
+
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
-            
+
             if transaction.revocationDate == nil {
                 purchased.insert(transaction.productID)
-                
-                if transaction.productID == ProductID.trial {
-                    trialDate = transaction.purchaseDate
-                }
             }
         }
-        
+
         purchasedProductIDs = purchased
-        trialPurchaseDate = trialDate
     }
     
     private func listenForTransactions() -> Task<Void, Error> {

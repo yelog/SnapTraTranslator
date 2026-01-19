@@ -1,14 +1,13 @@
 import Foundation
 
 enum ProductID {
-    static let trial = "org.yelog.SnapTranslate.trial"
     static let lifetime = "org.yelog.SnapTranslate.lifetime"
-    
-    static let all: [String] = [trial, lifetime]
+
+    static let all: [String] = [lifetime]
 }
 
 enum TrialConfig {
-    static let durationDays = 30
+    static let durationDays = 7
 }
 
 extension Notification.Name {

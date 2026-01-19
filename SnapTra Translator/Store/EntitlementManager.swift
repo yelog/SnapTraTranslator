@@ -38,9 +38,8 @@ final class EntitlementManager: ObservableObject {
     
     private func setupBindings() {
         storeKit.$purchasedProductIDs
-            .combineLatest(storeKit.$trialPurchaseDate)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _, _ in
+            .sink { [weak self] _ in
                 self?.updateEntitlement()
             }
             .store(in: &cancellables)
@@ -58,26 +57,37 @@ final class EntitlementManager: ObservableObject {
             isUnlocked = true
             return
         }
-        
+
         if storeKit.hasLifetime {
             entitlement = .lifetime
             isUnlocked = true
             return
         }
-        
-        if storeKit.hasTrial {
-            if let daysRemaining = storeKit.trialDaysRemaining, daysRemaining > 0 {
+
+        // Local trial logic
+        let firstLaunchKey = "firstLaunchDate"
+        let defaults = UserDefaults.standard
+
+        if let firstLaunch = defaults.object(forKey: firstLaunchKey) as? Date {
+            let daysSinceLaunch = Calendar.current.dateComponents([.day], from: firstLaunch, to: Date()).day ?? 0
+            let daysRemaining = TrialConfig.durationDays - daysSinceLaunch
+
+            if daysRemaining > 0 {
                 entitlement = .trialActive(daysRemaining: daysRemaining)
                 isUnlocked = true
+                return
             } else {
                 entitlement = .trialExpired
                 isUnlocked = false
+                return
             }
+        } else {
+            // First launch, record the date
+            defaults.set(Date(), forKey: firstLaunchKey)
+            entitlement = .trialActive(daysRemaining: TrialConfig.durationDays)
+            isUnlocked = true
             return
         }
-        
-        entitlement = .noTrial
-        isUnlocked = false
     }
     
     var statusText: String {
@@ -109,6 +119,6 @@ final class EntitlementManager: ObservableObject {
     }
     
     var canStartTrial: Bool {
-        entitlement == .noTrial
+        false  // Local trial starts automatically, no purchase needed
     }
 }

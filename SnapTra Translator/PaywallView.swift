@@ -65,31 +65,20 @@ struct PaywallView: View {
     @ViewBuilder
     private var purchaseSection: some View {
         VStack(spacing: 12) {
-            if entitlement.canStartTrial, let trialProduct = storeKit.trialProduct {
-                PurchaseButton(
-                    title: "Start 30-Day Free Trial",
-                    subtitle: "Full access, no commitment",
-                    isPrimary: true,
-                    isLoading: isPurchasing
-                ) {
-                    await purchase(trialProduct)
-                }
-            }
-            
             if let lifetimeProduct = storeKit.lifetimeProduct {
                 PurchaseButton(
-                    title: "Lifetime Pro — \(lifetimeProduct.displayPrice)",
+                    title: "Upgrade to Lifetime Pro — \(lifetimeProduct.displayPrice)",
                     subtitle: "One-time purchase, forever access",
-                    isPrimary: !entitlement.canStartTrial,
+                    isPrimary: true,
                     isLoading: isPurchasing
                 ) {
                     await purchase(lifetimeProduct)
                 }
             }
-            
+
             // App Store required disclosure
             disclosureText
-            
+
             if let error = errorMessage {
                 Text(error)
                     .font(.system(size: 12))
@@ -101,13 +90,24 @@ struct PaywallView: View {
     @ViewBuilder
     private var disclosureText: some View {
         VStack(spacing: 4) {
-            if entitlement.canStartTrial {
-                Text("Free for 30 days. After the trial ends, translation features will be locked until you purchase Lifetime Pro.")
+            switch entitlement.entitlement {
+            case .trialActive(let days):
+                Text("You have \(days) day\(days == 1 ? "" : "s") remaining in your free trial. Upgrade to Lifetime Pro for unlimited access.")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-            } else {
-                Text("Your trial has ended. Purchase Lifetime Pro to unlock all features.")
+            case .trialExpired:
+                Text("Your 7-day free trial has ended. Upgrade to Lifetime Pro to continue using all features.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            case .noTrial:
+                Text("Unlock all features with a one-time purchase. No subscription required.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            case .lifetime:
+                Text("You have lifetime access to all features. Thank you for your support!")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

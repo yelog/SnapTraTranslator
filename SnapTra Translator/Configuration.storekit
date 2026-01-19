@@ -5,29 +5,19 @@
   ],
   "products" : [
     {
-      "displayPrice" : "0",
-      "familyShareable" : false,
-      "internalID" : "TRIAL001",
-      "localizations" : [
-        {
-          "description" : "30-day free trial with full access",
-          "displayName" : "30-Day Free Trial",
-          "locale" : "en_US"
-        }
-      ],
-      "productID" : "org.yelog.SnapTranslate.trial",
-      "referenceName" : "Trial",
-      "type" : "NonConsumable"
-    },
-    {
       "displayPrice" : "9.99",
       "familyShareable" : true,
       "internalID" : "LIFETIME001",
       "localizations" : [
         {
-          "description" : "Unlimited access forever with all features",
+          "description" : "One-time purchase for unlimited access forever with all features. No subscription required.",
           "displayName" : "Lifetime Pro",
           "locale" : "en_US"
+        },
+        {
+          "description" : "一次性购买，永久解锁所有功能。无订阅，无重复收费。",
+          "displayName" : "终身专业版",
+          "locale" : "zh_CN"
         }
       ],
       "productID" : "org.yelog.SnapTranslate.lifetime",
