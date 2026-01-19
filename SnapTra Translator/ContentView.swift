@@ -40,15 +40,10 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 20) {
             VStack(spacing: 8) {
-                Image(systemName: "character.book.closed.fill")
-                    .font(.system(size: 36, weight: .medium))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.accentColor, .accentColor.opacity(0.7)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 48, height: 48)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .opacity(appeared ? 1 : 0)
                     .scaleEffect(appeared ? 1 : 0.8)
 
