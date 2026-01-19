@@ -7,21 +7,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Building
 ```bash
 # Debug build
-xcodebuild -project "Snap Translate.xcodeproj" -scheme "Snap Translate" -configuration Debug build
+xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" -configuration Debug build
 
 # Release build
-xcodebuild -project "Snap Translate.xcodeproj" -scheme "Snap Translate" -configuration Release build
+xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" -configuration Release build
 
 # Clean
-xcodebuild -project "Snap Translate.xcodeproj" -scheme "Snap Translate" clean
+xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" clean
 ```
 
 ### Running
 Open the project in Xcode:
 ```bash
-open "Snap Translate.xcodeproj"
+open "SnapTra Translator.xcodeproj"
 ```
-Then run the "Snap Translate" scheme (⌘R).
+Then run the "SnapTra Translator" scheme (⌘R).
 
 ### Testing
 No test target currently exists in this project.
@@ -29,10 +29,10 @@ No test target currently exists in this project.
 ## Project Architecture
 
 ### App Structure
-**Snap Translate** is a macOS menu bar app (accessory app) that provides instant translation via OCR. The app runs as a status item (menu bar icon) and shows windows only when needed.
+**SnapTra Translator** is a macOS menu bar app (accessory app) that provides instant translation via OCR. The app runs as a status item (menu bar icon) and shows windows only when needed.
 
 ### Core Flow
-1. User presses configured hotkey (single key like F, G, etc.)
+1. User presses configured hotkey (modifier key like Shift, Control, Option, Command, or Fn)
 2. App captures screen region around cursor (`ScreenCaptureService`)
 3. OCR extracts words from capture (`OCRService` using Vision framework)
 4. Word closest to cursor is selected (distance-based algorithm)
@@ -82,7 +82,7 @@ Language changes require full session restart: cancel pending requests → reset
 #### Hotkey Management
 - `HotkeyManager`: Registers global event monitor for single-key hotkeys
 - `HotkeyUtilities`: Maps virtual key codes to display names
-- Supports only single modifier-free keys (A-Z, F1-F12, etc.)
+- Supports modifier keys: Shift (left/right), Control (left/right), Option (left/right), Command (left/right), Fn
 - Callbacks: `onTrigger` (key down) and `onRelease` (key up)
 
 #### Window Architecture
@@ -101,8 +101,8 @@ Three window controllers exist:
 #### Continuous Translation Mode
 When enabled (`settings.continuousTranslation`):
 - Mouse move events trigger new lookups while hotkey is pressed
-- Debounced by 50ms to reduce OCR overhead
-- Position threshold of 5pt prevents identical captures
+- Debounced by 100ms to reduce OCR overhead
+- Position threshold of 10pt prevents identical captures
 - Overlay remains visible and updates in place
 
 When disabled:
@@ -213,7 +213,7 @@ All frameworks are system frameworks (no external dependencies):
 ### File Organization
 
 ```
-Snap Translate/
+SnapTra Translator/
 ├── Snap_TranslateApp.swift          # App entry + AppDelegate
 ├── AppModel.swift                   # Central controller/coordinator
 ├── ContentView.swift                # Settings UI
