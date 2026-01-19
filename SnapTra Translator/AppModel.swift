@@ -74,7 +74,14 @@ final class AppModel: ObservableObject {
         self.permissions = resolvedPermissions
         self.translationBridge = TranslationBridge()
         if #available(macOS 15.0, *) {
-            self.languagePackManager = LanguagePackManager()
+            let manager = LanguagePackManager()
+            self.languagePackManager = manager
+            // Forward LanguagePackManager changes to AppModel so SwiftUI redraws
+            manager.objectWillChange
+                .sink { [weak self] _ in
+                    self?.objectWillChange.send()
+                }
+                .store(in: &cancellables)
         }
         bindSettings()
         resolvedPermissions.$status
