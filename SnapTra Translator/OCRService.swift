@@ -13,9 +13,13 @@ final class OCRService {
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
-            request.recognitionLanguages = [language]
             if #available(macOS 13.0, *) {
                 request.revision = VNRecognizeTextRequestRevision3
+                // Enable automatic language detection to handle mixed-language text
+                // This allows recognizing English words embedded in Chinese/Japanese/Korean text
+                request.automaticallyDetectsLanguage = true
+            } else {
+                request.recognitionLanguages = [language]
             }
             let handler = VNImageRequestHandler(cgImage: image)
             try handler.perform([request])
