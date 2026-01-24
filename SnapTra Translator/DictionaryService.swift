@@ -2,87 +2,13 @@ import CoreServices
 import Foundation
 
 final class DictionaryService {
-
-    enum DictionaryKind {
-        case englishEnglish
-        case englishChinese
-        case `default`
-    }
-    
-    private var englishDictionary: DCSDictionary?
-    private var chineseDictionary: DCSDictionary?
-    private var isInitialized = false
-    private let initQueue = DispatchQueue(label: "DictionaryService.init", qos: .userInitiated)
-    
-    init() {
-        initQueue.async { [weak self] in
-            self?.initializeDictionaries()
-        }
-    }
-    
-    private func initializeDictionaries() {
-        guard !isInitialized else { return }
-        
-        guard let unmanagedDictionaries = DCSCopyAvailableDictionaries() else {
-            isInitialized = true
-            return
-        }
-        let dictionaries = unmanagedDictionaries.takeRetainedValue() as NSArray
-        
-        for dict in dictionaries {
-            let dictRef = dict as! DCSDictionary
-            guard let unmanagedName = DCSDictionaryGetName(dictRef),
-                  let name = unmanagedName.takeUnretainedValue() as String? else {
-                continue
-            }
-            
-            #if DEBUG
-            print("[DictionaryService] Found dictionary: \(name)")
-            #endif
-            
-            if name.contains("New Oxford American Dictionary") || name.contains("Oxford Dictionary of English") {
-                englishDictionary = dictRef
-            } else if name.contains("牛津") || name.contains("Oxford English-Chinese") || name.contains("英汉") {
-                chineseDictionary = dictRef
-            }
-        }
-        
-        isInitialized = true
-        
-        #if DEBUG
-        print("[DictionaryService] English dictionary: \(englishDictionary != nil ? "found" : "not found")")
-        print("[DictionaryService] Chinese dictionary: \(chineseDictionary != nil ? "found" : "not found")")
-        #endif
-    }
-    
-    private func ensureInitialized() {
-        initQueue.sync {
-            if !isInitialized {
-                initializeDictionaries()
-            }
-        }
-    }
-
     func lookup(_ word: String, preferEnglish: Bool = false) -> DictionaryEntry? {
-        ensureInitialized()
         
         guard let normalized = normalizeWord(word) else {
             return nil
         }
         
         let range = CFRange(location: 0, length: normalized.utf16.count)
-        
-        if preferEnglish, let englishDict = englishDictionary {
-            if let definition = DCSCopyTextDefinition(englishDict, normalized as CFString, range) {
-                let html = definition.takeRetainedValue() as String
-                
-                #if DEBUG
-                print("[DictionaryService] English dictionary result for '\(normalized)' (\(html.count) chars):\n\(html.prefix(2000))")
-                #endif
-                
-                return parseEnglishHTML(html, word: normalized)
-            }
-        }
         
         guard let definition = DCSCopyTextDefinition(nil, normalized as CFString, range) else {
             return nil
@@ -93,6 +19,10 @@ final class DictionaryService {
         #if DEBUG
         print("[DictionaryService] Default dictionary result for '\(normalized)' (\(html.count) chars):\n\(html.prefix(2000))")
         #endif
+
+        if preferEnglish {
+            return parseEnglishHTML(html, word: normalized)
+        }
 
         return parseHTML(html, word: normalized)
     }

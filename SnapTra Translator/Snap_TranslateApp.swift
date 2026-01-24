@@ -18,6 +18,9 @@ struct Snap_TranslateApp: App {
         Settings {
             EmptyView()
         }
+        .commands {
+            CommandGroup(replacing: .appSettings) { }
+        }
     }
 }
 
