@@ -90,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .store(in: &cancellables)
 
         Task {
-            await entitlementManager.refresh()
+            await entitlementManager.refreshEntitlementsOnly()
             await refreshAndUpdateVisibility()
         }
     }

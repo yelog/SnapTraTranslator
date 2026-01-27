@@ -15,7 +15,6 @@ final class StoreKitManager: ObservableObject {
     private init() {
         updateListenerTask = listenForTransactions()
         Task {
-            await loadProducts()
             await updatePurchasedProducts()
         }
     }
@@ -73,7 +72,7 @@ final class StoreKitManager: ObservableObject {
         }
     }
     
-    private func updatePurchasedProducts() async {
+    func updatePurchasedProducts() async {
         var purchased: Set<String> = []
 
         for await result in Transaction.currentEntitlements {

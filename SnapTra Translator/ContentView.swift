@@ -446,7 +446,10 @@ struct TranslationLanguageRow: View {
 
 struct LicenseStatusRow: View {
     @ObservedObject var entitlementManager: EntitlementManager
-    @State private var showingPaywall = false
+    
+    private var canUpgrade: Bool {
+        entitlementManager.entitlement != .lifetime
+    }
 
     private var statusColor: Color {
         switch entitlementManager.entitlement {
@@ -472,7 +475,7 @@ struct LicenseStatusRow: View {
 
     var body: some View {
         Button {
-            if entitlementManager.needsPaywall {
+            if canUpgrade {
                 NotificationCenter.default.post(name: .showPaywall, object: nil)
             }
         } label: {
@@ -493,7 +496,7 @@ struct LicenseStatusRow: View {
 
                 Spacer()
 
-                if entitlementManager.needsPaywall {
+                if canUpgrade {
                     Text("Upgrade")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.white)

@@ -27,6 +27,9 @@ struct PaywallView: View {
         }
         .frame(width: 400, height: 520)
         .background(Color(nsColor: .windowBackgroundColor))
+        .task {
+            await storeKit.loadProducts()
+        }
     }
     
     @ViewBuilder
