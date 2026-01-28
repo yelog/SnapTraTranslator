@@ -10,7 +10,6 @@ import Translation
 
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
-    @StateObject private var entitlementManager = EntitlementManager.shared
     @State private var appeared = false
 
     private var allPermissionsGranted: Bool {
@@ -200,10 +199,6 @@ struct ContentView: View {
             )
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 8)
-
-            LicenseStatusRow(entitlementManager: entitlementManager)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 6)
 
             HStack(spacing: 12) {
                 if allReady {
@@ -441,104 +436,5 @@ struct TranslationLanguageRow: View {
             unavailableLanguageName = commonLanguages.first(where: { $0.id == language })?.name ?? language
             showingUnavailableAlert = true
         }
-    }
-}
-
-struct LicenseStatusRow: View {
-    @ObservedObject var entitlementManager: EntitlementManager
-    
-    private var canUpgrade: Bool {
-        entitlementManager.entitlement != .lifetime
-    }
-
-    private var statusColor: Color {
-        switch entitlementManager.entitlement {
-        case .lifetime:
-            return .green
-        case .trialActive:
-            return .blue
-        case .noTrial, .trialExpired:
-            return .orange
-        }
-    }
-
-    private var statusIcon: String {
-        switch entitlementManager.entitlement {
-        case .lifetime:
-            return "crown.fill"
-        case .trialActive:
-            return "clock.fill"
-        case .noTrial, .trialExpired:
-            return "exclamationmark.triangle.fill"
-        }
-    }
-
-    var body: some View {
-        Button {
-            if canUpgrade {
-                NotificationCenter.default.post(name: .showPaywall, object: nil)
-            }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: statusIcon)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(statusColor)
-                    .frame(width: 24)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("License")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(.primary)
-                    Text(entitlementManager.statusText)
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(.tertiary)
-                }
-
-                Spacer()
-
-                if canUpgrade {
-                    Text("Upgrade")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(
-                            Capsule()
-                                .fill(Color.blue)
-                        )
-                } else {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(statusColor)
-                            .frame(width: 6, height: 6)
-                            .shadow(color: statusColor.opacity(0.5), radius: 3)
-
-                        Text(entitlementManager.entitlement == .lifetime ? "Pro" : "Active")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(statusColor)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule()
-                            .fill(statusColor.opacity(0.1))
-                    )
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.background)
-                .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
-                .shadow(color: .black.opacity(0.02), radius: 1, x: 0, y: 1)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
-        )
     }
 }
