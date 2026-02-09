@@ -4,6 +4,19 @@
 
 A lightweight macOS menu bar app that instantly translates words under your cursor via screen capture and OCR. Press a hotkey, hover over any text, and get a beautiful floating bubble with translation, phonetics, dictionary definitions, and optional pronunciation.
 
+## Preview
+
+<p>
+  <img src="docs/Xnip2026-01-19_10-55-57.png" alt="Settings" width="64%" />
+</p>
+
+## Screenshots
+
+<p>
+  <img src="docs/Xnip2026-01-19_00-02-09.png" alt="Translation Bubble" width="49%" />
+  <img src="docs/Xnip2026-01-19_00-06-14.png" alt="Dictionary Definitions" width="49%" />
+</p>
+
 ## Features
 
 ### Core Translation
