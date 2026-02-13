@@ -12,6 +12,12 @@ struct ContentView: View {
     @EnvironmentObject var model: AppModel
     @State private var appeared = false
 
+    private var appVersion: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+        return "v\(version).\(build)"
+    }
+
     private var allPermissionsGranted: Bool {
         model.permissions.status.screenRecording
     }
@@ -214,6 +220,11 @@ struct ContentView: View {
                 }
 
                 Spacer()
+
+                Text(appVersion)
+                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .opacity(0.6)
 
                 Button {
                     Task { @MainActor in
