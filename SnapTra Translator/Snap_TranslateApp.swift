@@ -81,6 +81,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         false
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        isManualWindowOpen = true
+        NSApp.setActivationPolicy(.regular)
+        if let window = settingsWindow, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            showSettingsWindow()
+        }
+        return true
+    }
+
     func windowWillClose(_ notification: Notification) {
         hideDockIcon()
     }
