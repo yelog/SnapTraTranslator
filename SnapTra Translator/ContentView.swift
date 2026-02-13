@@ -314,7 +314,7 @@ struct TranslationLanguageRow: View {
     @Binding var sourceLanguage: String
     @EnvironmentObject var model: AppModel
     @State private var showingUnavailableAlert = false
-    @State private var unavailableLanguageName = ""
+    @State private var missingLanguagesMessage = ""
 
     private let commonLanguages: [(id: String, name: String)] = [
         ("zh-Hans", "Chinese (Simplified)"),
@@ -371,7 +371,7 @@ struct TranslationLanguageRow: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("The language pack for \(unavailableLanguageName) is not installed. Please download it in System Settings > General > Language & Region > Translation Languages.")
+            Text(missingLanguagesMessage)
         }
         .onAppear {
             Task { @MainActor in
@@ -420,7 +420,7 @@ struct TranslationLanguageRow: View {
                     .foregroundStyle(status == .installed ? .green : .red)
             }
             .buttonStyle(.plain)
-            .help(status == .installed ? "Language pack installed" : "Click to check and download")
+            .help(status == .installed ? "Language pack installed" : "Language pack required - click to download")
         }
     }
 
@@ -429,11 +429,17 @@ struct TranslationLanguageRow: View {
         return model.languagePackManager?.getStatus(from: sourceLanguage, to: language)
     }
 
+    private func languageName(for id: String) -> String {
+        commonLanguages.first(where: { $0.id == id })?.name ?? id
+    }
+
     private func checkLanguageAvailability(_ language: String) {
         guard let status = getLanguagePackStatus(language) else { return }
 
         if status != .installed {
-            unavailableLanguageName = commonLanguages.first(where: { $0.id == language })?.name ?? language
+            let sourceName = languageName(for: sourceLanguage)
+            let targetName = languageName(for: language)
+            missingLanguagesMessage = "The language pack for \(sourceName) → \(targetName) translation is not installed. Please download the required language packs in System Settings > General > Language & Region > Translation Languages."
             showingUnavailableAlert = true
         }
     }
