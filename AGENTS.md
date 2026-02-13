@@ -1,41 +1,52 @@
 # AGENTS.md
 
 ## Scope
-- Applies to the entire repository at `/Users/yelog/workspace/swift/Snap Translate`.
+- Applies to the entire repository at `/Users/yelog/workspace/swift/SnapTra Translator`.
 - This file is intended for agentic coding assistants.
 
 ## Project Overview
-- Xcode project: `Snap Translate.xcodeproj`.
-- SwiftUI app source: `Snap Translate/`.
-- No separate test targets or CLI tooling detected.
+- **Xcode project**: `SnapTra Translator.xcodeproj`
+- **SwiftUI macOS app**: Menu bar (accessory) app for instant OCR translation
+- **Target**: `SnapTra Translator` (single app target, no test targets)
+- **Minimum macOS**: 14.0 (translation features require macOS 15.0+)
 
 ## Build / Run / Test Commands
 
 ### Build (CLI)
-- Debug build:
-  - `xcodebuild -project "Snap Translate.xcodeproj" -scheme "Snap Translate" -configuration Debug build`
-- Release build:
-  - `xcodebuild -project "Snap Translate.xcodeproj" -scheme "Snap Translate" -configuration Release build`
+```bash
+# Debug build
+xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" -configuration Debug build
+
+# Release build
+xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" -configuration Release build
+```
 
 ### Run
-- Preferred: open in Xcode and run the `Snap Translate` scheme.
-  - `open "Snap Translate.xcodeproj"`
+Preferred: Open in Xcode and run (⌘R):
+```bash
+open "SnapTra Translator.xcodeproj"
+```
 
 ### Clean
-- `xcodebuild -project "Snap Translate.xcodeproj" -scheme "Snap Translate" clean`
+```bash
+xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" clean
+```
 
 ### Tests
-- No test target found in the project.
-- Once a test target exists, use:
-  - `xcodebuild -project "Snap Translate.xcodeproj" -scheme "Snap Translate" test`
-
-### Run a Single Test (when tests exist)
-- Use `-only-testing` with the test target:
-  - `xcodebuild -project "Snap Translate.xcodeproj" -scheme "Snap Translate" test -only-testing:<TestTarget>/<TestCase>/<testMethod>`
+- No test target currently exists.
+- When added, run all tests:
+  ```bash
+  xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" test
+  ```
+- Run a single test:
+  ```bash
+  xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" test \
+    -only-testing:<TestTarget>/<TestCase>/<testMethod>
+  ```
 
 ### Lint / Format
-- No `SwiftLint`, `SwiftFormat`, or `EditorConfig` config found.
-- If you introduce lint/format tools, add config files at repo root and document commands here.
+- No `SwiftLint`, `SwiftFormat`, or `.editorconfig` currently configured.
+- Follow Xcode default formatting (4 spaces, no tabs).
 
 ## Code Style Guidelines
 
