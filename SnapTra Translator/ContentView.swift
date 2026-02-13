@@ -316,7 +316,7 @@ struct TranslationLanguageRow: View {
     @State private var showingUnavailableAlert = false
     @State private var missingLanguagesMessage = ""
 
-    private let commonLanguages: [(id: String, name: String)] = [
+    private let commonLanguages: [(id: String, nameKey: String)] = [
         ("zh-Hans", "Chinese (Simplified)"),
         ("zh-Hant", "Chinese (Traditional)"),
         ("en", "English"),
@@ -345,7 +345,7 @@ struct TranslationLanguageRow: View {
 
             Picker("", selection: $targetLanguage) {
                 ForEach(commonLanguages, id: \.id) { lang in
-                    Text(lang.name).tag(lang.id)
+                    Text(LocalizedStringKey(lang.nameKey)).tag(lang.id)
                 }
             }
             .labelsHidden()
@@ -430,7 +430,10 @@ struct TranslationLanguageRow: View {
     }
 
     private func languageName(for id: String) -> String {
-        commonLanguages.first(where: { $0.id == id })?.name ?? id
+        guard let key = commonLanguages.first(where: { $0.id == id })?.nameKey else {
+            return id
+        }
+        return String(localized: String.LocalizationValue(key))
     }
 
     private func checkLanguageAvailability(_ language: String) {
@@ -439,7 +442,7 @@ struct TranslationLanguageRow: View {
         if status != .installed {
             let sourceName = languageName(for: sourceLanguage)
             let targetName = languageName(for: language)
-            missingLanguagesMessage = "The language pack for \(sourceName) → \(targetName) translation is not installed. Please download the required language packs in System Settings > General > Language & Region > Translation Languages."
+            missingLanguagesMessage = String(localized: "The language pack for \(sourceName) → \(targetName) translation is not installed. Please download the required language packs in System Settings > General > Language & Region > Translation Languages.")
             showingUnavailableAlert = true
         }
     }

@@ -16,21 +16,21 @@ enum SingleKey: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .leftShift:
-            return "Left Shift"
+            return String(localized: "Left Shift")
         case .leftControl:
-            return "Left Ctrl"
+            return String(localized: "Left Control")
         case .leftOption:
-            return "Left Opt"
+            return String(localized: "Left Option")
         case .leftCommand:
-            return "Left Cmd"
+            return String(localized: "Left Command")
         case .rightShift:
-            return "Right Shift"
+            return String(localized: "Right Shift")
         case .rightControl:
-            return "Right Ctrl"
+            return String(localized: "Right Control")
         case .rightOption:
-            return "Right Opt"
+            return String(localized: "Right Option")
         case .rightCommand:
-            return "Right Cmd"
+            return String(localized: "Right Command")
         case .fn:
             return "Fn"
         }

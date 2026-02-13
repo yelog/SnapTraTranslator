@@ -212,7 +212,7 @@ final class AppModel: ObservableObject {
     func performLookup(lookupID: UUID) async {
         guard !Task.isCancelled, activeLookupID == lookupID else { return }
         guard permissions.status.screenRecording else {
-            updateOverlay(state: .error("Enable Screen Recording"))
+            updateOverlay(state: .error(String(localized: "Enable Screen Recording")), anchor: NSEvent.mouseLocation)
             return
         }
         let mouseLocation = NSEvent.mouseLocation
@@ -226,7 +226,7 @@ final class AppModel: ObservableObject {
         guard let capture = await captureService.captureAroundCursor() else {
             debugOverlayWindowController.hide()
             if settings.debugShowOcrRegion {
-                updateOverlay(state: .error("Capture failed"), anchor: mouseLocation)
+                updateOverlay(state: .error(String(localized: "Capture failed")), anchor: mouseLocation)
             }
             return
         }
@@ -313,15 +313,15 @@ final class AppModel: ObservableObject {
                     
                     if !isInstalled {
                         let message = status == .supported
-                            ? "Language pack required. Please download in System Settings > General > Language & Region > Translation."
-                            : "Translation not supported for this language pair."
+                            ? String(localized: "Language pack required. Please download in System Settings > General > Language & Region > Translation.")
+                            : String(localized: "Translation not supported for this language pair.")
                         updateOverlay(state: .error(message), anchor: mouseLocation)
                         return
                     }
                 }
                 
                 guard isInstalled else {
-                    updateOverlay(state: .error("Language pack not installed."), anchor: mouseLocation)
+                    updateOverlay(state: .error(String(localized: "Language pack not installed.")), anchor: mouseLocation)
                     return
                 }
 
@@ -346,14 +346,14 @@ final class AppModel: ObservableObject {
                 )
                 updateOverlay(state: .result(content), anchor: mouseLocation)
             } else {
-                updateOverlay(state: .error("Translation requires macOS 15"), anchor: mouseLocation)
+                updateOverlay(state: .error(String(localized: "Translation requires macOS 15")), anchor: mouseLocation)
             }
         } catch is CancellationError {
             // Task was cancelled, do nothing
         } catch TranslationError.timeout {
-            updateOverlay(state: .error("Translation timeout. Please try again."), anchor: mouseLocation)
+            updateOverlay(state: .error(String(localized: "Translation timeout. Please try again.")), anchor: mouseLocation)
         } catch {
-            updateOverlay(state: .error("Translation failed: \(error.localizedDescription)"), anchor: mouseLocation)
+            updateOverlay(state: .error(String(localized: "Translation failed: \(error.localizedDescription)")), anchor: mouseLocation)
         }
     }
 
@@ -480,9 +480,9 @@ final class AppModel: ObservableObject {
         case .installed:
             break
         case .supported:
-            sendNotification(title: "SnapTra Translator", body: "Language pack required. Please download in System Settings > General > Language & Region > Translation.")
+            sendNotification(title: String(localized: "SnapTra Translator"), body: String(localized: "Language pack required. Please download in System Settings > General > Language & Region > Translation."))
         case .unsupported:
-            sendNotification(title: "SnapTra Translator", body: "Translation not supported for this language pair.")
+            sendNotification(title: String(localized: "SnapTra Translator"), body: String(localized: "Translation not supported for this language pair."))
         @unknown default:
             break
         }

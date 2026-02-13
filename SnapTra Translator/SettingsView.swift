@@ -226,21 +226,21 @@ struct HotkeyKeycapSelector: View {
     private func tooltip(for key: SingleKey) -> String {
         switch key {
         case .leftShift:
-            return "Left Shift"
+            return String(localized: "Left Shift")
         case .rightShift:
-            return "Right Shift"
+            return String(localized: "Right Shift")
         case .leftControl:
-            return "Left Control"
+            return String(localized: "Left Control")
         case .rightControl:
-            return "Right Control"
+            return String(localized: "Right Control")
         case .leftOption:
-            return "Left Option"
+            return String(localized: "Left Option")
         case .rightOption:
-            return "Right Option"
+            return String(localized: "Right Option")
         case .leftCommand:
-            return "Left Command"
+            return String(localized: "Left Command")
         case .rightCommand:
-            return "Right Command"
+            return String(localized: "Right Command")
         case .fn:
             return "Fn"
         }
