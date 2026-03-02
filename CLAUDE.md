@@ -41,6 +41,8 @@ No test target currently exists in this project.
 7. Results show in floating overlay bubble near cursor (`OverlayWindowController`)
 8. Release hotkey to dismiss (or click to dismiss if continuous mode is off)
 
+**Screen Configuration Changes**: On display changes (`NSApplication.didChangeScreenParametersNotification`), `AppModel.handleScreenConfigurationChange()` cancels any active lookup and invalidates the `ScreenCaptureService` cache.
+
 ### Key Components
 
 #### AppDelegate Pattern
@@ -58,6 +60,11 @@ The `AppModel` class is the heart of the app, orchestrating all services:
 - Manages multiple concurrent tasks with cancellation
 
 **Important**: `AppModel` uses `activeLookupID: UUID?` to ensure only the latest lookup completes. Always check if `activeLookupID == lookupID` before updating state.
+
+**Definition Translation**: Dictionary definitions are translated in parallel using `withTaskGroup` for performance. Each definition's `meaning` is translated separately, with special handling:
+- For Chinese targets: Keeps existing dictionary translation if available
+- For English targets: Filters definitions to only those with English content (regex check for `[a-zA-Z]{3,}`)
+- Same-language pairs: Uses original meaning without translation
 
 #### Translation Architecture (macOS 15+)
 **Critical**: The Translation API requires a SwiftUI view hierarchy with `.translationTask()` modifier.
@@ -110,18 +117,11 @@ When disabled:
 - Overlay becomes interactive (clickable to dismiss or speaker button)
 - Mouse movement ignored
 
-#### Entitlement System
-`EntitlementManager`: Singleton managing license state
-- `UserEntitlement` enum: noTrial, trialActive, trialExpired, lifetime
-- Trial stored in UserDefaults with purchase date
-- StoreKit integration for lifetime purchase
-- Debug builds and sandbox receipts bypass all checks
+#### Translation Service Warmup
+On macOS 15+, `warmupServices()` performs a dummy translation at launch ("hello") to initialize the Translation framework. This prevents first-translation delays but means the app briefly activates translation services on startup.
 
-**License Flow**:
-1. App checks entitlement on hotkey trigger
-2. If locked, shows paywall notification
-3. User can start trial (7 days) or purchase lifetime
-4. Entitlement changes publish via Combine
+#### Entitlement System (Currently Disabled)
+The entitlement system was designed but is currently not active in the codebase. The `EntitlementManager`, `StoreKitManager`, and paywall UI (`PaywallView.swift`) exist but are not integrated into the main flow. Debug builds bypass all checks.
 
 #### Settings Persistence
 `SettingsStore`: ObservableObject with `@AppStorage` properties
@@ -147,6 +147,8 @@ App detects permission grant after restart via UserDefaults comparison and auto-
 - `openTranslationSettings()`: Deep links to System Settings > Translation
 
 Settings UI shows status icon (green checkmark / red X) for selected language pair.
+
+**Language Status Caching**: `AppModel` caches the last language pair availability check in `cachedLanguageStatus` to avoid redundant system calls during rapid lookups.
 
 ### State Management Patterns
 
@@ -180,15 +182,16 @@ The app requires macOS 14+ but translation features require macOS 15+:
 - Stored as `Any?` and cast when needed to avoid compilation errors on older SDKs
 - TranslationBridgeView and related components are `@available(macOS 15.0, *)`
 
-### Code Style (From AGENTS.md)
+### Code Style
 
-**Important conventions specific to this project**:
+See `AGENTS.md` for comprehensive style guidelines. Key conventions:
 - Indentation: 4 spaces
 - Trailing commas in multiline collections
 - `@MainActor` on classes that touch UI state
 - Avoid force unwraps; use `guard`/`if let`
 - Keep SwiftUI `body` small; extract subviews
 - Use `@State` for view-local state, `@StateObject` for owned models, `@ObservedObject` for injected models
+- Localized strings: Use `String(localized: "key")` (stored in `Localizable.xcstrings`)
 
 ### Common Gotchas
 
@@ -214,11 +217,11 @@ All frameworks are system frameworks (no external dependencies):
 
 ```
 SnapTra Translator/
-├── Snap_TranslateApp.swift          # App entry + AppDelegate
+├── Snap_TranslateApp.swift          # App entry + AppDelegate + window controllers
 ├── AppModel.swift                   # Central controller/coordinator
-├── ContentView.swift                # Settings UI
+├── ContentView.swift                # Settings UI (main container)
 ├── SettingsView.swift               # Language/hotkey pickers
-├── PaywallView.swift                # Purchase UI
+├── PaywallView.swift                # Purchase UI (not currently active)
 ├── OverlayView.swift                # Translation result bubble UI
 ├── OverlayWindowController.swift    # Floating overlay window
 ├── TranslationService.swift         # TranslationBridge + TranslationBridgeView
@@ -235,10 +238,7 @@ SnapTra Translator/
 ├── SettingsStore.swift              # @AppStorage settings
 ├── AppSettings.swift                # UserDefaults keys
 ├── LoginItemManager.swift           # Launch at login
-└── Store/
-    ├── EntitlementManager.swift     # License/trial state
-    ├── StoreKitManager.swift        # StoreKit integration
-    └── ProductIDs.swift             # Product identifiers
+└── Localizable.xcstrings            # String catalog for i18n (English, Chinese, Japanese, Korean)
 ```
 
 ### Debugging
