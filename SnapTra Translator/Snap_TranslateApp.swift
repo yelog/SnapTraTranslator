@@ -195,14 +195,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             keyEquivalent: ""
         )
         aboutItem.target = self
+        aboutItem.indentationLevel = 0
         menu.addItem(aboutItem)
 
         // Quit
         let quitItem = NSMenuItem(
             title: NSLocalizedString("Quit", comment: "Quit menu item"),
-            action: #selector(NSApplication.terminate(_:)),
+            action: #selector(quitApp),
             keyEquivalent: "q"
         )
+        quitItem.target = self
+        quitItem.indentationLevel = 0
         menu.addItem(quitItem)
 
         // Update dynamic menu item titles
@@ -242,6 +245,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     @objc private func toggleContinuousTranslation() {
         model.settings.continuousTranslation.toggle()
+    }
+
+    @objc private func quitApp() {
+        NSApp.terminate(nil)
     }
 
     @objc private func openAbout() {
