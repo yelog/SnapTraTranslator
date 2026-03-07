@@ -901,9 +901,6 @@
     "English definitions and synonyms" : {
 
     },
-    "Fell back to Apple's built-in dictionary." : {
-
-    },
     "French" : {
       "comment" : "Language name - use native name",
       "extractionState" : "stale",
@@ -3049,9 +3046,6 @@
     "Used first for English word lookups. Translation still uses Apple Translation." : {
 
     },
-    "Using the larger offline dictionary for fuller English definitions." : {
-
-    },
     "Vietnamese" : {
       "comment" : "Language name - use native name",
       "extractionState" : "stale",
@@ -3121,6 +3115,9 @@
           }
         }
       }
+    },
+    "WordNet" : {
+
     },
     "Works offline" : {
 

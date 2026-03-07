@@ -115,10 +115,66 @@ struct OverlayView: View {
             // Primary Translation
             primaryTranslationSection(content: content)
 
-            // Definitions (if available)
-            if !content.definitions.isEmpty {
-                definitionsSection(definitions: content.definitions)
+            // Dictionary sections (one per dictionary source)
+            if !content.dictionaryEntries.isEmpty {
+                dictionarySectionsView(entries: content.dictionaryEntries)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func dictionarySectionsView(entries: [DictionaryEntry]) -> some View {
+        ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
+            VStack(alignment: .leading, spacing: 0) {
+                Divider()
+                    .padding(.horizontal, 18)
+                    .opacity(0.6)
+
+                // Dictionary source header
+                dictionarySourceSectionHeader(source: entry.source, isFirst: index == 0)
+
+                // Definitions for this dictionary
+                definitionsSection(definitions: entry.definitions, showDividers: false)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func dictionarySourceSectionHeader(source: DictionaryEntry.Source, isFirst: Bool) -> some View {
+        let config = dictionarySourceConfig(for: source)
+
+        HStack(spacing: 6) {
+            Image(systemName: config.icon)
+                .font(.system(size: 11, weight: .semibold))
+            Text(config.title)
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(config.color)
+        .padding(.horizontal, 18)
+        .padding(.top, isFirst ? 10 : 12)
+        .padding(.bottom, 6)
+    }
+
+    private func dictionarySourceConfig(for source: DictionaryEntry.Source) -> (title: String, icon: String, color: Color) {
+        switch source {
+        case .advancedDictionary:
+            return (
+                String(localized: "Advanced Dictionary"),
+                "sparkles",
+                .green
+            )
+        case .wordNet:
+            return (
+                String(localized: "WordNet"),
+                "book.pages",
+                Color(red: 0.4, green: 0.6, blue: 0.9)
+            )
+        case .systemDictionary:
+            return (
+                String(localized: "System Dictionary"),
+                "book.closed",
+                .secondary
+            )
         }
     }
 
@@ -157,28 +213,20 @@ struct OverlayView: View {
                 }
             }
 
-            if (content.phonetic?.isEmpty == false) || content.dictionarySource != nil {
-                HStack(spacing: 8) {
-                    if let phonetic = content.phonetic, !phonetic.isEmpty {
-                        Text(phonetic)
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
+            if let phonetic = content.phonetic, !phonetic.isEmpty {
+                Text(phonetic)
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(.secondary.opacity(0.25), lineWidth: 0.5)
                             .background(
                                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .strokeBorder(.secondary.opacity(0.25), lineWidth: 0.5)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                            .fill(.secondary.opacity(0.06))
-                                    )
+                                    .fill(.secondary.opacity(0.06))
                             )
-                    }
-
-                    if let source = content.dictionarySource {
-                        dictionarySourceBadge(source)
-                    }
-                }
+                    )
             }
         }
         .padding(.horizontal, 18)
@@ -237,15 +285,17 @@ struct OverlayView: View {
     }
 
     @ViewBuilder
-    private func definitionsSection(definitions: [DictionaryEntry.Definition]) -> some View {
+    private func definitionsSection(definitions: [DictionaryEntry.Definition], showDividers: Bool = true) -> some View {
         let grouped = groupedTranslations(from: definitions)
         if grouped.isEmpty {
             EmptyView()
         } else {
             VStack(alignment: .leading, spacing: 0) {
-                Divider()
-                    .padding(.horizontal, 18)
-                    .opacity(0.6)
+                if showDividers {
+                    Divider()
+                        .padding(.horizontal, 18)
+                        .opacity(0.6)
+                }
 
                 VStack(alignment: .leading, spacing: 14) {
                     ForEach(Array(grouped.enumerated()), id: \.offset) { _, group in
@@ -330,31 +380,6 @@ struct OverlayView: View {
             guard let translations = grouped[key], !translations.isEmpty else { return nil }
             return (key, translations)
         }
-    }
-
-    @ViewBuilder
-    private func dictionarySourceBadge(_ source: DictionaryEntry.Source) -> some View {
-        let isAdvanced = source == .advancedDictionary
-        let title = isAdvanced
-            ? String(localized: "Advanced Dictionary")
-            : String(localized: "System Dictionary")
-        let helpText = isAdvanced
-            ? String(localized: "Using the larger offline dictionary for fuller English definitions.")
-            : String(localized: "Fell back to Apple's built-in dictionary.")
-
-        Label(
-            title,
-            systemImage: isAdvanced ? "sparkles" : "book.closed"
-        )
-        .font(.system(size: 10, weight: .semibold))
-        .foregroundStyle(isAdvanced ? Color.green : .secondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            Capsule()
-                .fill(isAdvanced ? Color.green.opacity(0.12) : Color.secondary.opacity(0.08))
-        )
-        .help(helpText)
     }
 
     private func posColor(for pos: String) -> Color {

@@ -9,21 +9,28 @@ struct OverlayContent: Equatable {
     var word: String
     var phonetic: String?
     var translation: String
-    var definitions: [DictionaryEntry.Definition]
-    var dictionarySource: DictionaryEntry.Source?
+    var dictionaryEntries: [DictionaryEntry]  // Multiple dictionary results
 
     init(
         word: String,
         phonetic: String?,
         translation: String,
-        definitions: [DictionaryEntry.Definition] = [],
-        dictionarySource: DictionaryEntry.Source? = nil
+        dictionaryEntries: [DictionaryEntry] = []
     ) {
         self.word = word
         self.phonetic = phonetic
         self.translation = translation
-        self.definitions = definitions
-        self.dictionarySource = dictionarySource
+        self.dictionaryEntries = dictionaryEntries
+    }
+
+    /// Backward compatibility: returns definitions from first dictionary entry
+    var definitions: [DictionaryEntry.Definition] {
+        dictionaryEntries.first?.definitions ?? []
+    }
+
+    /// Backward compatibility: returns source from first dictionary entry
+    var dictionarySource: DictionaryEntry.Source? {
+        dictionaryEntries.first?.source
     }
 }
 
@@ -294,35 +301,47 @@ final class AppModel: ObservableObject {
             guard !Task.isCancelled, activeLookupID == lookupID else { return }
 
             let targetIsEnglish = targetLanguage.minimalIdentifier == "en"
-            let dictEntry = dictionaryService.lookup(selected.text, sources: settings.dictionarySources, preferEnglish: targetIsEnglish)
-            let phonetic = dictEntry?.phonetic
-            var definitions = dictEntry?.definitions ?? []
-            let dictionarySource = dictEntry?.source
+            let dictEntries = dictionaryService.lookupAll(selected.text, sources: settings.dictionarySources, preferEnglish: targetIsEnglish)
+            let phonetic = dictEntries.first?.phonetic
 
             if sourceLanguage.minimalIdentifier == targetLanguage.minimalIdentifier {
-                var processedDefinitions = definitions
+                // Same language: process definitions from all dictionaries
+                var allProcessedEntries: [DictionaryEntry] = []
                 let isEnglish = sourceLanguage.minimalIdentifier == "en"
-                
-                if isEnglish && !definitions.isEmpty {
-                    processedDefinitions = definitions.compactMap { def in
-                        let trimmedMeaning = def.meaning.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let hasEnglishContent = trimmedMeaning.range(of: "[a-zA-Z]{3,}", options: .regularExpression) != nil
-                        guard hasEnglishContent else { return nil }
-                        return DictionaryEntry.Definition(
-                            partOfSpeech: def.partOfSpeech,
-                            meaning: def.meaning,
-                            translation: trimmedMeaning,
-                            examples: def.examples
-                        )
+
+                for entry in dictEntries {
+                    var processedDefinitions = entry.definitions
+
+                    if isEnglish && !entry.definitions.isEmpty {
+                        processedDefinitions = entry.definitions.compactMap { def in
+                            let trimmedMeaning = def.meaning.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let hasEnglishContent = trimmedMeaning.range(of: "[a-zA-Z]{3,}", options: .regularExpression) != nil
+                            guard hasEnglishContent else { return nil }
+                            return DictionaryEntry.Definition(
+                                partOfSpeech: def.partOfSpeech,
+                                meaning: def.meaning,
+                                translation: trimmedMeaning,
+                                examples: def.examples
+                            )
+                        }
+                    }
+
+                    if !processedDefinitions.isEmpty {
+                        allProcessedEntries.append(DictionaryEntry(
+                            word: entry.word,
+                            phonetic: entry.phonetic,
+                            definitions: processedDefinitions,
+                            source: entry.source,
+                            synonyms: entry.synonyms
+                        ))
                     }
                 }
-                
+
                 let content = OverlayContent(
                     word: selected.text,
                     phonetic: phonetic,
                     translation: selected.text,
-                    definitions: processedDefinitions,
-                    dictionarySource: dictionarySource
+                    dictionaryEntries: allProcessedEntries
                 )
                 updateOverlay(state: .result(content), anchor: mouseLocation)
                 return
@@ -358,21 +377,30 @@ final class AppModel: ObservableObject {
                 let translated = try await translationBridge.translate(text: selected.text, source: sourceLanguage, target: targetLanguage)
                 guard !Task.isCancelled, activeLookupID == lookupID else { return }
 
-                // 如果词典有释义，根据目标语言处理每个释义
-                if !definitions.isEmpty {
-                    definitions = await translateDefinitionsInParallel(
-                        definitions: definitions,
+                // Translate definitions from all dictionaries
+                var translatedEntries: [DictionaryEntry] = []
+                for entry in dictEntries {
+                    let translatedDefinitions = await translateDefinitionsInParallel(
+                        definitions: entry.definitions,
                         sourceLanguage: sourceLanguage,
                         targetLanguage: targetLanguage
                     )
+                    if !translatedDefinitions.isEmpty {
+                        translatedEntries.append(DictionaryEntry(
+                            word: entry.word,
+                            phonetic: entry.phonetic,
+                            definitions: translatedDefinitions,
+                            source: entry.source,
+                            synonyms: entry.synonyms
+                        ))
+                    }
                 }
 
                 let content = OverlayContent(
                     word: selected.text,
                     phonetic: phonetic,
                     translation: translated,
-                    definitions: definitions,
-                    dictionarySource: dictionarySource
+                    dictionaryEntries: translatedEntries
                 )
                 updateOverlay(state: .result(content), anchor: mouseLocation)
             } else {

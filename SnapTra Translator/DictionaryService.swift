@@ -27,6 +27,24 @@ final class DictionaryService {
         return nil
     }
 
+    /// Queries all enabled dictionary sources and returns all matching entries.
+    /// - Parameters:
+    ///   - word: The word to look up
+    ///   - sources: Array of dictionary sources to query
+    ///   - preferEnglish: Whether to prefer English definitions
+    /// - Returns: Array of matching dictionary entries from all enabled sources
+    func lookupAll(_ word: String, sources: [DictionarySource], preferEnglish: Bool = false) -> [DictionaryEntry] {
+        guard let normalized = normalizeWord(word) else { return [] }
+
+        var entries: [DictionaryEntry] = []
+        for source in sources where source.isEnabled {
+            if let entry = lookupFromSource(source, word: normalized, preferEnglish: preferEnglish) {
+                entries.append(entry)
+            }
+        }
+        return entries
+    }
+
     /// Legacy lookup method for backward compatibility - tries ECDICT first, then system.
     func lookup(_ word: String, preferEnglish: Bool = false) -> DictionaryEntry? {
         guard let normalized = normalizeWord(word) else { return nil }
