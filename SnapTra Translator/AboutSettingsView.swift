@@ -46,15 +46,15 @@ struct AboutSettingsView: View {
             HStack(spacing: 20) {
                 LinkButton(
                     title: "Twitter",
-                    url: URL(string: "https://twitter.com/")!
+                    url: URL(string: "https://x.com/yelogeek")!
                 )
                 LinkButton(
                     title: "GitHub",
-                    url: URL(string: "https://github.com/")!
+                    url: URL(string: "https://github.com/yelog/SnapTraTranslator")!
                 )
                 LinkButton(
                     title: String(localized: "Website"),
-                    url: URL(string: "https://")!
+                    url: URL(string: "https://snaptra.yelog.org/")!
                 )
             }
 
@@ -133,11 +133,11 @@ struct AboutView: View {
             HStack(spacing: 16) {
                 LinkButton(
                     title: "Twitter",
-                    url: URL(string: "https://twitter.com/")!
+                    url: URL(string: "https://x.com/yelogeek")!
                 )
                 LinkButton(
                     title: "GitHub",
-                    url: URL(string: "https://github.com/")!
+                    url: URL(string: "https://github.com/yelog/SnapTraTranslator")!
                 )
             }
 

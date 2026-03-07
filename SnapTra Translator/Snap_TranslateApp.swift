@@ -21,7 +21,7 @@ struct Snap_TranslateApp: App {
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button("Settings...") {
-                    NSApp.sendAction(#selector(AppDelegate.openSettings), to: nil, from: nil)
+                    NSApp.sendAction(#selector(AppDelegate.openSettingsWindow), to: nil, from: nil)
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
@@ -180,7 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // Settings
         let settingsItem = NSMenuItem(
             title: NSLocalizedString("Settings...", comment: "Settings menu item"),
-            action: #selector(openSettings),
+            action: #selector(openSettingsWindow),
             keyEquivalent: ","
         )
         settingsItem.target = self
@@ -245,50 +245,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     @objc private func openAbout() {
-        isManualWindowOpen = true
-        NSApp.setActivationPolicy(.regular)
-        if let window = aboutWindowController?.window, window.isVisible {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        } else {
-            showAboutWindow()
-        }
+        openSettings(initialTab: .about)
     }
 
-    private var aboutWindowController: NSWindowController?
-
-    private func showAboutWindow() {
-        let contentView = AboutView()
-            .environmentObject(model)
-        let hostingView = NSHostingView(rootView: contentView)
-        hostingView.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
-
-        let window = NSWindow(
-            contentRect: hostingView.frame,
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = hostingView
-        window.title = NSLocalizedString("About SnapTra Translator", comment: "About window title")
-        window.isReleasedWhenClosed = false
-        window.center()
-
-        let controller = NSWindowController(window: window)
-        aboutWindowController = controller
-        controller.showWindow(nil)
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+    @objc func openSettingsWindow() {
+        openSettings(initialTab: .general)
     }
 
-    @objc func openSettings() {
+    private func openSettings(initialTab: SettingsTab) {
         isManualWindowOpen = true
         NSApp.setActivationPolicy(.regular)
         if let window = settingsWindow, window.isVisible {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
         } else {
-            showSettingsWindow()
+            showSettingsWindow(initialTab: initialTab)
         }
     }
 
@@ -359,8 +330,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
     }
 
-    private func showSettingsWindow() {
-        let windowController = settingsWindowController ?? SettingsWindowController(model: model)
+    private func showSettingsWindow(initialTab: SettingsTab = .general) {
+        let windowController = settingsWindowController ?? SettingsWindowController(model: model, initialTab: initialTab)
         settingsWindowController = windowController
         settingsWindow?.delegate = self
         NSApp.setActivationPolicy(.regular)
@@ -379,8 +350,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
 @MainActor
 final class SettingsWindowController: NSWindowController {
-    init(model: AppModel) {
-        let contentView = SettingsWindowView()
+    init(model: AppModel, initialTab: SettingsTab = .general) {
+        let contentView = SettingsWindowView(initialTab: initialTab)
             .environmentObject(model)
         let hostingView = NSHostingView(rootView: contentView)
         hostingView.frame = NSRect(x: 0, y: 0, width: 427, height: 480)

@@ -16,7 +16,13 @@ enum SettingsTab: String, CaseIterable {
 
 struct SettingsWindowView: View {
     @EnvironmentObject var model: AppModel
-    @State private var selectedTab: SettingsTab = .general
+    @State private var selectedTab: SettingsTab
+    var initialTab: SettingsTab = .general
+
+    init(initialTab: SettingsTab = .general) {
+        self.initialTab = initialTab
+        _selectedTab = State(initialValue: initialTab)
+    }
 
     var body: some View {
         TabView(selection: $selectedTab) {
