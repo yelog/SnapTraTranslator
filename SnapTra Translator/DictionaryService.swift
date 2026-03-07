@@ -5,6 +5,9 @@ final class DictionaryService {
     /// Offline ECDICT database. Exposed so AppModel can pass it to DictionaryDownloadManager.
     let offlineService = OfflineDictionaryService()
 
+    /// WordNet English-English dictionary service.
+    let wordNetService = WordNetService()
+
     /// Performs a lookup using the provided dictionary sources in priority order.
     /// - Parameters:
     ///   - word: The word to look up
@@ -51,6 +54,9 @@ final class DictionaryService {
                 source: .advancedDictionary,
                 synonyms: entry.synonyms
             )
+        case .wordNet:
+            guard let wnEntry = wordNetService.lookup(word) else { return nil }
+            return wnEntry.toDictionaryEntry()
         case .system:
             return lookupFromSystemDictionary(word: word, preferEnglish: preferEnglish)
         }
