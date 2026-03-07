@@ -48,13 +48,24 @@ struct DictionarySettingsView: View {
             .frame(minHeight: 100)
 
             // ECDICT Download Section
-            ECDICTDownloadSection(manager: model.dictionaryDownload)
+            ECDICTDownloadSection(manager: model.dictionaryDownload) {
+                // Callback when download starts - enable ECDICT source
+                enableECDICTSource()
+            }
 
             Spacer()
         }
         .padding()
         .onAppear {
             loadSources()
+        }
+    }
+
+    private func enableECDICTSource() {
+        // Find and enable the ECDICT source
+        if let index = sources.firstIndex(where: { $0.type == .ecdict }) {
+            sources[index].isEnabled = true
+            updateSources()
         }
     }
 
@@ -110,6 +121,7 @@ struct DictionarySourceRow: View {
 
 struct ECDICTDownloadSection: View {
     @ObservedObject var manager: DictionaryDownloadManager
+    var onDownloadStart: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -161,6 +173,7 @@ struct ECDICTDownloadSection: View {
         switch manager.state {
         case .notInstalled:
             Button(String(localized: "Download")) {
+                onDownloadStart?()
                 manager.startDownload()
             }
             .buttonStyle(.borderedProminent)
@@ -208,6 +221,7 @@ struct ECDICTDownloadSection: View {
 
         case .error:
             Button(String(localized: "Retry")) {
+                onDownloadStart?()
                 manager.retry()
             }
             .buttonStyle(.bordered)

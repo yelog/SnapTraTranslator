@@ -62,27 +62,28 @@ final class SettingsStore: ObservableObject {
             return sources
         }
 
-        // Migration: Check if ECDICT was previously installed (using old key)
-        let oldEcdictInstalledKey = "ecdictInstalled"
-        let wasEcdictInstalled = defaults.bool(forKey: oldEcdictInstalledKey)
+        // Check if ECDICT database is actually installed
+        let ecdictInstalled = FileManager.default.fileExists(
+            atPath: OfflineDictionaryService.databaseURL.path
+        )
 
-        // Create default configuration (backward compatible)
+        // Create default configuration
+        // ECDICT is enabled only if it's already installed
         let sources: [DictionarySource] = [
             DictionarySource(
                 id: UUID(),
-                name: String(localized: "Advanced Dictionary"),
+                name: NSLocalizedString("Advanced Dictionary", comment: "ECDICT name"),
                 type: .ecdict,
-                isEnabled: true
+                isEnabled: ecdictInstalled
             ),
             DictionarySource(
                 id: UUID(),
-                name: String(localized: "System Dictionary"),
+                name: NSLocalizedString("System Dictionary", comment: "System dictionary name"),
                 type: .system,
                 isEnabled: true
             )
         ]
 
-        // Note: We don't delete the old key in case user downgrades
         return sources
     }
 
