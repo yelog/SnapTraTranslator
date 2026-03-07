@@ -362,19 +362,17 @@ final class SettingsWindowController: NSWindowController {
         let contentView = SettingsWindowView(initialTab: initialTab)
             .environmentObject(model)
         let hostingView = NSHostingView(rootView: contentView)
-        hostingView.frame = NSRect(x: 0, y: 0, width: 427, height: 480)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 400, height: 480)
 
         let window = NSWindow(
             contentRect: hostingView.frame,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
         window.contentView = hostingView
         window.title = String(localized: "Settings")
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 427, height: 400)
-        window.maxSize = NSSize(width: 427, height: CGFloat.infinity)
         window.center()
 
         super.init(window: window)
