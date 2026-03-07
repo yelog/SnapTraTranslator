@@ -369,7 +369,7 @@ struct IntegratedDictionaryRow: View {
                 EmptyView()
 
             case .installed:
-                Button(String(localized: "Delete")) {
+                Button(String(localized: "Uninstall")) {
                     onDelete()
                 }
                 .buttonStyle(.bordered)
