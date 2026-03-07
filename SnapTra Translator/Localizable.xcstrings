@@ -78,7 +78,7 @@
       }
     },
     "Advanced Dictionary" : {
-
+      "comment" : "ECDICT name"
     },
     "Advanced dictionary installation failed" : {
 
@@ -2689,7 +2689,7 @@
       }
     },
     "System Dictionary" : {
-
+      "comment" : "System dictionary name"
     },
     "Tech terms" : {
 
