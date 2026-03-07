@@ -788,6 +788,7 @@
       }
     },
     "ECDICT - Comprehensive offline dictionary" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -896,6 +897,9 @@
           }
         }
       }
+    },
+    "English definitions and synonyms" : {
+
     },
     "Fell back to Apple's built-in dictionary." : {
 
@@ -1081,6 +1085,9 @@
       }
     },
     "Install" : {
+
+    },
+    "Installation failed" : {
 
     },
     "Installing" : {
@@ -1810,6 +1817,9 @@
           }
         }
       }
+    },
+    "Not installed" : {
+
     },
     "Open Settings" : {
       "localizations" : {
