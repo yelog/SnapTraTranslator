@@ -3,6 +3,7 @@ import SwiftUI
 
 struct OverlayView: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.colorScheme) private var colorScheme
 
     private var isVisible: Bool {
         if case .idle = model.overlayState { return false }
@@ -38,28 +39,35 @@ struct OverlayView: View {
             }
         }
         .frame(minWidth: 200, maxWidth: 420, alignment: .leading)
-        .background(.ultraThinMaterial)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.12),
-                    Color.white.opacity(0.04)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .background {
+            ZStack {
+                // More opaque material so background content doesn't bleed through
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.regularMaterial)
+                // Tint layer to reinforce system appearance over any background
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(colorScheme == .dark
+                        ? Color.black.opacity(0.25)
+                        : Color.white.opacity(0.25))
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .inset(by: 0.5)
                 .stroke(
                     LinearGradient(
-                        colors: [
-                            .white.opacity(0.4),
-                            .white.opacity(0.15),
-                            .white.opacity(0.08)
-                        ],
+                        colors: colorScheme == .dark
+                            ? [
+                                .white.opacity(0.4),
+                                .white.opacity(0.15),
+                                .white.opacity(0.08),
+                            ]
+                            : [
+                                .black.opacity(0.08),
+                                .black.opacity(0.05),
+                                .black.opacity(0.03),
+                            ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
@@ -184,10 +192,15 @@ struct OverlayView: View {
                         .font(.system(size: 17, weight: .medium, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [
-                                    Color(red: 0.2, green: 0.6, blue: 1.0),   // Lighter blue
-                                    Color(red: 0.5, green: 0.5, blue: 0.95)   // Soft purple-blue
-                                ],
+                                colors: colorScheme == .dark
+                                    ? [
+                                        Color(red: 0.2, green: 0.6, blue: 1.0),
+                                        Color(red: 0.5, green: 0.5, blue: 0.95),
+                                    ]
+                                    : [
+                                        Color(red: 0.1, green: 0.4, blue: 0.85),
+                                        Color(red: 0.35, green: 0.3, blue: 0.8),
+                                    ],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
