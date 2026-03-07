@@ -74,9 +74,8 @@ struct AboutSettingsView: View {
     }
 
     private func checkForUpdates() {
-        // Placeholder for update checking functionality
-        // This could open the App Store or a website
-        if let url = URL(string: "https://apps.apple.com/") {
+        // Open the App Store page for SnapTra Translator
+        if let url = URL(string: "https://apps.apple.com/cn/app/snaptra-translator/id6757981764") {
             NSWorkspace.shared.open(url)
         }
     }
