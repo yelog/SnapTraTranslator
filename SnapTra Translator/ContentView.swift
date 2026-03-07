@@ -206,6 +206,22 @@ struct ContentView: View {
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 8)
 
+            ECDICTDictionaryRow(manager: model.dictionaryDownload)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(.background)
+                        .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
+                        .shadow(color: .black.opacity(0.02), radius: 1, x: 0, y: 1)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(.quaternary, lineWidth: 0.5)
+                )
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 8)
+
             HStack(spacing: 12) {
                 if allReady {
                     HStack(spacing: 6) {

@@ -51,9 +51,17 @@ struct SettingsView: View {
                 }
 
                 SettingsSectionCard(
+                    title: "Dictionary",
+                    icon: "books.vertical",
+                    delay: 0.1
+                ) {
+                    ECDICTDictionaryRow(manager: model.dictionaryDownload)
+                }
+
+                SettingsSectionCard(
                     title: "Permissions",
                     icon: "lock.shield",
-                    delay: 0.1
+                    delay: 0.15
                 ) {
                     VStack(spacing: 14) {
                         PermissionRow(
@@ -371,5 +379,117 @@ struct PermissionRow: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: isGranted)
+    }
+}
+
+// MARK: - Dictionary Section
+
+struct ECDICTDictionaryRow: View {
+    @ObservedObject var manager: DictionaryDownloadManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("ECDICT")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer()
+                actionView
+            }
+
+            if case .downloading(let progress) = manager.state {
+                VStack(alignment: .leading, spacing: 4) {
+                    ProgressView(value: progress)
+                        .progressViewStyle(.linear)
+                    HStack {
+                        Text("\(Int(progress * 100))%")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Cancel") { manager.cancelDownload() }
+                            .font(.system(size: 11))
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if case .error(let message) = manager.state {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        Button("Retry") { manager.retry() }
+                        .font(.system(size: 11, weight: .medium))
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+
+                        Button("Select file…") { manager.selectManually() }
+                            .font(.system(size: 11, weight: .medium))
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
+                }
+            }
+        }
+    }
+
+    private var subtitle: String {
+        switch manager.state {
+        case .notInstalled:
+            return "3.4M entries · ~170 MB download"
+        case .downloading:
+            return "Downloading…"
+        case .installing:
+            return "Installing…"
+        case .installed(let sizeMB):
+            return String(format: "Installed · %.0f MB", sizeMB)
+        case .error:
+            return "Installation failed"
+        }
+    }
+
+    @ViewBuilder
+    private var actionView: some View {
+        switch manager.state {
+        case .notInstalled:
+            Button("Download") { manager.startDownload() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+        case .downloading:
+            EmptyView()
+
+        case .installing:
+            HStack(spacing: 6) {
+                ProgressView()
+                    .scaleEffect(0.7)
+                    .controlSize(.small)
+                Text("Installing")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+        case .installed:
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .font(.system(size: 14))
+                Button("Delete") { manager.delete() }
+                    .font(.system(size: 11, weight: .medium))
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+
+        case .error:
+            EmptyView()
+        }
     }
 }

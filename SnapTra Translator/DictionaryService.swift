@@ -2,14 +2,19 @@ import CoreServices
 import Foundation
 
 final class DictionaryService {
+    /// Offline ECDICT database. Exposed so AppModel can pass it to DictionaryDownloadManager.
+    let offlineService = OfflineDictionaryService()
+
     func lookup(_ word: String, preferEnglish: Bool = false) -> DictionaryEntry? {
-        
-        guard let normalized = normalizeWord(word) else {
-            return nil
+        guard let normalized = normalizeWord(word) else { return nil }
+
+        // Prefer offline dictionary for better coverage
+        if let entry = offlineService.lookup(normalized) {
+            return entry
         }
-        
+
+        // Fall back to macOS system dictionary
         let range = CFRange(location: 0, length: normalized.utf16.count)
-        
         guard let definition = DCSCopyTextDefinition(nil, normalized as CFString, range) else {
             return nil
         }
@@ -17,7 +22,7 @@ final class DictionaryService {
         let html = definition.takeRetainedValue() as String
 
         #if DEBUG
-        print("[DictionaryService] Default dictionary result for '\(normalized)' (\(html.count) chars):\n\(html.prefix(2000))")
+        print("[DictionaryService] System dictionary result for '\(normalized)' (\(html.count) chars):\n\(html.prefix(2000))")
         #endif
 
         if preferEnglish {

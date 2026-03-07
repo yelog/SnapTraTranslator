@@ -4,6 +4,9 @@
     "" : {
 
     },
+    "%lld%%" : {
+
+    },
     "Arabic" : {
       "comment" : "Language name - use native name",
       "extractionState" : "stale",
@@ -386,6 +389,15 @@
         }
       }
     },
+    "Delete" : {
+
+    },
+    "Download" : {
+
+    },
+    "ECDICT" : {
+
+    },
     "Enable Screen Recording" : {
       "localizations" : {
         "en" : {
@@ -595,6 +607,9 @@
           }
         }
       }
+    },
+    "Installing" : {
+
     },
     "Italian" : {
       "comment" : "Language name - use native name",
@@ -1389,6 +1404,9 @@
         }
       }
     },
+    "Quit SnapTra" : {
+
+    },
     "Ready to translate" : {
       "localizations" : {
         "en" : {
@@ -1524,6 +1542,9 @@
           }
         }
       }
+    },
+    "Retry" : {
+
     },
     "Right Command" : {
       "localizations" : {
@@ -1765,6 +1786,12 @@
           }
         }
       }
+    },
+    "Select file…" : {
+
+    },
+    "Settings..." : {
+
     },
     "Shortcuts" : {
       "extractionState" : "stale",

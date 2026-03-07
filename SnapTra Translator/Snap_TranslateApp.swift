@@ -19,7 +19,12 @@ struct Snap_TranslateApp: App {
             EmptyView()
         }
         .commands {
-            CommandGroup(replacing: .appSettings) { }
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings...") {
+                    NSApp.sendAction(#selector(AppDelegate.openSettings), to: nil, from: nil)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
         }
     }
 }
@@ -109,10 +114,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.image = makeStatusBarImage()
             button.imagePosition = .imageOnly
             button.target = self
-            button.action = #selector(statusItemClicked)
+            button.action = #selector(statusItemClicked(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.toolTip = "SnapTra Translator"
         }
         statusItem = item
+    }
+
+    private func makeStatusMenu() -> NSMenu {
+        let menu = NSMenu()
+        let settingsItem = NSMenuItem(
+            title: String(localized: "Settings..."),
+            action: #selector(openSettings),
+            keyEquivalent: ","
+        )
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(
+            title: String(localized: "Quit SnapTra"),
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
+        ))
+        return menu
+    }
+
+    @objc func openSettings() {
+        isManualWindowOpen = true
+        NSApp.setActivationPolicy(.regular)
+        if let window = settingsWindow, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            showSettingsWindow()
+        }
     }
 
     private func makeStatusBarImage() -> NSImage? {
@@ -132,14 +167,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return nil
     }
 
-    @objc private func statusItemClicked() {
-        isManualWindowOpen = true
-        NSApp.setActivationPolicy(.regular)
-        if let window = settingsWindow, window.isVisible {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        guard let event = NSApp.currentEvent else { openSettings(); return }
+        if event.type == .rightMouseUp {
+            let menu = makeStatusMenu()
+            sender.menu = menu
+            sender.performClick(nil)
+            sender.menu = nil
         } else {
-            showSettingsWindow()
+            openSettings()
         }
     }
 
@@ -217,7 +253,7 @@ final class SettingsWindowController: NSWindowController {
         let contentView = ContentView()
             .environmentObject(model)
         let hostingView = NSHostingView(rootView: contentView)
-        hostingView.frame = NSRect(x: 0, y: 0, width: 360, height: 640)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 360, height: 760)
 
         let window = NSWindow(
             contentRect: hostingView.frame,
