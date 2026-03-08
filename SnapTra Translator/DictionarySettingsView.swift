@@ -70,13 +70,7 @@ struct TTSServiceRow: View {
     }
     
     private var subtitleText: String {
-        switch provider {
-        case .apple: return L("Offline local service")
-        case .youdao: return L("No token required, supports UK/US accent")
-        case .bing: return L("Best quality, WebSocket based")
-        case .google: return L("Good quality, requires signature")
-        case .baidu: return L("No token required, supports UK/US accent")
-        }
+        provider.description
     }
     
     @ViewBuilder
