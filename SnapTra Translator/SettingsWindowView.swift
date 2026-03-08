@@ -155,15 +155,6 @@ struct GeneralSettingsView: View {
 
                 // Settings Section
                 VStack(spacing: 0) {
-                    // App Language Picker
-                    AppLanguagePickerRow(
-                        language: $model.settings.appLanguage
-                    )
-
-                    Divider()
-                        .padding(.horizontal, 14)
-                        .opacity(0.5)
-
                     HotkeyKeycapSelector(selectedKey: $model.settings.singleKey)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 14)
@@ -220,16 +211,6 @@ struct GeneralSettingsView: View {
                         isOn: $model.settings.playPronunciation
                     )
 
-                    if model.settings.playPronunciation {
-                        Divider()
-                            .padding(.horizontal, 14)
-                            .opacity(0.5)
-
-                        TTSProviderPickerRow(
-                            provider: $model.settings.ttsProvider
-                        )
-                    }
-
                     Divider()
                         .padding(.horizontal, 14)
                         .opacity(0.5)
@@ -238,6 +219,16 @@ struct GeneralSettingsView: View {
                         title: L("Continuous Translation"),
                         subtitle: L("Keep translating as mouse moves"),
                         isOn: $model.settings.continuousTranslation
+                    )
+
+                    Divider()
+                        .padding(.horizontal, 14)
+                        .opacity(0.5)
+
+                    ToggleRow(
+                        title: L("Debug OCR Region"),
+                        subtitle: L("Show capture area when shortcut is pressed"),
+                        isOn: $model.settings.debugShowOcrRegion
                     )
 
                     Divider()
@@ -254,10 +245,8 @@ struct GeneralSettingsView: View {
                         .padding(.horizontal, 14)
                         .opacity(0.5)
 
-                    ToggleRow(
-                        title: L("Debug OCR Region"),
-                        subtitle: L("Show capture area when shortcut is pressed"),
-                        isOn: $model.settings.debugShowOcrRegion
+                    AppLanguagePickerRow(
+                        language: $model.settings.appLanguage
                     )
                 }
                 .background(
@@ -720,35 +709,6 @@ struct GeneralTranslationLanguageRow: View {
     }
 }
 
-// MARK: - TTS Provider Picker
-
-struct TTSProviderPickerRow: View {
-    @Binding var provider: TTSProvider
-
-    var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(L("Pronunciation Service"))
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(.primary)
-                Text(provider.description)
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(.tertiary)
-            }
-            Spacer()
-            Picker("", selection: $provider) {
-                ForEach(TTSProvider.allCases) { p in
-                    Text(p.displayName).tag(p)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-    }
-}
-
 // MARK: - App Language Picker
 
 struct AppLanguagePickerRow: View {
@@ -772,7 +732,7 @@ struct AppLanguagePickerRow: View {
             }
             .labelsHidden()
             .pickerStyle(.menu)
-            .frame(minWidth: 120)
+            .tint(.accentColor)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
