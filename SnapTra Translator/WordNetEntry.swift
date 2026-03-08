@@ -121,6 +121,7 @@ extension WordNetEntry {
             definitions = synsets.prefix(3).map { synset in
                 DictionaryEntry.Definition(
                     partOfSpeech: synset.pos.displayName,
+                    field: nil,  // WordNet doesn't have field markers
                     meaning: synset.definition,
                     translation: nil,  // WordNet is English-only
                     examples: Array(synset.examples.prefix(2))

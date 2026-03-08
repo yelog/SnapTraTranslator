@@ -17,6 +17,7 @@ struct DictionaryEntry: Equatable {
     /// 单个词义定义
     struct Definition: Equatable {
         let partOfSpeech: String      // 词性：noun, verb, adjective 等
+        let field: String?            // 学科/专业领域标记：[医], [法] 等
         let meaning: String            // 英文释义
         let translation: String?       // 中文翻译（来自 Translation API）
         let examples: [String]         // 例句

@@ -183,20 +183,22 @@ final class DictionaryService {
                 if meaning.count > 5, meaning.range(of: "[a-zA-Z]{3,}", options: .regularExpression) != nil {
                     definitions.append(DictionaryEntry.Definition(
                         partOfSpeech: pos,
+                        field: nil,
                         meaning: meaning,
                         translation: meaning,
                         examples: []
                     ))
                 }
             }
-            
+
             if numMatches.isEmpty {
                 var meaning = content.trimmingCharacters(in: .whitespacesAndNewlines)
                 meaning = cleanEnglishDefinition(meaning)
-                
+
                 if meaning.count > 5, meaning.range(of: "[a-zA-Z]{3,}", options: .regularExpression) != nil {
                     definitions.append(DictionaryEntry.Definition(
                         partOfSpeech: pos,
+                        field: nil,
                         meaning: meaning,
                         translation: meaning,
                         examples: []
@@ -291,6 +293,7 @@ final class DictionaryService {
             if hasEnglishContent {
                 definitions.append(DictionaryEntry.Definition(
                     partOfSpeech: currentPOS,
+                    field: nil,
                     meaning: trimmed,
                     translation: trimmed,
                     examples: []
@@ -348,6 +351,7 @@ final class DictionaryService {
                         for meaning in plainMeanings {
                             definitions.append(DictionaryEntry.Definition(
                                 partOfSpeech: pos,
+                                field: nil,
                                 meaning: meaning.meaning,
                                 translation: meaning.translation,
                                 examples: []
@@ -362,6 +366,7 @@ final class DictionaryService {
                     for meaning in meanings {
                         definitions.append(DictionaryEntry.Definition(
                             partOfSpeech: pos,
+                            field: nil,
                             meaning: meaning,
                             translation: nil,
                             examples: examples
@@ -373,6 +378,7 @@ final class DictionaryService {
                     if !plainContent.isEmpty {
                         definitions.append(DictionaryEntry.Definition(
                             partOfSpeech: pos,
+                            field: nil,
                             meaning: plainContent,
                             translation: nil,
                             examples: examples
@@ -390,6 +396,7 @@ final class DictionaryService {
                 for meaning in plainMeanings.prefix(3) {
                     definitions.append(DictionaryEntry.Definition(
                         partOfSpeech: fallbackPOS,
+                        field: nil,
                         meaning: meaning.meaning,
                         translation: meaning.translation,
                         examples: []
@@ -402,6 +409,7 @@ final class DictionaryService {
                 for meaning in allMeanings.prefix(3) {
                     definitions.append(DictionaryEntry.Definition(
                         partOfSpeech: fallbackPOS,
+                        field: nil,
                         meaning: meaning,
                         translation: nil,
                         examples: allExamples

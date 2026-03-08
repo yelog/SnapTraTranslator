@@ -299,7 +299,7 @@ struct OverlayView: View {
 
                 VStack(alignment: .leading, spacing: 14) {
                     ForEach(Array(grouped.enumerated()), id: \.offset) { _, group in
-                        definitionGroupRow(partOfSpeech: group.0, translations: group.1)
+                        definitionGroupRow(partOfSpeech: group.0, field: group.1, translations: group.2)
                     }
                 }
                 .padding(.horizontal, 18)
@@ -309,19 +309,34 @@ struct OverlayView: View {
     }
 
     @ViewBuilder
-    private func definitionGroupRow(partOfSpeech: String, translations: [String]) -> some View {
+    private func definitionGroupRow(partOfSpeech: String, field: String?, translations: [String]) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            if !partOfSpeech.isEmpty {
-                Text(displayedPartOfSpeech(for: partOfSpeech))
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(posColor(for: partOfSpeech))
-                            .shadow(color: posColor(for: partOfSpeech).opacity(0.3), radius: 2, x: 0, y: 1)
-                    )
+            HStack(spacing: 4) {
+                if !partOfSpeech.isEmpty {
+                    Text(displayedPartOfSpeech(for: partOfSpeech))
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(posColor(for: partOfSpeech))
+                                .shadow(color: posColor(for: partOfSpeech).opacity(0.3), radius: 2, x: 0, y: 1)
+                        )
+                }
+
+                if let field, !field.isEmpty {
+                    Text(displayedField(for: field))
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(fieldColor(for: field))
+                                .shadow(color: fieldColor(for: field).opacity(0.3), radius: 2, x: 0, y: 1)
+                        )
+                }
             }
 
             Text(translations.joined(separator: "；"))
@@ -359,16 +374,16 @@ struct OverlayView: View {
         }
     }
 
-    private func groupedTranslations(from definitions: [DictionaryEntry.Definition]) -> [(String, [String])] {
-        var order: [String] = []
+    private func groupedTranslations(from definitions: [DictionaryEntry.Definition]) -> [(String, String?, [String])] {
+        var order: [(String, String?)] = []
         var grouped: [String: [String]] = [:]
 
         for definition in definitions {
             guard let translation = definition.translation?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !translation.isEmpty else { continue }
-            let key = definition.partOfSpeech
+            let key = "\(definition.partOfSpeech)|\(definition.field ?? "")"
             if grouped[key] == nil {
-                order.append(key)
+                order.append((definition.partOfSpeech, definition.field))
                 grouped[key] = []
             }
             if grouped[key]?.contains(translation) == false {
@@ -376,9 +391,10 @@ struct OverlayView: View {
             }
         }
 
-        return order.compactMap { key in
+        return order.compactMap { pos, field in
+            let key = "\(pos)|\(field ?? "")"
             guard let translations = grouped[key], !translations.isEmpty else { return nil }
-            return (key, translations)
+            return (pos, field, translations)
         }
     }
 
@@ -406,6 +422,37 @@ struct OverlayView: View {
             return Color(red: 1.0, green: 0.27, blue: 0.27)  // Modern red
         default:
             return Color(red: 0.56, green: 0.56, blue: 0.58)  // Modern gray
+        }
+    }
+
+    private func displayedField(for field: String) -> String {
+        // Remove brackets and return clean text, e.g., "[医]" -> "医"
+        let cleaned = field.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        return cleaned
+    }
+
+    private func fieldColor(for field: String) -> Color {
+        // Extract the field code without brackets
+        let code = field.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        switch code {
+        case "医":
+            return Color(red: 0.9, green: 0.3, blue: 0.3)     // Red for medical
+        case "法":
+            return Color(red: 0.5, green: 0.3, blue: 0.8)     // Purple for legal
+        case "经":
+            return Color(red: 0.2, green: 0.7, blue: 0.4)     // Green for economic
+        case "计":
+            return Color(red: 0.1, green: 0.5, blue: 0.9)     // Blue for computer
+        case "化":
+            return Color(red: 0.9, green: 0.6, blue: 0.1)     // Orange for chemistry
+        case "物":
+            return Color(red: 0.3, green: 0.6, blue: 0.8)     // Teal for physics
+        case "生":
+            return Color(red: 0.4, green: 0.7, blue: 0.3)     // Green for biology
+        case "数":
+            return Color(red: 0.6, green: 0.4, blue: 0.8)     // Violet for mathematics
+        default:
+            return Color(red: 0.56, green: 0.56, blue: 0.58)  // Gray for others
         }
     }
 

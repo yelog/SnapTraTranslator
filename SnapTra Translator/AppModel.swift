@@ -324,6 +324,7 @@ final class AppModel: ObservableObject {
                             guard hasEnglishContent else { return nil }
                             return DictionaryEntry.Definition(
                                 partOfSpeech: def.partOfSpeech,
+                                field: def.field,
                                 meaning: def.meaning,
                                 translation: trimmedMeaning,
                                 examples: def.examples
@@ -583,6 +584,7 @@ final class AppModel: ObservableObject {
                         if hasEnglishContent {
                             return (index, DictionaryEntry.Definition(
                                 partOfSpeech: def.partOfSpeech,
+                                field: def.field,
                                 meaning: def.meaning,
                                 translation: trimmedMeaning,
                                 examples: def.examples
@@ -606,6 +608,7 @@ final class AppModel: ObservableObject {
 
                     return (index, DictionaryEntry.Definition(
                         partOfSpeech: def.partOfSpeech,
+                        field: def.field,
                         meaning: def.meaning,
                         translation: translatedText,
                         examples: def.examples

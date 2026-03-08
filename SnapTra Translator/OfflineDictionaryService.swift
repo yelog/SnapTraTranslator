@@ -129,10 +129,11 @@ final class OfflineDictionaryService {
             for line in translation.components(separatedBy: "\n") {
                 let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { continue }
-                let (pos, meaning) = extractPOSAndMeaning(trimmed)
+                let (pos, field, meaning) = extractPOSFieldAndMeaning(trimmed)
                 guard !meaning.isEmpty else { continue }
                 result.append(DictionaryEntry.Definition(
                     partOfSpeech: pos,
+                    field: field.isEmpty ? nil : field,
                     meaning: meaning,
                     translation: meaning,
                     examples: []
@@ -145,10 +146,11 @@ final class OfflineDictionaryService {
             for line in definition.components(separatedBy: "\n").prefix(3) {
                 let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { continue }
-                let (pos, meaning) = extractPOSAndMeaning(trimmed)
+                let (pos, field, meaning) = extractPOSFieldAndMeaning(trimmed)
                 guard !meaning.isEmpty else { continue }
                 result.append(DictionaryEntry.Definition(
                     partOfSpeech: pos,
+                    field: field.isEmpty ? nil : field,
                     meaning: meaning,
                     translation: nil,
                     examples: []
@@ -158,18 +160,34 @@ final class OfflineDictionaryService {
         return result
     }
 
-    /// Splits "n. 苹果" → ("n.", "苹果"). Returns ("", original) if no POS prefix found.
-    private func extractPOSAndMeaning(_ line: String) -> (String, String) {
-        let pattern = #"^(n\.|vt\.|vi\.|v\.|a\.|adj\.|adv\.|prep\.|conj\.|pron\.|interj\.|num\.|art\.|abbr\.)\s*"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-              let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
-              let posRange = Range(match.range(at: 1), in: line),
-              let fullRange = Range(match.range, in: line) else {
-            return ("", line)
+    /// Splits "n. 苹果" or "[医] 技术学" → (pos, field, meaning)
+    /// Returns ("", "", original) if no prefix found.
+    private func extractPOSFieldAndMeaning(_ line: String) -> (String, String, String) {
+        var remaining = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        var pos = ""
+        var field = ""
+
+        // First, try to extract POS (词性)
+        let posPattern = #"^(n\.|vt\.|vi\.|v\.|a\.|adj\.|adv\.|prep\.|conj\.|pron\.|interj\.|num\.|art\.|abbr\.)\s*"#
+        if let regex = try? NSRegularExpression(pattern: posPattern, options: .caseInsensitive),
+           let match = regex.firstMatch(in: remaining, range: NSRange(remaining.startIndex..., in: remaining)),
+           let posRange = Range(match.range(at: 1), in: remaining),
+           let fullRange = Range(match.range, in: remaining) {
+            pos = String(remaining[posRange])
+            remaining = String(remaining[fullRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        let pos = String(line[posRange])
-        let meaning = String(line[fullRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
-        return (pos, meaning)
+
+        // Then, try to extract field (学科标记) like [医], [法]
+        let fieldPattern = #"^(\[[^\]]+\])\s*"#
+        if let regex = try? NSRegularExpression(pattern: fieldPattern),
+           let match = regex.firstMatch(in: remaining, range: NSRange(remaining.startIndex..., in: remaining)),
+           let fieldRange = Range(match.range(at: 1), in: remaining),
+           let fullRange = Range(match.range, in: remaining) {
+            field = String(remaining[fieldRange])
+            remaining = String(remaining[fullRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return (pos, field, remaining)
     }
 
     private func columnString(_ stmt: OpaquePointer?, _ col: Int32) -> String? {
