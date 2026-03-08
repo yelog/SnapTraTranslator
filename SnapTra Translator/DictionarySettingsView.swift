@@ -86,10 +86,17 @@ struct TTSServiceRow: View {
             Text("--")
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .foregroundStyle(.tertiary)
+                .frame(width: 60, alignment: .trailing)
         case .testing:
-            ProgressView()
-                .controlSize(.small)
-                .scaleEffect(0.7)
+            HStack(spacing: 4) {
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.7)
+                Text(L("Testing"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 60)
         case .offline:
             Text(L("Local"))
                 .font(.system(size: 11, weight: .medium))
@@ -100,10 +107,12 @@ struct TTSServiceRow: View {
                     Capsule()
                         .fill(Color.secondary.opacity(0.1))
                 )
+                .frame(width: 60)
         case .success(let ms):
             Text(formattedLatency(ms))
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .foregroundStyle(ms < 500 ? .green : (ms < 1000 ? .orange : .red))
+                .frame(width: 60, alignment: .trailing)
         case .failed:
             Text(L("Failed"))
                 .font(.system(size: 11, weight: .medium))
@@ -114,6 +123,7 @@ struct TTSServiceRow: View {
                     Capsule()
                         .fill(Color.red.opacity(0.1))
                 )
+                .frame(width: 60)
         }
     }
     
