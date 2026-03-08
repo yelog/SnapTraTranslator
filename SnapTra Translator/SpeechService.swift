@@ -386,24 +386,28 @@ final class EdgeTTSService {
         language: String?
     ) async throws -> Data {
         logger.info("🌐 Starting Edge TTS WebSocket connection...")
-        
-        // Build WebSocket URL
-        let wsURL = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=\(trustedClientToken)"
-        
+
+        // Each connection requires a unique ConnectionId (matches edge-tts Python spec)
+        let connectionId = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        let wsURL = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1"
+            + "?TrustedClientToken=\(trustedClientToken)"
+            + "&Retry-After=3600"
+            + "&ConnectionId=\(connectionId)"
+
         guard let url = URL(string: wsURL) else {
             throw TTSError.invalidURL
         }
-        
-        // Create WebSocket task with proper headers
-        // Based on edge-tts Python implementation
+
         var request = URLRequest(url: url)
-        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0", forHTTPHeaderField: "User-Agent")
-        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        request.setValue(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36 Edg/134.0.0.0",
+            forHTTPHeaderField: "User-Agent"
+        )
         request.setValue("chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold", forHTTPHeaderField: "Origin")
         request.setValue("no-cache", forHTTPHeaderField: "Pragma")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
-        request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
+        request.setValue(connectionId, forHTTPHeaderField: "X-ConnectionId")
         
         let webSocketTask = URLSession.shared.webSocketTask(with: request)
         
@@ -507,25 +511,23 @@ final class EdgeTTSService {
     
     private func createConfigMessage() -> String {
         let timestamp = getTimestamp()
-        let config = [
+        // context must be a dictionary (not an array) — matches edge-tts Python spec:
+        // {"context":{"synthesis":{"audio":{"metadataoptions":{...},"outputFormat":"..."}}}}
+        let config: [String: Any] = [
             "context": [
-                [
-                    "synthesis": [
-                        "audio": [
-                            "metadataoptions": [
-                                "sentenceBoundaryEnabled": "false",
-                                "wordBoundaryEnabled": "false"
-                            ],
-                            "outputFormat": "audio-24khz-48kbitrate-mono-mp3"
-                        ]
-                    ]
-                ]
-            ]
-        ] as [String : Any]
-        
+                "synthesis": [
+                    "audio": [
+                        "metadataoptions": [
+                            "sentenceBoundaryEnabled": "false",
+                            "wordBoundaryEnabled": "false",
+                        ],
+                        "outputFormat": "audio-24khz-48kbitrate-mono-mp3",
+                    ],
+                ],
+            ],
+        ]
         let configData = try! JSONSerialization.data(withJSONObject: config)
         let configString = String(data: configData, encoding: .utf8)!
-        
         return "X-Timestamp:\(timestamp)\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n\(configString)"
     }
     
