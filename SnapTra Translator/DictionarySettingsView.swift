@@ -249,7 +249,14 @@ struct DictionarySettingsView: View {
                         Text(L("English Accent"))
                             .font(.system(size: 13))
                         Spacer()
-                        Picker("", selection: $model.settings.englishAccent) {
+                        Picker("", selection: Binding(
+                            get: { model.settings.englishAccent },
+                            set: { newValue in
+                                DispatchQueue.main.async {
+                                    model.settings.englishAccent = newValue
+                                }
+                            }
+                        )) {
                             ForEach(EnglishAccent.allCases) { accent in
                                 Text(accent.displayName).tag(accent)
                             }
