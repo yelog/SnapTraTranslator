@@ -7,6 +7,9 @@
     "%lld%%" : {
 
     },
+    "© 2025 yelog. All rights reserved." : {
+
+    },
     "About" : {
       "comment" : "About menu item",
       "localizations" : {
@@ -1102,6 +1105,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "快捷鍵"
+          }
+        }
+      }
+    },
+    "If SnapTra helps you, a ⭐ on GitHub means a lot!" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If SnapTra helps you, a ⭐ on GitHub means a lot!"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SnapTra が役立つなら、GitHub の ⭐ がとても励みになります！"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SnapTra가 도움이 됐다면, GitHub ⭐ 하나가 큰 힘이 됩니다!"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果 SnapTra 对你有帮助，在 GitHub 点个 ⭐ 吧！"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果 SnapTra 對你有幫助，在 GitHub 點個 ⭐ 吧！"
           }
         }
       }
@@ -2760,6 +2797,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Español"
+          }
+        }
+      }
+    },
+    "Star on GitHub" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star on GitHub"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHubでスターを付ける"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub에서 스타 남기기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 点个 Star"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 點個 Star"
           }
         }
       }
