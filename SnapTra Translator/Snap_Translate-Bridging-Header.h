@@ -6,4 +6,6 @@
 #ifndef Snap_Translate_Bridging_Header_h
 #define Snap_Translate_Bridging_Header_h
 
+#import <CommonCrypto/CommonCrypto.h>
+
 #endif

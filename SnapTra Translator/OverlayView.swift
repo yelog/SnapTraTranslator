@@ -175,6 +175,30 @@ struct OverlayView: View {
                 "book.closed",
                 .secondary
             )
+        case .googleTranslate:
+            return (
+                L("Google Translate"),
+                "globe",
+                Color(red: 0.10, green: 0.45, blue: 0.95)
+            )
+        case .bingDictionary:
+            return (
+                L("Bing Dictionary"),
+                "text.book.closed",
+                Color(red: 0.00, green: 0.65, blue: 0.78)
+            )
+        case .youdaoDictionary:
+            return (
+                L("Youdao Dictionary"),
+                "book.closed.fill",
+                Color(red: 0.90, green: 0.30, blue: 0.22)
+            )
+        case .deepLTranslate:
+            return (
+                L("DeepL Translate"),
+                "diamond.fill",
+                Color(red: 0.05, green: 0.24, blue: 0.63)
+            )
         }
     }
 

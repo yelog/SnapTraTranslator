@@ -8,6 +8,9 @@ final class DictionaryService {
     /// WordNet English-English dictionary service.
     let wordNetService = WordNetService()
 
+    /// Web dictionary providers used for lightweight word translations.
+    private let onlineService = OnlineDictionaryService()
+
     /// Performs a lookup using the provided dictionary sources in priority order.
     /// - Parameters:
     ///   - word: The word to look up
@@ -19,7 +22,13 @@ final class DictionaryService {
 
         // Query each enabled source in order
         for source in sources where source.isEnabled {
-            if let entry = lookupFromSource(source, word: normalized, preferEnglish: preferEnglish) {
+            if let entry = Self.lookupFromLocalSource(
+                source,
+                word: normalized,
+                preferEnglish: preferEnglish,
+                offlineService: offlineService,
+                wordNetService: wordNetService
+            ) {
                 return entry
             }
         }
@@ -33,12 +42,33 @@ final class DictionaryService {
     ///   - sources: Array of dictionary sources to query
     ///   - preferEnglish: Whether to prefer English definitions
     /// - Returns: Array of matching dictionary entries from all enabled sources
-    func lookupAll(_ word: String, sources: [DictionarySource], preferEnglish: Bool = false) -> [DictionaryEntry] {
+    func lookupAll(
+        _ word: String,
+        sources: [DictionarySource],
+        sourceLanguage: String,
+        targetLanguage: String,
+        preferEnglish: Bool = false
+    ) async -> [DictionaryEntry] {
         guard let normalized = normalizeWord(word) else { return [] }
 
         var entries: [DictionaryEntry] = []
         for source in sources where source.isEnabled {
-            if let entry = lookupFromSource(source, word: normalized, preferEnglish: preferEnglish) {
+            if source.type.isOnline {
+                if let entry = await onlineService.lookup(
+                    normalized,
+                    provider: source.type,
+                    sourceLanguage: sourceLanguage,
+                    targetLanguage: targetLanguage
+                ) {
+                    entries.append(entry)
+                }
+            } else if let entry = Self.lookupFromLocalSource(
+                source,
+                word: normalized,
+                preferEnglish: preferEnglish,
+                offlineService: offlineService,
+                wordNetService: wordNetService
+            ) {
                 entries.append(entry)
             }
         }
@@ -55,12 +85,18 @@ final class DictionaryService {
         }
 
         // Fall back to macOS system dictionary
-        return lookupFromSystemDictionary(word: normalized, preferEnglish: preferEnglish)
+        return Self.lookupFromSystemDictionary(word: normalized, preferEnglish: preferEnglish)
     }
 
     // MARK: - Private
 
-    private func lookupFromSource(_ source: DictionarySource, word: String, preferEnglish: Bool) -> DictionaryEntry? {
+    private static func lookupFromLocalSource(
+        _ source: DictionarySource,
+        word: String,
+        preferEnglish: Bool,
+        offlineService: OfflineDictionaryService,
+        wordNetService: WordNetService
+    ) -> DictionaryEntry? {
         switch source.type {
         case .ecdict:
             guard let entry = offlineService.lookup(word) else { return nil }
@@ -77,10 +113,12 @@ final class DictionaryService {
             return wnEntry.toDictionaryEntry()
         case .system:
             return lookupFromSystemDictionary(word: word, preferEnglish: preferEnglish)
+        case .google, .bing, .youdao, .deepl:
+            return nil
         }
     }
 
-    private func lookupFromSystemDictionary(word: String, preferEnglish: Bool) -> DictionaryEntry? {
+    private static func lookupFromSystemDictionary(word: String, preferEnglish: Bool) -> DictionaryEntry? {
         let range = CFRange(location: 0, length: word.utf16.count)
         guard let definition = DCSCopyTextDefinition(nil, word as CFString, range) else {
             return nil
@@ -111,7 +149,7 @@ final class DictionaryService {
         return cleaned.isEmpty ? nil : cleaned.lowercased()
     }
 
-    private func parseHTML(_ html: String, word: String) -> DictionaryEntry {
+    private static func parseHTML(_ html: String, word: String) -> DictionaryEntry {
         let phonetic = extractPhonetic(from: html)
         let definitions = extractDefinitions(from: html)
 
@@ -124,7 +162,7 @@ final class DictionaryService {
         )
     }
     
-    private func parseEnglishHTML(_ html: String, word: String) -> DictionaryEntry {
+    private static func parseEnglishHTML(_ html: String, word: String) -> DictionaryEntry {
         let phonetic = extractPhonetic(from: html)
         let definitions = extractEnglishDefinitions(from: html)
 
@@ -137,7 +175,7 @@ final class DictionaryService {
         )
     }
     
-    private func extractEnglishDefinitions(from html: String) -> [DictionaryEntry.Definition] {
+    private static func extractEnglishDefinitions(from html: String) -> [DictionaryEntry.Definition] {
         var definitions: [DictionaryEntry.Definition] = []
         let text = stripHTML(html)
         
@@ -215,7 +253,7 @@ final class DictionaryService {
         return definitions
     }
     
-    private func cleanEnglishDefinition(_ text: String) -> String {
+    private static func cleanEnglishDefinition(_ text: String) -> String {
         var result = text
         
         if let colonIndex = result.firstIndex(of: ":") {
@@ -230,7 +268,7 @@ final class DictionaryService {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    private func detectPartOfSpeech(_ text: String) -> String? {
+    private static func detectPartOfSpeech(_ text: String) -> String? {
         let posPatterns = [
             "^(noun|verb|adjective|adverb|preposition|conjunction|pronoun|interjection)\\s*$",
             "^(n\\.|v\\.|adj\\.|adv\\.|prep\\.|conj\\.|pron\\.|interj\\.)\\s*$"
@@ -246,7 +284,7 @@ final class DictionaryService {
         return nil
     }
     
-    private func extractNumberedMeaning(_ text: String) -> (Int, String)? {
+    private static func extractNumberedMeaning(_ text: String) -> (Int, String)? {
         let pattern = "^(\\d+)\\s+(.+)"
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
               let match = regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)),
@@ -259,7 +297,7 @@ final class DictionaryService {
         return (number, String(text[meaningRange]))
     }
     
-    private func cleanEnglishMeaning(_ text: String) -> String {
+    private static func cleanEnglishMeaning(_ text: String) -> String {
         var result = text
         result = result.replacingOccurrences(of: ":\\s*$", with: "", options: .regularExpression)
         result = result.replacingOccurrences(of: "\\s*\\|.*$", with: "", options: .regularExpression)
@@ -271,7 +309,7 @@ final class DictionaryService {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    private func extractFallbackEnglishDefinitions(from text: String) -> [DictionaryEntry.Definition] {
+    private static func extractFallbackEnglishDefinitions(from text: String) -> [DictionaryEntry.Definition] {
         var definitions: [DictionaryEntry.Definition] = []
         
         let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".;"))
@@ -309,7 +347,7 @@ final class DictionaryService {
 
     // MARK: - Phonetic Extraction
 
-    private func extractPhonetic(from html: String) -> String? {
+    private static func extractPhonetic(from html: String) -> String? {
         let patterns = [
             "<span[^>]*class=\"[^\"]*pr[^\"]*\"[^>]*>([^<]+)</span>",
             "<span[^>]*class=\"[^\"]*ipa[^\"]*\"[^>]*>([^<]+)</span>",
@@ -332,7 +370,7 @@ final class DictionaryService {
 
     // MARK: - Definition Extraction
 
-    private func extractDefinitions(from html: String) -> [DictionaryEntry.Definition] {
+    private static func extractDefinitions(from html: String) -> [DictionaryEntry.Definition] {
         var definitions: [DictionaryEntry.Definition] = []
 
         // 尝试提取词性分组
@@ -421,7 +459,7 @@ final class DictionaryService {
         return definitions
     }
 
-    private func extractPartOfSpeechGroups(from html: String) -> [(String, String)] {
+    private static func extractPartOfSpeechGroups(from html: String) -> [(String, String)] {
         var groups: [(String, String)] = []
 
         // 匹配词性标签及其后续内容
@@ -476,7 +514,7 @@ final class DictionaryService {
         return groups
     }
 
-    private func normalizePOS(_ pos: String) -> String {
+    private static func normalizePOS(_ pos: String) -> String {
         let lowercased = pos.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         switch lowercased {
         case "n", "n.", "noun", "名词": return "n."
@@ -498,7 +536,7 @@ final class DictionaryService {
         let translation: String?
     }
 
-    private func extractPlainTextPartOfSpeech(from html: String) -> String? {
+    private static func extractPlainTextPartOfSpeech(from html: String) -> String? {
         let text = stripHTML(html)
         guard !text.isEmpty else { return nil }
         let header = splitPlainTextSenses(text).first ?? text
@@ -508,13 +546,13 @@ final class DictionaryService {
         return findFirstPartOfSpeech(in: text)
     }
 
-    private func findFirstPartOfSpeech(in text: String) -> String? {
+    private static func findFirstPartOfSpeech(in text: String) -> String? {
         guard let range = findFirstPartOfSpeechRange(in: text) else { return nil }
         let label = String(text[range])
         return normalizePOS(label)
     }
 
-    private func findFirstPartOfSpeechRange(in text: String) -> Range<String.Index>? {
+    private static func findFirstPartOfSpeechRange(in text: String) -> Range<String.Index>? {
         let pattern = "(transitive verb|intransitive verb|vt\\.?|vi\\.?|noun|verb|adjective|adverb|preposition|conjunction|pronoun|interjection|n\\.|v\\.|adj\\.|adv\\.|名词|动词|形容词|副词|及物动词|不及物动词)"
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
             return nil
@@ -528,11 +566,11 @@ final class DictionaryService {
         return matchRange
     }
 
-    private func isHeaderLine(_ text: String) -> Bool {
+    private static func isHeaderLine(_ text: String) -> Bool {
         text.contains("BrE") || text.contains("AmE")
     }
 
-    private func extractPlainTextPartOfSpeechGroups(from html: String) -> [(String, String)] {
+    private static func extractPlainTextPartOfSpeechGroups(from html: String) -> [(String, String)] {
         let text = stripHTML(html)
         guard !text.isEmpty else { return [] }
         guard let regex = try? NSRegularExpression(pattern: "(?:^|[^A-Za-z])([A-Z])\\.", options: []) else {
@@ -585,7 +623,7 @@ final class DictionaryService {
         return []
     }
 
-    private func extractPlainTextMeanings(from html: String) -> [PlainTextMeaning] {
+    private static func extractPlainTextMeanings(from html: String) -> [PlainTextMeaning] {
         let text = stripHTML(html)
         var senses = splitPlainTextSenses(text)
         guard !senses.isEmpty else { return [] }
@@ -607,7 +645,7 @@ final class DictionaryService {
         return meanings
     }
 
-    private func splitPlainTextSenses(_ text: String) -> [String] {
+    private static func splitPlainTextSenses(_ text: String) -> [String] {
         let markers = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"]
         var senses: [String] = []
         var current = ""
@@ -632,7 +670,7 @@ final class DictionaryService {
         return senses
     }
 
-    private func splitMeaningAndTranslation(from text: String) -> PlainTextMeaning {
+    private static func splitMeaningAndTranslation(from text: String) -> PlainTextMeaning {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let range = trimmed.range(of: "\\p{Han}", options: .regularExpression) else {
             return PlainTextMeaning(meaning: trimmed, translation: nil)
@@ -646,7 +684,7 @@ final class DictionaryService {
         return PlainTextMeaning(meaning: englishPart, translation: cleanedTranslation.isEmpty ? nil : cleanedTranslation)
     }
 
-    private func sanitizePlainTextTranslation(_ text: String) -> String {
+    private static func sanitizePlainTextTranslation(_ text: String) -> String {
         var result = text
         let latinPattern = "[A-Za-z\\u00C0-\\u024F\\u1E00-\\u1EFF]+"
         result = result.replacingOccurrences(of: "«[^»]*»", with: "", options: .regularExpression)
@@ -657,7 +695,7 @@ final class DictionaryService {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func parsePOSLabel(in text: String, from startIndex: String.Index) -> (String, String.Index) {
+    private static func parsePOSLabel(in text: String, from startIndex: String.Index) -> (String, String.Index) {
         var index = skipWhitespace(in: text, from: startIndex)
         let labelStart = index
 
@@ -676,7 +714,7 @@ final class DictionaryService {
         return (normalizedLabel, labelEndIndex)
     }
 
-    private func normalizePOSLabel(_ label: String) -> String {
+    private static func normalizePOSLabel(_ label: String) -> String {
         let lowercased = label.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         let prefixes = ["transitive verb", "intransitive verb", "vt", "vi", "noun", "verb", "adjective", "adverb",
                         "preposition", "conjunction", "pronoun", "interjection", "n.", "v.", "adj.", "adv.",
@@ -692,7 +730,7 @@ final class DictionaryService {
         return label.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func skipWhitespace(in text: String, from index: String.Index) -> String.Index {
+    private static func skipWhitespace(in text: String, from index: String.Index) -> String.Index {
         var currentIndex = index
         while currentIndex < text.endIndex, text[currentIndex].isWhitespace {
             currentIndex = text.index(after: currentIndex)
@@ -700,7 +738,7 @@ final class DictionaryService {
         return currentIndex
     }
 
-    private func isPOSLabelCharacter(_ character: Character) -> Bool {
+    private static func isPOSLabelCharacter(_ character: Character) -> Bool {
         if character == "." || character == "-" {
             return true
         }
@@ -710,7 +748,7 @@ final class DictionaryService {
         return character.unicodeScalars.allSatisfy { CharacterSet.letters.contains($0) }
     }
 
-    private func isValidPartOfSpeech(_ pos: String) -> Bool {
+    private static func isValidPartOfSpeech(_ pos: String) -> Bool {
         let lowercased = pos.lowercased()
         let knownPOS = ["noun", "verb", "adjective", "adverb", "preposition", "conjunction",
                         "pronoun", "interjection", "transitive verb", "intransitive verb", "vt", "vi",
@@ -718,7 +756,7 @@ final class DictionaryService {
         return knownPOS.contains { lowercased.contains($0) }
     }
 
-    private func extractMeanings(from html: String) -> [String] {
+    private static func extractMeanings(from html: String) -> [String] {
         var meanings: [String] = []
 
         // 匹配释义标签
@@ -743,7 +781,7 @@ final class DictionaryService {
         return meanings
     }
 
-    private func extractAllMeanings(from html: String) -> [String] {
+    private static func extractAllMeanings(from html: String) -> [String] {
         var meanings: [String] = []
 
         // 尝试多种方式提取释义
@@ -778,7 +816,7 @@ final class DictionaryService {
         return meanings
     }
 
-    private func extractExamples(from html: String) -> [String] {
+    private static func extractExamples(from html: String) -> [String] {
         var examples: [String] = []
 
         // 匹配例句标签
@@ -810,7 +848,7 @@ final class DictionaryService {
 
     // MARK: - Helpers
 
-    private func matchFirst(pattern: String, in text: String) -> String? {
+    private static func matchFirst(pattern: String, in text: String) -> String? {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
             return nil
         }
@@ -824,7 +862,7 @@ final class DictionaryService {
         return String(text[matchRange])
     }
 
-    private func matchAll(pattern: String, in text: String) -> [String] {
+    private static func matchAll(pattern: String, in text: String) -> [String] {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
             return []
         }
@@ -840,7 +878,7 @@ final class DictionaryService {
         }
     }
 
-    private func stripHTML(_ html: String) -> String {
+    private static func stripHTML(_ html: String) -> String {
         // 移除 HTML 标签
         var result = html.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
         // 解码 HTML 实体

@@ -6,6 +6,10 @@ struct DictionaryEntry: Equatable {
         case advancedDictionary  // ECDICT
         case wordNet             // WordNet English-English
         case systemDictionary    // macOS system dictionary
+        case googleTranslate
+        case bingDictionary
+        case youdaoDictionary
+        case deepLTranslate
     }
 
     let word: String
@@ -13,6 +17,23 @@ struct DictionaryEntry: Equatable {
     let definitions: [Definition]
     let source: Source
     let synonyms: [String]  // 同义词列表
+    let isPretranslated: Bool
+
+    init(
+        word: String,
+        phonetic: String?,
+        definitions: [Definition],
+        source: Source,
+        synonyms: [String],
+        isPretranslated: Bool = false
+    ) {
+        self.word = word
+        self.phonetic = phonetic
+        self.definitions = definitions
+        self.source = source
+        self.synonyms = synonyms
+        self.isPretranslated = isPretranslated
+    }
 
     /// 单个词义定义
     struct Definition: Equatable {

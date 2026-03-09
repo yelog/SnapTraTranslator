@@ -45,6 +45,12 @@ final class SettingsStore: ObservableObject {
 
     private let defaults: UserDefaults
     private static let dictionarySourcesKey = "dictionarySources"
+    private static let appendedOnlineSources: [DictionarySource.SourceType] = [
+        .google,
+        .bing,
+        .youdao,
+        .deepl,
+    ]
 
     init(defaults: UserDefaults = .standard, loginItemStatus: Bool? = nil) {
         self.defaults = defaults
@@ -85,38 +91,18 @@ final class SettingsStore: ObservableObject {
         // Try to load existing sources
         if let data = defaults.data(forKey: dictionarySourcesKey),
            let sources = try? JSONDecoder().decode([DictionarySource].self, from: data) {
-            return sources
+            let migrated = migrateDictionarySources(sources)
+            persistDictionarySources(migrated, defaults: defaults)
+            return migrated
         }
 
-        // Check if ECDICT database is actually installed
-        let ecdictInstalled = FileManager.default.fileExists(
-            atPath: OfflineDictionaryService.databaseURL.path
-        )
-
-        // Create default configuration
-        // ECDICT is enabled only if it's already installed
-        let sources: [DictionarySource] = [
-            DictionarySource(
-                id: UUID(),
-                name: L("Advanced Dictionary"),
-                type: .ecdict,
-                isEnabled: ecdictInstalled
-            ),
-            DictionarySource(
-                id: UUID(),
-                name: L("System Dictionary"),
-                type: .system,
-                isEnabled: true
-            )
-        ]
-
+        let sources = defaultDictionarySources()
+        persistDictionarySources(sources, defaults: defaults)
         return sources
     }
 
     private func saveDictionarySources() {
-        if let data = try? JSONEncoder().encode(dictionarySources) {
-            defaults.set(data, forKey: Self.dictionarySourcesKey)
-        }
+        Self.persistDictionarySources(dictionarySources, defaults: defaults)
     }
 
     var hotkeyDisplayText: String {
@@ -159,5 +145,59 @@ final class SettingsStore: ObservableObject {
         }
 
         return "zh-Hans"
+    }
+
+    static func defaultDictionarySources(ecdictInstalled: Bool) -> [DictionarySource] {
+        [
+            makeDictionarySource(type: .ecdict, isEnabled: ecdictInstalled),
+            makeDictionarySource(type: .system, isEnabled: true),
+        ] + appendedOnlineSources.map { makeDictionarySource(type: $0, isEnabled: false) }
+    }
+
+    static func migrateDictionarySources(_ sources: [DictionarySource]) -> [DictionarySource] {
+        var migrated: [DictionarySource] = sources.map {
+            DictionarySource(
+                id: $0.id,
+                name: $0.type.displayName,
+                type: $0.type,
+                isEnabled: $0.isEnabled
+            )
+        }
+
+        let existingTypes = Set(migrated.map(\.type))
+        for type in appendedOnlineSources where !existingTypes.contains(type) {
+            migrated.append(makeDictionarySource(type: type, isEnabled: false))
+        }
+
+        return migrated
+    }
+
+    private static func defaultDictionarySources() -> [DictionarySource] {
+        defaultDictionarySources(ecdictInstalled: isECDICTInstalled)
+    }
+
+    private static func makeDictionarySource(
+        type: DictionarySource.SourceType,
+        isEnabled: Bool
+    ) -> DictionarySource {
+        DictionarySource(
+            id: UUID(),
+            name: type.displayName,
+            type: type,
+            isEnabled: isEnabled
+        )
+    }
+
+    private static func persistDictionarySources(
+        _ sources: [DictionarySource],
+        defaults: UserDefaults
+    ) {
+        if let data = try? JSONEncoder().encode(sources) {
+            defaults.set(data, forKey: dictionarySourcesKey)
+        }
+    }
+
+    private static var isECDICTInstalled: Bool {
+        FileManager.default.fileExists(atPath: OfflineDictionaryService.databaseURL.path)
     }
 }

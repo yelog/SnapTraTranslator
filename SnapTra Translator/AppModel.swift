@@ -288,6 +288,8 @@ final class AppModel: ObservableObject {
             updateOverlay(state: .error(L("Enable Screen Recording")), anchor: NSEvent.mouseLocation)
             return
         }
+
+        var fallbackContent: OverlayContent?
         let mouseLocation = NSEvent.mouseLocation
         guard activeLookupID == lookupID else { return }
 
@@ -349,12 +351,19 @@ final class AppModel: ObservableObject {
             }
             guard !Task.isCancelled, activeLookupID == lookupID else { return }
 
-            let dictEntries = dictionaryService.lookupAll(
+            let dictEntries = await dictionaryService.lookupAll(
                 selected.text,
                 sources: settings.dictionarySources,
+                sourceLanguage: languagePair.sourceIdentifier,
+                targetLanguage: languagePair.targetIdentifier,
                 preferEnglish: languagePair.targetIsEnglish
             )
             let phonetic = dictEntries.first?.phonetic
+            fallbackContent = makeFallbackOverlayContent(
+                word: selected.text,
+                phonetic: phonetic,
+                entries: dictEntries
+            )
 
             if languagePair.isSameLanguage {
                 // Same language: process definitions from all dictionaries
@@ -403,7 +412,11 @@ final class AppModel: ObservableObject {
             if #available(macOS 15.0, *) {
                 let status = await languageAvailabilityStatus(for: languagePair)
                 guard status == .installed else {
-                    updateOverlay(state: .error(message(for: status)), anchor: mouseLocation)
+                    if let fallbackContent {
+                        updateOverlay(state: .result(fallbackContent), anchor: mouseLocation)
+                    } else {
+                        updateOverlay(state: .error(message(for: status)), anchor: mouseLocation)
+                    }
                     return
                 }
 
@@ -413,6 +426,11 @@ final class AppModel: ObservableObject {
                 // Translate definitions from all dictionaries
                 var translatedEntries: [DictionaryEntry] = []
                 for entry in dictEntries {
+                    if entry.isPretranslated {
+                        translatedEntries.append(entry)
+                        continue
+                    }
+
                     let translatedDefinitions = await translateDefinitionsInParallel(
                         definitions: entry.definitions,
                         sourceLanguage: sourceLanguage,
@@ -424,7 +442,8 @@ final class AppModel: ObservableObject {
                             phonetic: entry.phonetic,
                             definitions: translatedDefinitions,
                             source: entry.source,
-                            synonyms: entry.synonyms
+                            synonyms: entry.synonyms,
+                            isPretranslated: entry.isPretranslated
                         ))
                     }
                 }
@@ -432,19 +451,33 @@ final class AppModel: ObservableObject {
                 let content = OverlayContent(
                     word: selected.text,
                     phonetic: phonetic,
-                    translation: translated,
+                    translation: translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? (fallbackContent?.translation ?? selected.text)
+                        : translated,
                     dictionaryEntries: translatedEntries
                 )
                 updateOverlay(state: .result(content), anchor: mouseLocation)
             } else {
-                updateOverlay(state: .error(L("Translation requires macOS 15")), anchor: mouseLocation)
+                if let fallbackContent {
+                    updateOverlay(state: .result(fallbackContent), anchor: mouseLocation)
+                } else {
+                    updateOverlay(state: .error(L("Translation requires macOS 15")), anchor: mouseLocation)
+                }
             }
         } catch is CancellationError {
             // Task was cancelled, do nothing
         } catch TranslationError.timeout {
-            updateOverlay(state: .error(L("Translation timeout. Please try again.")), anchor: mouseLocation)
+            if let fallbackContent {
+                updateOverlay(state: .result(fallbackContent), anchor: mouseLocation)
+            } else {
+                updateOverlay(state: .error(L("Translation timeout. Please try again.")), anchor: mouseLocation)
+            }
         } catch {
-            updateOverlay(state: .error(L("Translation failed: \(error.localizedDescription)")), anchor: mouseLocation)
+            if let fallbackContent {
+                updateOverlay(state: .result(fallbackContent), anchor: mouseLocation)
+            } else {
+                updateOverlay(state: .error(L("Translation failed: \(error.localizedDescription)")), anchor: mouseLocation)
+            }
         }
     }
 
@@ -726,6 +759,30 @@ final class AppModel: ObservableObject {
             }
             return results.sorted { $0.0 < $1.0 }.map { $0.1 }
         }
+    }
+
+    private func makeFallbackOverlayContent(
+        word: String,
+        phonetic: String?,
+        entries: [DictionaryEntry]
+    ) -> OverlayContent? {
+        let displayableEntries = entries.filter { entry in
+            entry.definitions.contains { definition in
+                let translation = definition.translation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return !translation.isEmpty
+            }
+        }
+
+        guard let translation = displayableEntries.lazy.compactMap(\.primaryTranslation).first else {
+            return nil
+        }
+
+        return OverlayContent(
+            word: word,
+            phonetic: phonetic,
+            translation: translation,
+            dictionaryEntries: displayableEntries
+        )
     }
 
     private func selectWord(from words: [RecognizedWord], normalizedPoint: CGPoint) -> RecognizedWord? {

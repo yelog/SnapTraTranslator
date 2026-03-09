@@ -145,6 +145,67 @@ struct DictionarySource: Identifiable, Codable, Equatable {
         case system    // macOS system dictionary
         case ecdict    // ECDICT offline dictionary
         case wordNet   // WordNet English-English dictionary
+        case google
+        case bing
+        case youdao
+        case deepl
+    }
+
+    var displayName: String {
+        type.displayName
+    }
+}
+
+extension DictionarySource.SourceType {
+    var displayName: String {
+        switch self {
+        case .ecdict:
+            return L("Advanced Dictionary")
+        case .wordNet:
+            return L("WordNet")
+        case .system:
+            return L("System Dictionary")
+        case .google:
+            return L("Google Translate")
+        case .bing:
+            return L("Bing Dictionary")
+        case .youdao:
+            return L("Youdao Dictionary")
+        case .deepl:
+            return L("DeepL Translate")
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .ecdict:
+            return L("Advanced offline dictionary")
+        case .wordNet:
+            return L("English definitions and synonyms")
+        case .system:
+            return L("macOS built-in dictionary")
+        case .google:
+            return L("Google web translation")
+        case .bing:
+            return L("Bing web dictionary")
+        case .youdao:
+            return L("Youdao web dictionary")
+        case .deepl:
+            return L("DeepL web translation")
+        }
+    }
+
+    var needsDownloadManagement: Bool {
+        self == .ecdict || self == .wordNet
+    }
+
+    var isOnline: Bool {
+        switch self {
+        case .google, .bing, .youdao, .deepl:
+            return true
+        case .system, .ecdict, .wordNet:
+            return false
+        }
     }
 }
 
@@ -347,6 +408,8 @@ struct DictionarySettingsView: View {
             return convertState(model.wordNetDownload.state)
         case .system:
             return nil
+        case .google, .bing, .youdao, .deepl:
+            return nil
         }
     }
 
@@ -378,6 +441,8 @@ struct DictionarySettingsView: View {
             model.wordNetDownload.startDownload()
         case .system:
             break
+        case .google, .bing, .youdao, .deepl:
+            break
         }
     }
 
@@ -388,6 +453,8 @@ struct DictionarySettingsView: View {
         case .wordNet:
             model.wordNetDownload.cancelDownload()
         case .system:
+            break
+        case .google, .bing, .youdao, .deepl:
             break
         }
     }
@@ -400,6 +467,8 @@ struct DictionarySettingsView: View {
             model.wordNetDownload.delete()
         case .system:
             break
+        case .google, .bing, .youdao, .deepl:
+            break
         }
     }
 
@@ -410,6 +479,8 @@ struct DictionarySettingsView: View {
         case .wordNet:
             model.wordNetDownload.retry()
         case .system:
+            break
+        case .google, .bing, .youdao, .deepl:
             break
         }
     }
@@ -509,9 +580,9 @@ struct IntegratedDictionaryRow: View {
 
                 // Name and description
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(source.name)
+                    Text(source.displayName)
                         .font(.system(size: 13, weight: .medium))
-                    Text(subtitleText)
+                    Text(source.type.subtitle)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
@@ -578,6 +649,22 @@ struct IntegratedDictionaryRow: View {
             Image(systemName: "text.book.closed")
                 .font(.system(size: 16))
                 .foregroundStyle(.secondary)
+        case .google:
+            Image("TTSGoogle")
+                .resizable()
+                .interpolation(.high)
+        case .bing:
+            Image("TTSBing")
+                .resizable()
+                .interpolation(.high)
+        case .youdao:
+            Image("TTSYoudao")
+                .resizable()
+                .interpolation(.high)
+        case .deepl:
+            Image(systemName: "diamond.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(Color(red: 0.05, green: 0.24, blue: 0.63))
         }
     }
 
@@ -686,7 +773,7 @@ struct IntegratedDictionaryRow: View {
     // MARK: - Private Properties
 
     private var needsDownloadManagement: Bool {
-        source.type == .ecdict || source.type == .wordNet
+        source.type.needsDownloadManagement
     }
 
     private var isInstalled: Bool {
@@ -695,14 +782,4 @@ struct IntegratedDictionaryRow: View {
         return false
     }
 
-    private var subtitleText: String {
-        switch source.type {
-        case .ecdict:
-            return L("Advanced offline dictionary")
-        case .wordNet:
-            return L("English definitions and synonyms")
-        case .system:
-            return L("macOS built-in dictionary")
-        }
-    }
 }
