@@ -20,12 +20,22 @@ extension Notification.Name {
 }
 
 enum SettingsWindowLayout {
-    static let contentWidth: CGFloat = 370
+    static let defaultContentWidth: CGFloat = 370
+    static let dictionaryContentWidth: CGFloat = 740
     static let generalContentHeight: CGFloat = 590
-    static let dictionaryContentHeight: CGFloat = 830
+    static let dictionaryContentHeight: CGFloat = 550
     static let aboutContentHeight: CGFloat = 520
     static let outerPadding: CGFloat = 16
     static let animationDuration: TimeInterval = 0.24
+
+    static func contentWidth(for tab: SettingsTab) -> CGFloat {
+        switch tab {
+        case .dictionary:
+            return dictionaryContentWidth
+        default:
+            return defaultContentWidth
+        }
+    }
 
     static func contentHeight(for tab: SettingsTab) -> CGFloat {
         switch tab {
@@ -40,7 +50,7 @@ enum SettingsWindowLayout {
 
     static func windowContentSize(for tab: SettingsTab) -> CGSize {
         CGSize(
-            width: contentWidth + (outerPadding * 2),
+            width: contentWidth(for: tab) + (outerPadding * 2),
             height: contentHeight(for: tab) + (outerPadding * 2)
         )
     }
@@ -111,7 +121,7 @@ struct SettingsWindowView: View {
         }
         .id(languageRefreshToken)
         .frame(
-            width: SettingsWindowLayout.contentWidth,
+            width: SettingsWindowLayout.contentWidth(for: selectedTab),
             height: SettingsWindowLayout.contentHeight(for: selectedTab)
         )
         .padding(SettingsWindowLayout.outerPadding)
@@ -126,7 +136,9 @@ struct SettingsWindowView: View {
         )
         let currentFrame = window.frame
 
-        targetFrame.origin.x = currentFrame.origin.x
+        // Center horizontally when width changes
+        targetFrame.origin.x = currentFrame.midX - targetFrame.width / 2
+        // Anchor to top edge
         targetFrame.origin.y = currentFrame.maxY - targetFrame.height
 
         if animated {

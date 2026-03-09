@@ -168,13 +168,12 @@ struct DictionarySettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .top, spacing: 20) {
                 dictionarySection
-                
-                Divider()
-                    .padding(.horizontal)
-                
+                    .frame(maxWidth: .infinity)
+
                 ttsSection
+                    .frame(maxWidth: .infinity)
             }
             .background(
                 ScrollViewScrollerConfigurator(
@@ -237,6 +236,7 @@ struct DictionarySettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal)
+            .padding(.top)
 
             VStack(spacing: 6) {
                 ForEach(TTSProvider.allCases) { provider in
