@@ -1,6 +1,5 @@
 import CoreText
 import Foundation
-import NaturalLanguage
 import Vision
 
 struct RecognizedWord: Equatable {
@@ -9,17 +8,18 @@ struct RecognizedWord: Equatable {
 }
 
 final class OCRService {
-    func recognizeWords(in image: CGImage, preferredLanguages: [String]) async throws -> [RecognizedWord] {
+    func recognizeWords(in image: CGImage, language: String) async throws -> [RecognizedWord] {
         try await Task.detached(priority: .userInitiated) {
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
-            if !preferredLanguages.isEmpty {
-                request.recognitionLanguages = preferredLanguages
-            }
             if #available(macOS 13.0, *) {
                 request.revision = VNRecognizeTextRequestRevision3
+                // Enable automatic language detection to handle mixed-language text
+                // This allows recognizing English words embedded in Chinese/Japanese/Korean text
                 request.automaticallyDetectsLanguage = true
+            } else {
+                request.recognitionLanguages = [language]
             }
             let handler = VNImageRequestHandler(cgImage: image)
             try handler.perform([request])
@@ -43,62 +43,42 @@ final class OCRService {
             }
             let text = candidate.string
             let textBoundingBox = observation.boundingBox
-            let tokenRanges = tokenRanges(in: text)
+            let refinedRanges = refinedTokenRanges(in: text[...])
 
             #if DEBUG
-            print("[OCR] Observation \(obsIndex): '\(text)', tokenized into \(tokenRanges.count) parts")
-            for (i, range) in tokenRanges.enumerated() {
+            print("[OCR] Observation \(obsIndex): '\(text)', tokenized into \(refinedRanges.count) parts")
+            for (i, range) in refinedRanges.enumerated() {
                 print("[OCR]   Token \(i): '\(text[range])'")
             }
             #endif
 
-            for tokenRange in tokenRanges {
-                for refinedRange in refinedTokenRanges(in: text[tokenRange]) {
-                    let substring = text[refinedRange]
-                    guard shouldKeepToken(substring) else {
-                        continue
-                    }
-
-                    guard let boundingBox = boundingBox(
-                        for: refinedRange,
-                        in: text,
-                        candidate: candidate,
-                        observationBox: textBoundingBox
-                    ) else {
-                        continue
-                    }
-
-                    #if DEBUG
-                    print("[OCR]   '\(substring)' box: x=\(String(format: "%.4f", boundingBox.minX)), w=\(String(format: "%.4f", boundingBox.width))")
-                    #endif
-
-                    words.append(RecognizedWord(text: String(substring), boundingBox: boundingBox))
+            // 始终使用字符比例计算边界框，确保稳定性
+            // Vision 的 boundingBox(for:) 对自定义分词（CamelCase）支持不稳定
+            for refinedRange in refinedRanges {
+                let substring = text[refinedRange]
+                guard containsLetter(in: substring) else {
+                    continue
                 }
+
+                guard let boundingBox = boundingBoxByCharacterRatio(textBoundingBox, text: text, for: refinedRange) else {
+                    continue
+                }
+
+                #if DEBUG
+                print("[OCR]   '\(substring)' box: x=\(String(format: "%.4f", boundingBox.minX)), w=\(String(format: "%.4f", boundingBox.width))")
+                #endif
+
+                words.append(RecognizedWord(text: String(substring), boundingBox: boundingBox))
             }
         }
         return words
     }
 
+    // 只包含英语字母，数字和其他符号都作为分隔符
     nonisolated private static let tokenCharacterSet = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-    nonisolated private static func tokenRanges(in text: String) -> [Range<String.Index>] {
-        let tokenizer = NLTokenizer(unit: .word)
-        tokenizer.string = text
-
-        var ranges: [Range<String.Index>] = []
-        tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
-            ranges.append(range)
-            return true
-        }
-
-        return ranges
-    }
+    nonisolated private static let letterSet = CharacterSet.letters
 
     nonisolated private static func refinedTokenRanges(in token: Substring) -> [Range<String.Index>] {
-        guard OCRTokenClassifier.classify(String(token)) == .english else {
-            return [token.startIndex..<token.endIndex]
-        }
-
         var ranges: [Range<String.Index>] = []
         let indices = Array(token.indices)
         var tokenStart: String.Index?
@@ -132,26 +112,6 @@ final class OCRService {
         }
 
         return ranges
-    }
-
-    nonisolated private static func boundingBox(
-        for range: Range<String.Index>,
-        in text: String,
-        candidate: VNRecognizedText,
-        observationBox: CGRect
-    ) -> CGRect? {
-        if let preciseBox = try? candidate.boundingBox(for: range)?.boundingBox,
-           preciseBox.width > 0,
-           preciseBox.height > 0,
-           range == text.startIndex..<text.endIndex || !areBoundingBoxesSimilar(preciseBox, observationBox) {
-            return preciseBox
-        }
-
-        if let approximateBox = boundingBoxByCharacterRatio(observationBox, text: text, for: range) {
-            return approximateBox
-        }
-
-        return boundingBoxBySplittingWithCoreText(observationBox, text: text, for: range)
     }
 
     // 使用简单的字符比例计算边界框（最稳定的方法）
@@ -258,7 +218,7 @@ final class OCRService {
         character.unicodeScalars.contains { CharacterSet.lowercaseLetters.contains($0) }
     }
 
-    nonisolated private static func shouldKeepToken(_ token: Substring) -> Bool {
-        OCRTokenClassifier.classify(String(token)) != .unknown
+    nonisolated private static func containsLetter(in token: Substring) -> Bool {
+        token.unicodeScalars.contains { letterSet.contains($0) }
     }
 }

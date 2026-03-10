@@ -364,7 +364,7 @@ final class AppModel: ObservableObject {
         do {
             let words = try await ocrService.recognizeWords(
                 in: capture.image,
-                preferredLanguages: ocrRecognitionLanguages
+                language: settings.sourceLanguage
             )
             guard !Task.isCancelled, activeLookupID == lookupID else { return }
             if settings.debugShowOcrRegion {
@@ -730,11 +730,6 @@ final class AppModel: ObservableObject {
             title: L("SnapTra Translator"),
             body: message(for: firstUnavailable)
         )
-    }
-
-    private var ocrRecognitionLanguages: [String] {
-        var seen = Set<String>()
-        return [settings.sourceLanguage, settings.targetLanguage].filter { seen.insert($0).inserted }
     }
 
     private func resolveLookupLanguagePair() -> LookupLanguagePair {
