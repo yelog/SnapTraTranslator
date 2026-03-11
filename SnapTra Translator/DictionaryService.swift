@@ -122,7 +122,7 @@ final class DictionaryService {
             )
         case .system:
             return lookupFromSystemDictionary(word: word, preferEnglish: preferEnglish)
-        case .google, .bing, .youdao, .deepl:
+        case .freeDict, .google, .bing, .youdao, .deepl:
             return nil
         }
     }

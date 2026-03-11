@@ -209,6 +209,12 @@ struct OverlayView: View {
                 "diamond.fill",
                 Color(red: 0.05, green: 0.24, blue: 0.63)
             )
+        case .freeDict:
+            return (
+                L("Free Dictionary"),
+                "globe",
+                Color(red: 0.95, green: 0.60, blue: 0.15)
+            )
         }
     }
 
