@@ -238,6 +238,53 @@ final class OverlayWindowController: NSWindowController {
         applyFrameIfNeeded(targetFrame)
     }
 
+    /// 将面板对齐到句子矩形（正上方或正下方，取决于哪侧空间更大）
+    func alignToSentenceRect(_ sentenceRect: CGRect, animated: Bool = true) {
+        guard let window else { return }
+
+        // 强制 SwiftUI 重新布局以获得最新宽高
+        hostingView.layoutSubtreeIfNeeded()
+        let contentSize = hostingView.fittingSize
+
+        let panelWidth  = contentSize.width
+        let panelHeight = contentSize.height
+
+        // 取句子中心点所在屏幕
+        let midPoint = CGPoint(x: sentenceRect.midX, y: sentenceRect.midY)
+        let screen = NSScreen.screens.first(where: {
+            NSMouseInRect(midPoint, $0.frame, false)
+        }) ?? NSScreen.main
+        let screenFrame = screen?.visibleFrame ?? .zero
+
+        // AppKit Y 轴向上：minY 是物理下边，maxY 是物理上边
+        let gap: CGFloat = 8
+        let spaceBelow = sentenceRect.minY - screenFrame.minY
+        let spaceAbove = screenFrame.maxY - sentenceRect.maxY
+
+        let panelY: CGFloat
+        if spaceBelow >= panelHeight + gap {
+            // 句子正下方（面板顶边贴近句子底边）
+            panelY = sentenceRect.minY - panelHeight - gap
+        } else {
+            // 句子正上方（面板底边贴近句子顶边）
+            panelY = sentenceRect.maxY + gap
+        }
+
+        // 水平左对齐句子，clamp 到屏幕范围内
+        let margin: CGFloat = 8
+        var panelX = sentenceRect.minX
+        panelX = max(screenFrame.minX + margin, panelX)
+        panelX = min(screenFrame.maxX - panelWidth - margin, panelX)
+
+        let targetFrame = CGRect(x: panelX, y: panelY, width: panelWidth, height: panelHeight)
+
+        if animated {
+            applyFrameAnimated(targetFrame)
+        } else {
+            applyFrameIfNeeded(targetFrame)
+        }
+    }
+
     func beginManualPositioning() {
         guard let window, window.isVisible else { return }
         dragStartOrigin = window.frame.origin
@@ -313,6 +360,18 @@ final class OverlayWindowController: NSWindowController {
     private func visibleScreenFrame(for anchor: CGPoint) -> CGRect {
         let screen = NSScreen.screens.first(where: { NSMouseInRect(anchor, $0.frame, false) }) ?? NSScreen.main
         return screen?.visibleFrame ?? .zero
+    }
+
+    private func applyFrameAnimated(_ targetFrame: CGRect) {
+        guard let window else { return }
+        guard frameNeedsUpdate(from: window.frame, to: targetFrame) else { return }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.28
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.allowsImplicitAnimation = true
+            window.animator().setFrame(targetFrame, display: true)
+        }
     }
 
     private func applyFrameIfNeeded(_ targetFrame: CGRect) {

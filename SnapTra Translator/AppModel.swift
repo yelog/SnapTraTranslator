@@ -184,6 +184,8 @@ private enum ActiveLookupMode {
 final class AppModel: ObservableObject {
     @Published var overlayState: OverlayState = .idle
     var overlayAnchor: CGPoint = .zero
+    var activeParagraphRect: CGRect? = nil
+    @Published var overlayPreferredWidth: CGFloat? = nil
 
     @Published var settings: SettingsStore
     let permissions: PermissionManager
@@ -608,6 +610,10 @@ final class AppModel: ObservableObject {
                 let paragraphRect = screenRect(for: paragraph.boundingBox, in: capture.region.rect)
                 paragraphHighlightWindowController.show(at: paragraphRect)
 
+                // 保存句子矩形，设置面板首选宽度
+                activeParagraphRect = paragraphRect
+                overlayPreferredWidth = max(320, paragraphRect.width)
+
                 // Get enabled third-party services for sentence translation
                 let enabledServices = settings.sentenceTranslationSources
                     .filter { $0.isEnabled && !$0.isNative }
@@ -623,6 +629,9 @@ final class AppModel: ObservableObject {
                     serviceResults: initialServiceResults
                 )
                 updateOverlay(state: .paragraphResult(initialContent), anchor: mouseLocation)
+
+                // 句子范围已确定，用动画将面板对齐到句子正上/下方
+                overlayWindowController.alignToSentenceRect(paragraphRect, animated: true)
 
                 let languagePair = resolveParagraphLanguagePair()
                 let sourceLanguage = languagePair.sourceLanguage
@@ -1347,6 +1356,8 @@ final class AppModel: ObservableObject {
         if overlayState != .idle {
             overlayState = .idle
         }
+        activeParagraphRect = nil
+        overlayPreferredWidth = nil
         paragraphHighlightWindowController.hide()
         overlayWindowController.setInteractive(false)
         overlayWindowController.hide()

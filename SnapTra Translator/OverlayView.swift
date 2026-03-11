@@ -11,6 +11,9 @@ struct OverlayView: View {
     private let compactSectionMinHeight: CGFloat = 28
 
     private var overlayWidth: CGFloat {
+        if let preferred = model.overlayPreferredWidth {
+            return preferred
+        }
         switch model.overlayState {
         case .paragraphLoading, .paragraphResult:
             return paragraphOverlayWidth
