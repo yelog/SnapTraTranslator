@@ -84,6 +84,7 @@ final class DebugOverlayWindowController: NSWindowController {
 final class OverlayWindowController: NSWindowController {
     private let hostingView: NSHostingView<AnyView>
     private var lastAnchor: CGPoint?
+    private let frameTolerance: CGFloat = 0.5
 
     init(model: AppModel) {
         hostingView = NSHostingView(rootView: AnyView(OverlayView().environmentObject(model)))
@@ -115,35 +116,78 @@ final class OverlayWindowController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    var isVisible: Bool {
+        window?.isVisible == true
+    }
+
     func show(at anchor: CGPoint) {
         guard let window else { return }
-
-        hostingView.layoutSubtreeIfNeeded()
-        let size = hostingView.fittingSize
-        let screen = NSScreen.screens.first(where: { NSMouseInRect(anchor, $0.frame, false) }) ?? NSScreen.main
-        let screenFrame = screen?.visibleFrame ?? .zero
-        let origin = clampedOrigin(for: anchor, size: size, in: screenFrame)
-        let targetFrame = CGRect(origin: origin, size: size)
-
-        let isFirstShow = lastAnchor == nil || !window.isVisible
         lastAnchor = anchor
+        let targetFrame = measuredFrame(for: anchor)
 
-        if isFirstShow {
+        if !window.isVisible {
             window.setFrame(targetFrame, display: true)
             window.orderFrontRegardless()
         } else {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.08
-                context.timingFunction = CAMediaTimingFunction(name: .linear)
-                context.allowsImplicitAnimation = true
-                window.animator().setFrame(targetFrame, display: true)
-            }
+            applyFrameIfNeeded(targetFrame)
         }
+    }
+
+    func move(to anchor: CGPoint) {
+        guard let window else { return }
+        lastAnchor = anchor
+        guard window.isVisible else { return }
+
+        let screenFrame = visibleScreenFrame(for: anchor)
+        let origin = clampedOrigin(for: anchor, size: window.frame.size, in: screenFrame)
+        let targetFrame = CGRect(origin: origin, size: window.frame.size)
+        applyFrameIfNeeded(targetFrame)
+    }
+
+    func refreshLayoutIfNeeded(at anchor: CGPoint? = nil) {
+        guard let window else { return }
+        guard window.isVisible else {
+            if let anchor {
+                lastAnchor = anchor
+            }
+            return
+        }
+
+        let effectiveAnchor = anchor ?? lastAnchor ?? CGPoint(x: window.frame.midX, y: window.frame.maxY)
+        lastAnchor = effectiveAnchor
+        let targetFrame = measuredFrame(for: effectiveAnchor)
+        applyFrameIfNeeded(targetFrame)
     }
 
     func hide() {
         lastAnchor = nil
         window?.orderOut(nil)
+    }
+
+    private func measuredFrame(for anchor: CGPoint) -> CGRect {
+        hostingView.layoutSubtreeIfNeeded()
+        let size = hostingView.fittingSize
+        let screenFrame = visibleScreenFrame(for: anchor)
+        let origin = clampedOrigin(for: anchor, size: size, in: screenFrame)
+        return CGRect(origin: origin, size: size)
+    }
+
+    private func visibleScreenFrame(for anchor: CGPoint) -> CGRect {
+        let screen = NSScreen.screens.first(where: { NSMouseInRect(anchor, $0.frame, false) }) ?? NSScreen.main
+        return screen?.visibleFrame ?? .zero
+    }
+
+    private func applyFrameIfNeeded(_ targetFrame: CGRect) {
+        guard let window else { return }
+        guard frameNeedsUpdate(from: window.frame, to: targetFrame) else { return }
+        window.setFrame(targetFrame, display: true)
+    }
+
+    private func frameNeedsUpdate(from current: CGRect, to target: CGRect) -> Bool {
+        abs(current.origin.x - target.origin.x) > frameTolerance
+            || abs(current.origin.y - target.origin.y) > frameTolerance
+            || abs(current.size.width - target.size.width) > frameTolerance
+            || abs(current.size.height - target.size.height) > frameTolerance
     }
 
     private func clampedOrigin(for anchor: CGPoint, size: CGSize, in screenFrame: CGRect) -> CGPoint {

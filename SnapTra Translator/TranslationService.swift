@@ -28,10 +28,12 @@ final class TranslationBridge: ObservableObject {
         guard !trimmed.isEmpty else {
             throw TranslationError.emptyText
         }
+        try Task.checkCancellation()
 
         return try await withThrowingTaskGroup(of: String.self) { group in
             group.addTask {
-                try await withCheckedThrowingContinuation { continuation in
+                try Task.checkCancellation()
+                return try await withCheckedThrowingContinuation { continuation in
                     let request = TranslationRequest(id: UUID(), text: trimmed, source: source, target: target, continuation: continuation)
                     Task { @MainActor in
                         self.enqueue(request)

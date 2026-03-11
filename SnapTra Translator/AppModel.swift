@@ -127,7 +127,7 @@ private struct DictionarySectionResult {
 @MainActor
 final class AppModel: ObservableObject {
     @Published var overlayState: OverlayState = .idle
-    @Published var overlayAnchor: CGPoint = .zero
+    var overlayAnchor: CGPoint = .zero
 
     @Published var settings: SettingsStore
     let permissions: PermissionManager
@@ -156,8 +156,10 @@ final class AppModel: ObservableObject {
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
     private var debounceWorkItem: DispatchWorkItem?
+    private var overlayLayoutRefreshWorkItem: DispatchWorkItem?
     private var lastOcrPosition: CGPoint?
     private let debounceInterval: TimeInterval = 0.1
+    private let overlayLayoutRefreshInterval: TimeInterval = 0.04
     private let positionThreshold: CGFloat = 10.0
 
     private let debugOverlayWindowController = DebugOverlayWindowController()
@@ -216,7 +218,9 @@ final class AppModel: ObservableObject {
 
     func handleHotkeyTrigger() {
         isHotkeyActive = true
-        lastOcrPosition = NSEvent.mouseLocation
+        let mouseLocation = NSEvent.mouseLocation
+        lastOcrPosition = mouseLocation
+        setOverlayAnchor(mouseLocation)
         overlayWindowController.setInteractive(false)
         startMouseTracking()
         startLookup()
@@ -228,22 +232,14 @@ final class AppModel: ObservableObject {
         debugOverlayWindowController.hide()
 
         // 松开快捷键时隐藏气泡
-        lookupTask?.cancel()
-        lookupTask = nil
-        activeLookupID = nil
-        overlayState = .idle
-        overlayWindowController.setInteractive(false)
-        overlayWindowController.hide()
+        cancelActiveLookupWork()
+        hideOverlay()
     }
 
     /// 手动关闭气泡（用于非持续翻译模式）
     func dismissOverlay() {
-        lookupTask?.cancel()
-        lookupTask = nil
-        activeLookupID = nil
-        overlayState = .idle
-        overlayWindowController.setInteractive(false)
-        overlayWindowController.hide()
+        cancelActiveLookupWork()
+        hideOverlay()
     }
     
     private func startMouseTracking() {
@@ -300,11 +296,11 @@ final class AppModel: ObservableObject {
                 }
 
                 self.lastOcrPosition = currentPosition
-                self.overlayAnchor = currentPosition
+                self.setOverlayAnchor(currentPosition)
                 if case .idle = self.overlayState {
                     self.startLookup()
                 } else {
-                    self.overlayWindowController.show(at: currentPosition)
+                    self.overlayWindowController.move(to: currentPosition)
                     self.startLookup()
                 }
             }
@@ -315,7 +311,7 @@ final class AppModel: ObservableObject {
     }
 
     private func startLookup() {
-        lookupTask?.cancel()
+        cancelActiveLookupWork()
         let lookupID = UUID()
         activeLookupID = lookupID
         lookupTask = Task { [weak self] in
@@ -368,8 +364,7 @@ final class AppModel: ObservableObject {
                     updateOverlay(state: .noWord, anchor: mouseLocation)
                 } else {
                     // 非调试模式下，隐藏气泡
-                    overlayState = .idle
-                    overlayWindowController.hide()
+                    hideOverlay()
                 }
                 return
             }
@@ -417,6 +412,7 @@ final class AppModel: ObservableObject {
                             anchor: mouseLocation
                         )
                     }
+                    await Task.yield()
                 }
 
                 for source in enabledSources {
@@ -564,7 +560,9 @@ final class AppModel: ObservableObject {
             return
         }
 
+        let previousContent = content
         mutate(&content)
+        guard content != previousContent else { return }
         updateOverlay(state: .result(content), anchor: anchor)
     }
 
@@ -577,24 +575,37 @@ final class AppModel: ObservableObject {
 
     func updateOverlay(state: OverlayState, anchor: CGPoint? = nil) {
         guard isHotkeyActive || !settings.continuousTranslation else { return }
-        
+
         if let anchor {
-            overlayAnchor = anchor
+            setOverlayAnchor(anchor)
         }
+
         switch state {
         case .error(let message):
             sendNotification(title: "SnapTra Translator", body: message)
         case .idle:
             break
         case .result:
-            overlayState = state
-            overlayWindowController.show(at: overlayAnchor)
+            if overlayState != state {
+                overlayState = state
+            }
+            if overlayWindowController.isVisible {
+                scheduleOverlayLayoutRefresh()
+            } else {
+                overlayWindowController.show(at: overlayAnchor)
+            }
             if !settings.continuousTranslation {
                 overlayWindowController.setInteractive(true)
             }
         default:
-            overlayState = state
-            overlayWindowController.show(at: overlayAnchor)
+            if overlayState != state {
+                overlayState = state
+            }
+            if overlayWindowController.isVisible {
+                scheduleOverlayLayoutRefresh()
+            } else {
+                overlayWindowController.show(at: overlayAnchor)
+            }
         }
     }
 
@@ -660,11 +671,8 @@ final class AppModel: ObservableObject {
     private func handleScreenConfigurationChange() {
         captureService.invalidateCache()
         guard isHotkeyActive else { return }
-        lookupTask?.cancel()
-        lookupTask = nil
-        activeLookupID = nil
-        overlayState = .idle
-        overlayWindowController.hide()
+        cancelActiveLookupWork()
+        hideOverlay()
         debugOverlayWindowController.hide()
     }
 
@@ -674,16 +682,12 @@ final class AppModel: ObservableObject {
     }
 
     private func handleTranslationSettingsChanged() {
-        lookupTask?.cancel()
-        lookupTask = nil
-        activeLookupID = nil
+        cancelActiveLookupWork()
         lastAvailabilityKey = nil
         cachedLanguageStatuses.removeAll()
-        translationBridge.cancelAllPendingRequests()
 
         if overlayState != .idle {
-            overlayState = .idle
-            overlayWindowController.hide()
+            hideOverlay()
         }
 
         Task {
@@ -976,5 +980,50 @@ final class AppModel: ObservableObject {
                               word2.boundingBox.midY - normalizedPoint.y)
             return dist1 < dist2
         }
+    }
+
+    private func cancelActiveLookupWork() {
+        lookupTask?.cancel()
+        lookupTask = nil
+        activeLookupID = nil
+        translationBridge.cancelAllPendingRequests()
+        cancelPendingOverlayLayoutRefresh()
+    }
+
+    private func hideOverlay() {
+        cancelPendingOverlayLayoutRefresh()
+        if overlayState != .idle {
+            overlayState = .idle
+        }
+        overlayWindowController.setInteractive(false)
+        overlayWindowController.hide()
+    }
+
+    private func setOverlayAnchor(_ anchor: CGPoint) {
+        guard overlayAnchor != anchor else { return }
+        overlayAnchor = anchor
+    }
+
+    private func scheduleOverlayLayoutRefresh() {
+        guard overlayWindowController.isVisible else { return }
+
+        cancelPendingOverlayLayoutRefresh()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                self?.overlayLayoutRefreshWorkItem = nil
+                guard let self else { return }
+                guard self.overlayWindowController.isVisible else { return }
+                self.overlayWindowController.refreshLayoutIfNeeded(at: self.overlayAnchor)
+            }
+        }
+
+        overlayLayoutRefreshWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + overlayLayoutRefreshInterval, execute: workItem)
+    }
+
+    private func cancelPendingOverlayLayoutRefresh() {
+        overlayLayoutRefreshWorkItem?.cancel()
+        overlayLayoutRefreshWorkItem = nil
     }
 }

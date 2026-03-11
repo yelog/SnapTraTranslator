@@ -9,25 +9,41 @@ struct RecognizedWord: Equatable {
 
 final class OCRService {
     func recognizeWords(in image: CGImage, language: String) async throws -> [RecognizedWord] {
-        try await Task.detached(priority: .userInitiated) {
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
-            if #available(macOS 13.0, *) {
-                request.revision = VNRecognizeTextRequestRevision3
-                // Enable automatic language detection to handle mixed-language text
-                // This allows recognizing English words embedded in Chinese/Japanese/Korean text
-                request.automaticallyDetectsLanguage = true
-            } else {
-                request.recognitionLanguages = [language]
+        try Task.checkCancellation()
+
+        return try await withThrowingTaskGroup(of: [RecognizedWord].self) { group in
+            group.addTask(priority: .userInitiated) {
+                try Task.checkCancellation()
+
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.usesLanguageCorrection = true
+                if #available(macOS 13.0, *) {
+                    request.revision = VNRecognizeTextRequestRevision3
+                    // Enable automatic language detection to handle mixed-language text
+                    // This allows recognizing English words embedded in Chinese/Japanese/Korean text
+                    request.automaticallyDetectsLanguage = true
+                } else {
+                    request.recognitionLanguages = [language]
+                }
+
+                let handler = VNImageRequestHandler(cgImage: image)
+                try handler.perform([request])
+                try Task.checkCancellation()
+
+                guard let observations = request.results else {
+                    return []
+                }
+
+                let words = OCRService.extractWords(from: observations)
+                try Task.checkCancellation()
+                return words
             }
-            let handler = VNImageRequestHandler(cgImage: image)
-            try handler.perform([request])
-            guard let observations = request.results else {
-                return []
-            }
-            return OCRService.extractWords(from: observations)
-        }.value
+
+            let words = try await group.next() ?? []
+            group.cancelAll()
+            return words
+        }
     }
 
     nonisolated private static func extractWords(from observations: [VNRecognizedTextObservation]) -> [RecognizedWord] {
