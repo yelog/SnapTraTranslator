@@ -89,12 +89,15 @@ final class DebugOverlayWindowController: NSWindowController {
 private struct ParagraphHighlightView: View {
     private let accentColor = Color(red: 0.18, green: 0.88, blue: 0.42)
     private let lineWidth: CGFloat = 2.5
-    /// Half-width of the gradient beam in points
-    private let beamHalfWidth: CGFloat = 25
+    /// Half-width of the soft gradient halo on each side of the beam core
+    private let beamHaloHalf: CGFloat = 28
+    /// Width of the hard bright core line
+    private let beamCoreWidth: CGFloat = 2.5
+    /// Single-pass duration in seconds (left→right or right→left)
+    private let scanDuration: TimeInterval = 1.4
 
     @State private var appeared = false
-    /// Beam center x position in the Canvas coordinate space (0 = left edge)
-    @State private var beamCenterX: CGFloat = -25
+    @State private var startDate: Date = .now
 
     var body: some View {
         GeometryReader { geometry in
@@ -104,43 +107,15 @@ private struct ParagraphHighlightView: View {
             ZStack {
                 // Layer 1 — ambient fill
                 Rectangle()
-                    .fill(accentColor.opacity(0.04))
+                    .fill(accentColor.opacity(0.05))
 
-                // Layer 2 — scan beam drawn via Canvas so coordinates are unambiguous
-                Canvas { ctx, canvasSize in
-                    let centerX = beamCenterX
-                    let left  = max(0, centerX - beamHalfWidth)
-                    let right = min(canvasSize.width, centerX + beamHalfWidth)
-                    guard right > left else { return }
-
-                    let beamRect = CGRect(x: left, y: 0, width: right - left, height: canvasSize.height)
-
-                    // Map gradient stops to the clipped rect
-                    let fullLeft  = centerX - beamHalfWidth
-                    let fullRight = centerX + beamHalfWidth
-                    let fullWidth = fullRight - fullLeft
-
-                    // Build a gradient that covers the visible slice of the beam inside beamRect
-                    let gradient = Gradient(stops: [
-                        .init(color: accentColor.opacity(0),    location: 0),
-                        .init(color: accentColor.opacity(0.55), location: 0.42),
-                        .init(color: accentColor.opacity(0.85), location: 0.5),
-                        .init(color: accentColor.opacity(0.55), location: 0.58),
-                        .init(color: accentColor.opacity(0),    location: 1),
-                    ])
-                    // Extend gradient start/end beyond beamRect so only the
-                    // correct slice of the gradient is visible inside beamRect
-                    let gradStart = CGPoint(x: fullLeft,  y: canvasSize.height / 2)
-                    let gradEnd   = CGPoint(x: fullRight, y: canvasSize.height / 2)
-
-                    ctx.fill(
-                        Path(beamRect),
-                        with: .linearGradient(
-                            gradient,
-                            startPoint: gradStart,
-                            endPoint: gradEnd
-                        )
-                    )
+                // Layer 2 — scan beam via TimelineView so Canvas re-renders every frame
+                TimelineView(.animation) { timeline in
+                    Canvas { ctx, canvasSize in
+                        let elapsed = timeline.date.timeIntervalSince(startDate)
+                        let centerX = beamCenterX(elapsed: elapsed, width: canvasSize.width)
+                        drawBeam(ctx: ctx, canvasSize: canvasSize, centerX: centerX)
+                    }
                 }
 
                 // Layer 3 — corner brackets
@@ -153,42 +128,92 @@ private struct ParagraphHighlightView: View {
             .opacity(appeared ? 1 : 0)
             .scaleEffect(appeared ? 1 : 0.97)
             .onAppear {
-                withAnimation(.easeOut(duration: 0.3)) {
+                startDate = .now
+                withAnimation(.easeOut(duration: 0.25)) {
                     appeared = true
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    beamCenterX = -beamHalfWidth
-                    withAnimation(
-                        .easeInOut(duration: 1.4)
-                        .repeatForever(autoreverses: true)
-                    ) {
-                        beamCenterX = size.width + beamHalfWidth
-                    }
                 }
             }
         }
     }
 
+    // MARK: - Beam position
+
+    /// Returns beam center x for the given elapsed time using a ping-pong easeInOut curve.
+    private func beamCenterX(elapsed: TimeInterval, width: CGFloat) -> CGFloat {
+        // Travel range: from -halo to width+halo
+        let travel = width + beamHaloHalf * 2
+        let period = scanDuration * 2          // full round-trip
+        let t = elapsed.truncatingRemainder(dividingBy: period) / period  // 0…1 over one round-trip
+        // ping-pong: 0→1 then 1→0
+        let raw = t < 0.5 ? t * 2 : (1 - t) * 2
+        // easeInOut
+        let eased = raw < 0.5
+            ? 2 * raw * raw
+            : 1 - pow(-2 * raw + 2, 2) / 2
+        return -beamHaloHalf + eased * travel
+    }
+
+    // MARK: - Beam drawing
+
+    private func drawBeam(ctx: GraphicsContext, canvasSize: CGSize, centerX: CGFloat) {
+        let totalHalf = beamHaloHalf + beamCoreWidth / 2
+
+        // --- Soft halo gradient ---
+        let haloLeft  = centerX - totalHalf
+        let haloRight = centerX + totalHalf
+        let clampedLeft  = max(0, haloLeft)
+        let clampedRight = min(canvasSize.width, haloRight)
+        if clampedRight > clampedLeft {
+            let haloRect = CGRect(x: clampedLeft, y: 0,
+                                  width: clampedRight - clampedLeft,
+                                  height: canvasSize.height)
+            let haloGradient = Gradient(stops: [
+                .init(color: accentColor.opacity(0),    location: 0),
+                .init(color: accentColor.opacity(0.18), location: 0.35),
+                .init(color: accentColor.opacity(0.55), location: 0.48),
+                .init(color: accentColor.opacity(0.55), location: 0.52),
+                .init(color: accentColor.opacity(0.18), location: 0.65),
+                .init(color: accentColor.opacity(0),    location: 1),
+            ])
+            ctx.fill(
+                Path(haloRect),
+                with: .linearGradient(
+                    haloGradient,
+                    startPoint: CGPoint(x: haloLeft,  y: canvasSize.height / 2),
+                    endPoint:   CGPoint(x: haloRight, y: canvasSize.height / 2)
+                )
+            )
+        }
+
+        // --- Hard bright core ---
+        let coreLeft  = max(0, centerX - beamCoreWidth / 2)
+        let coreRight = min(canvasSize.width, centerX + beamCoreWidth / 2)
+        if coreRight > coreLeft {
+            let coreRect = CGRect(x: coreLeft, y: 0,
+                                  width: coreRight - coreLeft,
+                                  height: canvasSize.height)
+            ctx.fill(Path(coreRect), with: .color(accentColor.opacity(0.9)))
+        }
+    }
+
+    // MARK: - Corner brackets
+
     private func cornerBrackets(size: CGSize, cornerLength: CGFloat) -> Path {
         Path { path in
             let rect = CGRect(origin: .zero, size: size)
 
-            // bottom-left
             path.move(to: CGPoint(x: rect.minX, y: rect.maxY - cornerLength))
             path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
             path.addLine(to: CGPoint(x: rect.minX + cornerLength, y: rect.maxY))
 
-            // bottom-right
             path.move(to: CGPoint(x: rect.maxX - cornerLength, y: rect.maxY))
             path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
             path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - cornerLength))
 
-            // top-left
             path.move(to: CGPoint(x: rect.minX, y: rect.minY + cornerLength))
             path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
             path.addLine(to: CGPoint(x: rect.minX + cornerLength, y: rect.minY))
 
-            // top-right
             path.move(to: CGPoint(x: rect.maxX - cornerLength, y: rect.minY))
             path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
             path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + cornerLength))
