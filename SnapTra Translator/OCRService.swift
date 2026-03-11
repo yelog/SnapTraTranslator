@@ -423,17 +423,20 @@ final class OCRService {
         let maxHeight = max(previousHeight, nextHeight)
         guard minHeight > 0 else { return false }
 
-        // Lines with very different heights are likely different elements (e.g. heading vs body)
+        // Lines with very different heights are likely different elements (e.g. heading vs body).
+        // However, a bold line followed by regular body text can have heightRatio up to ~1.6
+        // because bold glyphs occupy more vertical space in Vision's bounding box.
+        // True heading+body pairs are distinguished by a larger vertical gap, so we relax
+        // the height gate to 2.0 and rely on the vertical gap check to prevent mis-merges.
         let heightRatio = maxHeight / minHeight
-        guard heightRatio <= 1.4 else { return false }
+        guard heightRatio <= 2.0 else { return false }
 
         // Vertical gap must be within normal line-spacing range.
-        // Within a paragraph, the gap between bounding boxes is typically ≤ 0.5× line height
-        // (the rest of the line-height is absorbed by the bounding box itself).
-        // A blank line between paragraphs adds roughly 1× line height of extra space.
-        // Using 0.8× as threshold cleanly separates intra-paragraph gaps from inter-paragraph gaps.
+        // When heightRatio is large (e.g. bold line before normal body), tighten the gap
+        // threshold to avoid merging a true heading with the paragraph below it.
         let verticalGap = max(previous.boundingBox.minY - next.boundingBox.maxY, 0)
-        guard verticalGap <= max(previousHeight, nextHeight) * 0.8 else { return false }
+        let gapThreshold: CGFloat = heightRatio > 1.4 ? maxHeight * 0.5 : maxHeight * 0.8
+        guard verticalGap <= gapThreshold else { return false }
 
         // Require meaningful horizontal overlap to join lines into a paragraph.
         // Left-edge proximity alone is insufficient — headings and body text share a left margin
