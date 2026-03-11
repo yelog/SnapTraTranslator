@@ -18,6 +18,20 @@ struct SentenceSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                // Sentence Translation Master Toggle
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(L("Enable Sentence Translation"), isOn: $model.settings.sentenceTranslationEnabled)
+                        .font(.system(size: 14, weight: .medium))
+                    
+                    if model.settings.sentenceTranslationEnabled {
+                        Text(L("Double-click %@ to translate the paragraph under cursor", model.settings.hotkeyDisplayText))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top)
+                
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L("Sentence Translation Services"))
                         .font(.headline)
@@ -26,7 +40,6 @@ struct SentenceSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal)
-                .padding(.top)
 
                 ReorderableVStack(items: $sources, content: { source, index in
                     SentenceServiceRow(

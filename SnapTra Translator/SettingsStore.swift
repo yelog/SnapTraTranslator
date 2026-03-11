@@ -107,6 +107,9 @@ final class SettingsStore: ObservableObject {
     @Published var englishAccent: EnglishAccent {
         didSet { defaults.set(englishAccent.rawValue, forKey: AppSettingKey.englishAccent) }
     }
+    @Published var sentenceTranslationEnabled: Bool {
+        didSet { defaults.set(sentenceTranslationEnabled, forKey: AppSettingKey.sentenceTranslationEnabled) }
+    }
 
     private let defaults: UserDefaults
     private static let dictionarySourcesKey = "dictionarySources"
@@ -148,6 +151,10 @@ final class SettingsStore: ObservableObject {
         // Load English accent preference
         let englishAccentValue = defaults.string(forKey: AppSettingKey.englishAccent)
         englishAccent = EnglishAccent(rawValue: englishAccentValue ?? "en-US") ?? .american
+        
+        // Load sentence translation enabled (default to true for backward compatibility)
+        let sentenceTranslationEnabledValue = defaults.object(forKey: AppSettingKey.sentenceTranslationEnabled) as? Bool
+        sentenceTranslationEnabled = sentenceTranslationEnabledValue ?? true
     }
 
     private static func loadOrMigrateDictionarySources(defaults: UserDefaults) -> [DictionarySource] {

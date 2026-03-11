@@ -133,6 +133,7 @@ enum AppSettingKey {
     static let ttsProvider = "ttsProvider"
     static let appLanguage = "appLanguage"
     static let englishAccent = "englishAccent"
+    static let sentenceTranslationEnabled = "sentenceTranslationEnabled"
 }
 
 enum EnglishAccent: String, CaseIterable, Identifiable {

@@ -115,9 +115,8 @@ struct OverlayView: View {
                     lineWidth: 1
                 )
         )
-        .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
-        .shadow(color: .black.opacity(0.12), radius: 8, x: 0, y: 4)
-        .shadow(color: .black.opacity(0.16), radius: 24, x: 0, y: 12)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.22 : 0.08), radius: 2, x: 0, y: 1)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.06), radius: 14, x: 0, y: 8)
         .onChange(of: isParagraphOverlayMode) { _, isParagraphMode in
             if !isParagraphMode {
                 resetParagraphHeaderInteractionState()
@@ -203,7 +202,7 @@ struct OverlayView: View {
                             text: originalText,
                             font: .systemFont(ofSize: 15, weight: .medium),
                             textColor: .labelColor,
-                            lineSpacing: 5
+                            preferredLineHeight: 22
                         )
                     }
 
@@ -234,7 +233,7 @@ struct OverlayView: View {
                                 text: translatedText,
                                 font: .systemFont(ofSize: 16, weight: .semibold),
                                 textColor: .labelColor,
-                                lineSpacing: 6
+                                preferredLineHeight: 24
                             )
                         }
 
@@ -294,7 +293,7 @@ struct OverlayView: View {
                     text: translatedText,
                     font: .systemFont(ofSize: 15, weight: .medium),
                     textColor: .labelColor,
-                    lineSpacing: 5
+                    preferredLineHeight: 22
                 )
             }
 
@@ -313,12 +312,12 @@ struct OverlayView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 content()
             }
             .padding(.horizontal, 18)
-            .padding(.top, 4)
-            .padding(.bottom, 18)
+            .padding(.top, 2)
+            .padding(.bottom, 16)
         }
         .frame(maxHeight: 360)
     }
@@ -330,34 +329,12 @@ struct OverlayView: View {
         emphasis: Bool = false,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                if let title, !title.isEmpty {
-                    Text(title)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .tracking(0.2)
-                }
-
-                Spacer(minLength: 8)
-
-                if let copyText, !copyText.isEmpty {
-                    ParagraphSectionCopyButton(text: copyText)
-                }
-            }
-
-            content()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 15)
-        .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(paragraphCardFill(emphasis: emphasis))
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(paragraphCardStroke(emphasis: emphasis), lineWidth: 1)
-        }
+        ParagraphOverlaySectionCard(
+            title: title,
+            copyText: copyText,
+            emphasis: emphasis,
+            content: content
+        )
     }
 
     @ViewBuilder
@@ -400,13 +377,13 @@ struct OverlayView: View {
         text: String,
         font: NSFont,
         textColor: NSColor,
-        lineSpacing: CGFloat
+        preferredLineHeight: CGFloat
     ) -> some View {
         SelectableTextView(
             text: text,
             font: font,
             textColor: textColor,
-            lineSpacing: lineSpacing
+            preferredLineHeight: preferredLineHeight
         )
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -426,51 +403,50 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func paragraphTopBar() -> some View {
-        ZStack {
-            Capsule()
-                .fill(.secondary.opacity(0.18))
-                .frame(width: 36, height: 4)
+        HStack(spacing: 0) {
+            Spacer()
 
-            HStack {
-                Spacer()
-
-                if showsParagraphOverlayControls {
-                    Button {
-                        model.dismissOverlay()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 20, height: 20)
-                            .background(
-                                Circle()
-                                    .fill(.secondary.opacity(0.1))
-                            )
-                    }
-                    .buttonStyle(.plain)
+            if showsParagraphOverlayControls {
+                Button {
+                    model.dismissOverlay()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .background(
+                            Circle()
+                                .fill(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.045))
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.06), lineWidth: 0.5)
+                        )
                 }
+                .buttonStyle(.plain)
             }
         }
+        .frame(height: 18)
         .contentShape(Rectangle())
         .onHover { hovering in
             updateParagraphHeaderHover(hovering)
         }
         .simultaneousGesture(paragraphHeaderDragGesture)
-        .padding(.horizontal, 18)
-        .padding(.top, 16)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 14)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
     }
 
     private var paragraphOriginalSectionTitle: String {
-        paragraphSectionTitle(labelKey: "Original", languageIdentifier: "en")
+        paragraphLanguageSectionTitle(for: "en")
     }
 
     private var paragraphTranslationSectionTitle: String {
-        paragraphSectionTitle(labelKey: "Translation", languageIdentifier: model.settings.targetLanguage)
+        paragraphLanguageSectionTitle(for: model.settings.targetLanguage)
     }
 
-    private func paragraphSectionTitle(labelKey: String, languageIdentifier: String) -> String {
-        "\(L(labelKey)) (\(paragraphLanguageDisplayName(for: languageIdentifier)))"
+    private func paragraphLanguageSectionTitle(for languageIdentifier: String) -> String {
+        paragraphLanguageDisplayName(for: languageIdentifier)
     }
 
     private func paragraphLanguageDisplayName(for identifier: String) -> String {
@@ -511,22 +487,6 @@ struct OverlayView: View {
         }
 
         return identifier
-    }
-
-    private func paragraphCardFill(emphasis: Bool) -> Color {
-        if colorScheme == .dark {
-            return emphasis ? .white.opacity(0.09) : .white.opacity(0.06)
-        }
-
-        return emphasis ? .black.opacity(0.055) : .black.opacity(0.035)
-    }
-
-    private func paragraphCardStroke(emphasis: Bool) -> Color {
-        if colorScheme == .dark {
-            return emphasis ? .white.opacity(0.14) : .white.opacity(0.08)
-        }
-
-        return emphasis ? .black.opacity(0.08) : .black.opacity(0.05)
     }
 
     private var paragraphHeaderDragGesture: some Gesture {
@@ -1116,7 +1076,7 @@ private struct SelectableTextView: NSViewRepresentable {
     let text: String
     let font: NSFont
     let textColor: NSColor
-    let lineSpacing: CGFloat
+    let preferredLineHeight: CGFloat
 
     func makeNSView(context: Context) -> NSTextView {
         let textView = NSTextView(frame: .zero)
@@ -1165,7 +1125,8 @@ private struct SelectableTextView: NSViewRepresentable {
     private func makeAttributedString() -> NSAttributedString {
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineBreakMode = .byWordWrapping
-        paragraphStyle.lineSpacing = lineSpacing
+        paragraphStyle.minimumLineHeight = preferredLineHeight
+        paragraphStyle.maximumLineHeight = preferredLineHeight
 
         return NSAttributedString(
             string: text,
@@ -1178,8 +1139,94 @@ private struct SelectableTextView: NSViewRepresentable {
     }
 }
 
+private struct ParagraphOverlaySectionCard<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let title: String?
+    let copyText: String?
+    let emphasis: Bool
+    let content: Content
+
+    @State private var isHovered = false
+
+    init(
+        title: String?,
+        copyText: String?,
+        emphasis: Bool,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.copyText = copyText
+        self.emphasis = emphasis
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                if let title, !title.isEmpty {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                if let copyText, !copyText.isEmpty {
+                    ParagraphSectionCopyButton(
+                        text: copyText,
+                        isVisible: isHovered
+                    )
+                }
+            }
+
+            content
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(fillColor)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(strokeColor, lineWidth: 1)
+        }
+        .shadow(color: shadowColor, radius: 2, x: 0, y: 1)
+        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+
+    private var fillColor: Color {
+        if colorScheme == .dark {
+            return emphasis ? .white.opacity(0.055) : .white.opacity(0.036)
+        }
+
+        return emphasis ? .black.opacity(0.025) : .black.opacity(0.016)
+    }
+
+    private var strokeColor: Color {
+        if colorScheme == .dark {
+            return emphasis ? .white.opacity(0.16) : .white.opacity(0.10)
+        }
+
+        return emphasis ? .black.opacity(0.10) : .black.opacity(0.06)
+    }
+
+    private var shadowColor: Color {
+        if colorScheme == .dark {
+            return .black.opacity(emphasis ? 0.16 : 0.10)
+        }
+
+        return .black.opacity(emphasis ? 0.05 : 0.03)
+    }
+}
+
 private struct ParagraphSectionCopyButton: View {
     let text: String
+    let isVisible: Bool
     @State private var copied = false
 
     var body: some View {
@@ -1194,17 +1241,21 @@ private struct ParagraphSectionCopyButton: View {
                 }
             }
         } label: {
-            Label(copied ? L("Copied") : L("Copy"), systemImage: copied ? "checkmark" : "doc.on.doc")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(copied ? Color(red: 0.2, green: 0.7, blue: 0.35) : .secondary)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
+                .frame(width: 16, height: 16)
+                .padding(4)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(copied ? Color(red: 0.2, green: 0.7, blue: 0.35).opacity(0.12) : Color.secondary.opacity(0.08))
                 )
+                .opacity(isVisible || copied ? 1 : 0)
         }
         .buttonStyle(.plain)
+        .allowsHitTesting(isVisible || copied)
+        .animation(.easeInOut(duration: 0.16), value: isVisible)
+        .help(copied ? L("Copied") : L("Copy to clipboard"))
     }
 
     private func copyToClipboard(_ text: String) {

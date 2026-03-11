@@ -88,8 +88,14 @@ final class LocalizationManager: ObservableObject {
         return NSLocalizedString(key, tableName: nil, bundle: currentBundle, value: key, comment: "")
     }
     
-    /// Get localized string with format
+    /// Get localized string with format arguments (variadic)
     func localizedString(_ key: String, _ arguments: CVarArg...) -> String {
+        let format = localizedString(key)
+        return String(format: format, arguments: arguments)
+    }
+    
+    /// Get localized string with format arguments (array)
+    func localizedString(_ key: String, _ arguments: [CVarArg]) -> String {
         let format = localizedString(key)
         return String(format: format, arguments: arguments)
     }
@@ -117,6 +123,11 @@ extension EnvironmentValues {
 /// Helper function to get localized string that responds to language changes
 func L(_ key: String) -> String {
     return LocalizationManager.shared.localizedString(key)
+}
+
+/// Helper function to get localized string with format arguments
+func L(_ key: String, _ arguments: CVarArg...) -> String {
+    return LocalizationManager.shared.localizedString(key, arguments)
 }
 
 // MARK: - Localized Text Component
