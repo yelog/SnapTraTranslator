@@ -3325,6 +3325,9 @@
         }
       }
     },
+    "No translation result" : {
+
+    },
     "No word detected" : {
       "localizations" : {
         "en" : {
@@ -5313,6 +5316,9 @@
           }
         }
       }
+    },
+    "Translation failed" : {
+
     },
     "Translation failed: %@" : {
       "extractionState" : "stale",

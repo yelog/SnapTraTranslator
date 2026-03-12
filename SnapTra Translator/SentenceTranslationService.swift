@@ -121,6 +121,7 @@ final class SentenceTranslationService {
             return nil
         }
 
+        try await prewarmYoudaoSession()
         let keyData = try await fetchYoudaoKeyData()
         let mysticTime = currentMilliseconds()
         let sign = md5Hex("client=fanyideskweb&mysticTime=\(mysticTime)&product=webfanyi&key=\(keyData.secretKey)")
@@ -160,13 +161,28 @@ final class SentenceTranslationService {
             aesIVSeed: keyData.aesIv
         )
         let response = try JSONDecoder().decode(YoudaoTranslationResponse.self, from: decryptedData)
-        let translation = response.translateResult
+        guard response.code == 0 else {
+            throw SentenceTranslationError.providerRejected(
+                provider: "Youdao",
+                code: response.code,
+                message: response.msg
+            )
+        }
+
+        let translation = (response.translateResult ?? [])
             .flatMap { $0 }
             .compactMap(\.tgt)
             .joined()
 
         guard !translation.isEmpty else { return nil }
         return translation
+    }
+
+    private func prewarmYoudaoSession() async throws {
+        var request = URLRequest(url: URL(string: "https://fanyi.youdao.com/")!)
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("https://fanyi.youdao.com/", forHTTPHeaderField: "Referer")
+        _ = try await performRequest(request)
     }
 
     private func fetchYoudaoKeyData() async throws -> YoudaoKeyData {
@@ -195,7 +211,11 @@ final class SentenceTranslationService {
         let data = try await performRequest(request)
         let response = try JSONDecoder().decode(YoudaoKeyResponse.self, from: data)
         guard response.code == 0, let payload = response.data else {
-            throw SentenceTranslationError.invalidResponse
+            throw SentenceTranslationError.providerRejected(
+                provider: "Youdao",
+                code: response.code,
+                message: response.msg
+            )
         }
         return payload
     }
@@ -477,6 +497,25 @@ enum SentenceTranslationError: Error {
     case invalidRequest
     case invalidResponse
     case captchaRequired
+    case providerRejected(provider: String, code: Int, message: String?)
+}
+
+extension SentenceTranslationError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .invalidRequest:
+            return "Invalid translation request."
+        case .invalidResponse:
+            return "The translation service returned an invalid response."
+        case .captchaRequired:
+            return "Bing translation requires a captcha."
+        case .providerRejected(let provider, let code, let message):
+            if let message, !message.isEmpty {
+                return "\(provider) rejected the request (code \(code): \(message))."
+            }
+            return "\(provider) rejected the request (code \(code))."
+        }
+    }
 }
 
 // MARK: - Response Models
@@ -517,6 +556,7 @@ private struct BingTranslationResponse: Decodable {
 private struct YoudaoKeyResponse: Decodable {
     let data: YoudaoKeyData?
     let code: Int
+    let msg: String?
 }
 
 private struct YoudaoKeyData: Decodable {
@@ -526,7 +566,9 @@ private struct YoudaoKeyData: Decodable {
 }
 
 private struct YoudaoTranslationResponse: Decodable {
-    let translateResult: [[TranslationItem]]
+    let code: Int
+    let msg: String?
+    let translateResult: [[TranslationItem]]?
 
     struct TranslationItem: Decodable {
         let tgt: String?

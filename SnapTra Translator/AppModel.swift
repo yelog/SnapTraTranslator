@@ -641,8 +641,8 @@ final class AppModel: ObservableObject {
                 Task {
                     await performThirdPartyParagraphTranslations(
                         text: paragraph.text,
-                        sourceLanguage: settings.sourceLanguage,
-                        targetLanguage: settings.targetLanguage,
+                        sourceLanguage: languagePair.sourceIdentifier,
+                        targetLanguage: languagePair.targetIdentifier,
                         enabledServices: enabledServices,
                         lookupID: lookupID,
                         anchor: mouseLocation
@@ -817,10 +817,11 @@ final class AppModel: ObservableObject {
                         if let translation = result, !translation.isEmpty {
                             return (service.type, .ready(translation))
                         } else {
-                            return (service.type, .failed(L("No translation result")))
+                            return (service.type, .failed(String(localized: "No translation result")))
                         }
                     } catch {
-                        return (service.type, .failed(L("Translation failed")))
+                        let message = "\(String(localized: "Translation failed")): \(error.localizedDescription)"
+                        return (service.type, .failed(message))
                     }
                 }
             }
