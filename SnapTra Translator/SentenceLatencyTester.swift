@@ -15,7 +15,7 @@ final class SentenceLatencyTester: ObservableObject {
         case pending
         case testing
         case success(TimeInterval)  // milliseconds
-        case failed
+        case failed(String?)  // Optional error message for tooltip
         case local  // For offline/native sources
     }
 
@@ -44,18 +44,13 @@ final class SentenceLatencyTester: ObservableObject {
             latencies[type] = .testing
         }
 
-        // Test in parallel
-        await withTaskGroup(of: (SentenceTranslationSource.SourceType, LatencyResult).self) { group in
-            for type in testTypes {
-                group.addTask { [weak self] in
-                    guard let self = self else { return (type, .failed) }
-                    let result = await self.testLatency(for: type)
-                    return (type, result)
-                }
-            }
-
-            for await (type, result) in group {
-                self.latencies[type] = result
+        // Test sequentially to avoid rate limiting
+        for type in testTypes {
+            let result = await testLatency(for: type)
+            self.latencies[type] = result
+            // Small delay between tests to avoid rate limiting
+            if type != testTypes.last {
+                try? await Task.sleep(nanoseconds: 500_000_000)
             }
         }
     }
@@ -88,16 +83,19 @@ final class SentenceLatencyTester: ObservableObject {
             }
 
             guard let translation = result, !translation.isEmpty else {
-                return .failed
+                return .failed(String(localized: "Empty response"))
             }
 
             let elapsed = Date().timeIntervalSince(startTime) * 1000  // Convert to ms
             return .success(elapsed)
 
         } catch is TimeoutError {
-            return .failed
+            return .failed(String(localized: "Request timeout"))
+        } catch let error as SentenceTranslationError {
+            let message = error.localizedDescription
+            return .failed(message)
         } catch {
-            return .failed
+            return .failed(error.localizedDescription)
         }
     }
 

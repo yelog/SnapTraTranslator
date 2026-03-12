@@ -237,7 +237,7 @@ struct SentenceServiceRow: View {
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .foregroundStyle(ms < 500 ? .green : (ms < 1000 ? .orange : .red))
                 .frame(width: 60, alignment: .trailing)
-        case .failed:
+        case .failed(let message):
             Text(L("Failed"))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.red)
@@ -248,6 +248,9 @@ struct SentenceServiceRow: View {
                         .fill(Color.red.opacity(0.1))
                 )
                 .frame(width: 60)
+                .overlay(
+                    TooltipView(text: message ?? L("Translation failed"))
+                )
         }
     }
 
@@ -289,5 +292,32 @@ struct SentenceServiceRow: View {
         case .deepl:
             return L("DeepL web translation")
         }
+    }
+}
+
+// MARK: - Tooltip Support
+
+private struct TooltipView: NSViewRepresentable {
+    let text: String
+
+    func makeNSView(context: Context) -> NSView {
+        let view = TooltipNSView()
+        view.toolTip = text
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        nsView.toolTip = text
+    }
+}
+
+private class TooltipNSView: NSView {
+    override func mouseDown(with event: NSEvent) {
+        // Pass through mouse events to views below
+        super.mouseDown(with: event)
+    }
+    
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return false
     }
 }

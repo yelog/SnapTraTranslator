@@ -96,17 +96,174 @@ final class SentenceTranslationService {
         sourceLanguage: String,
         targetLanguage: String
     ) async throws -> String? {
-        guard let source = deepLPageLanguageCode(for: sourceLanguage),
-              let target = deepLPageLanguageCode(for: targetLanguage) else {
-            return nil
+        let sourceLang = deepLApiLanguageCode(sourceLanguage)
+        let targetLang = deepLApiLanguageCode(targetLanguage)
+
+        let endpoint = "https://www2.deepl.com/jsonrpc"
+        let id = Int.random(in: 10000000...99999999)
+        let timestamp = calculateDeepLTimestamp(for: text)
+
+        let params: [String: Any] = [
+            "texts": [
+                [
+                    "text": text,
+                    "requestAlternatives": 3
+                ]
+            ],
+            "splitting": "newlines",
+            "lang": [
+                "source_lang_user_selected": sourceLang,
+                "target_lang": targetLang
+            ],
+            "timestamp": timestamp,
+            "commonJobParams": [
+                "mode": "translate",
+                "browserType": 1,
+                "textType": "plaintext"
+            ]
+        ]
+
+        var requestDict: [String: Any] = [
+            "jsonrpc": "2.0",
+            "method": "LMT_handle_texts",
+            "id": id,
+            "params": params
+        ]
+
+        // DeepL 特殊处理：如果 ID 能被 2 整除，method 字段后添加空格
+        if id % 2 == 0 {
+            requestDict["method"] = "LMT_handle_texts "
         }
 
-        return try await DeepLWebViewSentenceTranslator.translate(
-            text: text,
-            sourceLanguage: source,
-            targetLanguage: target,
-            userAgent: Self.userAgent
-        )
+        guard let url = URL(string: endpoint),
+              let body = try? JSONSerialization.data(withJSONObject: requestDict) else {
+            throw SentenceTranslationError.invalidRequest
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("www.deepl.com", forHTTPHeaderField: "Origin")
+        request.setValue("https://www.deepl.com", forHTTPHeaderField: "Referer")
+
+        // Debug: Log request
+        if let bodyString = String(data: body, encoding: .utf8) {
+            logger.debug("DeepL Request: \(bodyString)")
+        }
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw SentenceTranslationError.invalidResponse
+        }
+
+        // Debug: Log response
+        if let responseString = String(data: data, encoding: .utf8) {
+            logger.debug("DeepL Response (HTTP \(httpResponse.statusCode)): \(responseString)")
+        }
+
+        // Handle rate limiting with retry
+        if httpResponse.statusCode == 429 {
+            logger.warning("DeepL rate limited, waiting 2s before retry...")
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+            
+            // Retry once
+            let (retryData, retryResponse) = try await session.data(for: request)
+            guard let retryHttpResponse = retryResponse as? HTTPURLResponse else {
+                throw SentenceTranslationError.invalidResponse
+            }
+            
+            if let retryResponseString = String(data: retryData, encoding: .utf8) {
+                logger.debug("DeepL Retry Response (HTTP \(retryHttpResponse.statusCode)): \(retryResponseString)")
+            }
+            
+            guard (200...299).contains(retryHttpResponse.statusCode) else {
+                throw SentenceTranslationError.providerRejected(provider: "DeepL", code: retryHttpResponse.statusCode, message: "Rate limited")
+            }
+            
+            let deeplResponse = try JSONDecoder().decode(DeepLAPIResponse.self, from: retryData)
+            return try extractTranslation(from: deeplResponse)
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw SentenceTranslationError.invalidResponse
+        }
+
+        let deeplResponse = try JSONDecoder().decode(DeepLAPIResponse.self, from: data)
+        return try extractTranslation(from: deeplResponse)
+    }
+
+    private func extractTranslation(from deeplResponse: DeepLAPIResponse) throws -> String? {
+        if let error = deeplResponse.error {
+            logger.error("DeepL API Error: \(error.code) - \(error.message)")
+            throw SentenceTranslationError.providerRejected(provider: "DeepL", code: error.code, message: error.message)
+        }
+
+        guard let result = deeplResponse.result,
+              let firstText = result.texts.first,
+              let translatedText = firstText.text else {
+            logger.error("DeepL: Failed to parse response - result: \(String(describing: deeplResponse.result))")
+            throw SentenceTranslationError.invalidResponse
+        }
+
+        return translatedText
+    }
+
+    private func calculateDeepLTimestamp(for text: String) -> Int {
+        let iCount = text.lowercased().filter { $0 == "i" }.count
+        let timestamp = Int(Date().timeIntervalSince1970 * 1000)
+        // DeepL 时间戳算法：当前毫秒时间戳 - (iCount + 1) * 1000
+        return timestamp - (iCount + 1) * 1000
+    }
+
+    private func deepLApiLanguageCode(_ code: String) -> String {
+        switch code.lowercased() {
+        case "auto", "und":
+            return "auto"
+        case "zh", "zh-hans", "zh-cn":
+            return "ZH"
+        case "zh-hant", "zh-tw", "zh-hk":
+            return "ZH"
+        case "en", "en-us", "en-gb":
+            return "EN"
+        case "ja":
+            return "JA"
+        case "ko":
+            return "KO"
+        case "fr":
+            return "FR"
+        case "de":
+            return "DE"
+        case "es":
+            return "ES"
+        case "it":
+            return "IT"
+        case "pt", "pt-pt":
+            return "PT-PT"
+        case "pt-br":
+            return "PT-BR"
+        case "ru":
+            return "RU"
+        case "ar":
+            return "AR"
+        case "nl":
+            return "NL"
+        case "pl":
+            return "PL"
+        case "tr":
+            return "TR"
+        case "vi":
+            return "VI"
+        case "id":
+            return "ID"
+        case "th":
+            return "TH"
+        default:
+            return code.uppercased()
+        }
     }
 
     // MARK: - Youdao Translate
@@ -432,25 +589,6 @@ final class SentenceTranslationService {
         }
     }
 
-    private func deepLPageLanguageCode(for language: String) -> String? {
-        switch language {
-        case "auto", "und":
-            return "auto"
-        case "zh":
-            return "zh"
-        case "zh-Hans":
-            return "zh-Hans"
-        case "zh-Hant":
-            return "zh-Hant"
-        case "pt-BR":
-            return "pt-BR"
-        case "pt-PT", "pt":
-            return "pt-PT"
-        default:
-            return localeLanguageIdentifier(for: language)
-        }
-    }
-
     private func localeLanguageIdentifier(for identifier: String) -> String? {
         let locale = Locale(identifier: identifier)
         return locale.language.languageCode?.identifier
@@ -575,6 +713,29 @@ private struct YoudaoTranslationResponse: Decodable {
     }
 }
 
+// MARK: - DeepL API Response Models
+
+private struct DeepLAPIResponse: Decodable {
+    let jsonrpc: String?
+    let id: Int?
+    let result: DeepLAPIResult?
+    let error: DeepLAPIErrorDetail?
+}
+
+private struct DeepLAPIResult: Decodable {
+    let texts: [DeepLTranslatedText]
+    let lang: String?
+}
+
+private struct DeepLTranslatedText: Decodable {
+    let text: String?
+}
+
+private struct DeepLAPIErrorDetail: Decodable {
+    let code: Int
+    let message: String
+}
+
 private extension Array {
     subscript(safe index: Int) -> Element? {
         guard indices.contains(index) else { return nil }
@@ -582,203 +743,4 @@ private extension Array {
     }
 }
 
-// MARK: - DeepL WebView Translator
 
-@MainActor
-private final class DeepLWebViewSentenceTranslator: NSObject, WKNavigationDelegate {
-    private let webView: WKWebView
-    private let sourceLanguage: String
-    private let targetLanguage: String
-    private let text: String
-    private var navigationContinuation: CheckedContinuation<Void, Error>?
-
-    private init(
-        text: String,
-        sourceLanguage: String,
-        targetLanguage: String,
-        userAgent: String
-    ) {
-        self.text = text
-        self.sourceLanguage = sourceLanguage
-        self.targetLanguage = targetLanguage
-
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-
-        webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.customUserAgent = userAgent
-
-        super.init()
-        webView.navigationDelegate = self
-    }
-
-    static func translate(
-        text: String,
-        sourceLanguage: String,
-        targetLanguage: String,
-        userAgent: String
-    ) async throws -> String? {
-        let translator = DeepLWebViewSentenceTranslator(
-            text: text,
-            sourceLanguage: sourceLanguage,
-            targetLanguage: targetLanguage,
-            userAgent: userAgent
-        )
-        return try await translator.performTranslation()
-    }
-
-    private func performTranslation() async throws -> String? {
-        guard let url = makeTranslationURL() else {
-            throw SentenceTranslationError.invalidRequest
-        }
-
-        webView.load(URLRequest(url: url))
-        try await waitForNavigation()
-        try await Task.sleep(nanoseconds: 1_000_000_000)
-        try await injectSourceText()
-
-        let deadline = Date().addingTimeInterval(15)
-        while Date() < deadline {
-            let state = try await readPageState()
-            if state.source == text, !state.target.isEmpty {
-                return state.target
-            }
-            try await Task.sleep(nanoseconds: 500_000_000)
-        }
-
-        return nil
-    }
-
-    private func makeTranslationURL() -> URL? {
-        guard let encodedText = text.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
-            return nil
-        }
-
-        return URL(
-            string: "https://www.deepl.com/en/translator#\(sourceLanguage)/\(targetLanguage)/\(encodedText)"
-        )
-    }
-
-    private func waitForNavigation() async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            navigationContinuation = continuation
-        }
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        navigationContinuation?.resume()
-        navigationContinuation = nil
-    }
-
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        navigationContinuation?.resume(throwing: error)
-        navigationContinuation = nil
-    }
-
-    func webView(
-        _ webView: WKWebView,
-        didFailProvisionalNavigation navigation: WKNavigation!,
-        withError error: Error
-    ) {
-        navigationContinuation?.resume(throwing: error)
-        navigationContinuation = nil
-    }
-
-    private func injectSourceText() async throws {
-        let script = """
-        (() => {
-          const textboxes = Array.from(document.querySelectorAll('[role="textbox"][data-content="true"]'));
-          const source = textboxes.find((element) => {
-            const label = element.getAttribute('aria-labelledby') || '';
-            return label.includes('source');
-          }) || textboxes.find((element) => element.getAttribute('contenteditable') === 'true');
-
-          if (!source) {
-            return JSON.stringify({ ok: false, reason: 'missing-source' });
-          }
-
-          const text = \(javaScriptLiteral(text));
-          source.focus();
-          source.textContent = text;
-
-          source.dispatchEvent(new InputEvent('beforeinput', {
-            bubbles: true,
-            cancelable: true,
-            inputType: 'insertText',
-            data: text
-          }));
-          source.dispatchEvent(new InputEvent('input', {
-            bubbles: true,
-            inputType: 'insertText',
-            data: text
-          }));
-          source.dispatchEvent(new Event('change', { bubbles: true }));
-
-          return JSON.stringify({
-            ok: true,
-            text: (source.innerText || source.textContent || '').trim()
-          });
-        })();
-        """
-
-        guard let payload = try await webView.evaluateJavaScript(script) as? String,
-              let data = payload.data(using: .utf8) else {
-            throw SentenceTranslationError.invalidResponse
-        }
-
-        let result = try JSONDecoder().decode(DeepLInjectionResult.self, from: data)
-        guard result.ok else {
-            throw SentenceTranslationError.invalidResponse
-        }
-    }
-
-    private func readPageState() async throws -> DeepLPageState {
-        let script = """
-        (() => {
-          const textboxes = Array.from(document.querySelectorAll('[role="textbox"][data-content="true"]'));
-          const source = textboxes.find((element) => {
-            const label = element.getAttribute('aria-labelledby') || '';
-            return label.includes('source');
-          }) || textboxes.find((element) => element.getAttribute('contenteditable') === 'true');
-          const target = textboxes.find((element) => {
-            const label = element.getAttribute('aria-labelledby') || '';
-            return label.includes('target');
-          }) || textboxes.find((element) => element !== source);
-
-          const normalize = (element) => {
-            if (!element) { return ''; }
-            return (element.innerText || element.textContent || element.value || '')
-              .replace(/\\u00a0/g, ' ')
-              .trim();
-          };
-
-          return JSON.stringify({
-            source: normalize(source),
-            target: normalize(target)
-          });
-        })();
-        """
-
-        guard let payload = try await webView.evaluateJavaScript(script) as? String,
-              let data = payload.data(using: .utf8) else {
-            throw SentenceTranslationError.invalidResponse
-        }
-
-        return try JSONDecoder().decode(DeepLPageState.self, from: data)
-    }
-
-    private func javaScriptLiteral(_ value: String) -> String {
-        let data = try? JSONEncoder().encode(value)
-        return String(data: data ?? Data("null".utf8), encoding: .utf8) ?? "null"
-    }
-}
-
-private struct DeepLPageState: Decodable {
-    let source: String
-    let target: String
-}
-
-private struct DeepLInjectionResult: Decodable {
-    let ok: Bool
-}
