@@ -533,4 +533,20 @@ final class OCRService {
 
         return englishRatio >= 0.65 && words.count >= 3
     }
+
+    /// Estimates the display font size for a paragraph based on its line heights
+    nonisolated static func estimatedDisplayFontSize(for paragraph: RecognizedParagraph, in captureRect: CGRect) -> CGFloat {
+        guard !paragraph.lines.isEmpty else {
+            return 14.0 // Default fallback
+        }
+
+        // Calculate average line height in normalized coordinates
+        let avgNormalizedHeight = paragraph.lines.map { $0.boundingBox.height }.reduce(0, +) / CGFloat(paragraph.lines.count)
+
+        // Convert to screen coordinates
+        let screenHeight = avgNormalizedHeight * captureRect.height
+
+        // Font size is typically ~0.7-0.8 of line height
+        return screenHeight * 0.75
+    }
 }
