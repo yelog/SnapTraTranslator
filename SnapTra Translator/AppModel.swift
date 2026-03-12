@@ -81,15 +81,18 @@ struct ParagraphOverlayContent: Equatable {
     var originalText: String?
     var translationState: ParagraphOverlayTranslationState
     var serviceResults: [ServiceTranslationResult]
+    var bodyFontSize: CGFloat
 
     init(
         originalText: String? = nil,
         translationState: ParagraphOverlayTranslationState,
-        serviceResults: [ServiceTranslationResult] = []
+        serviceResults: [ServiceTranslationResult] = [],
+        bodyFontSize: CGFloat = 13
     ) {
         self.originalText = originalText
         self.translationState = translationState
         self.serviceResults = serviceResults
+        self.bodyFontSize = bodyFontSize
     }
 }
 
@@ -310,6 +313,7 @@ final class AppModel: ObservableObject {
 
     func handleHotkeyDoubleTap() {
         guard isHotkeyActive else { return }
+        guard settings.sentenceTranslationEnabled else { return }
         // 保持 isHotkeyActive = true，让释放事件能正常处理
         activeLookupMode = .paragraph
         stopMouseTracking()
@@ -608,6 +612,10 @@ final class AppModel: ObservableObject {
             case .english(let paragraph):
                 // Found English paragraph - continue with translation
                 let paragraphRect = screenRect(for: paragraph.boundingBox, in: capture.region.rect)
+                let bodyFontSize = OCRService.estimatedDisplayFontSize(
+                    for: paragraph,
+                    in: capture.region.rect
+                )
                 paragraphHighlightWindowController.show(at: paragraphRect)
 
                 // 保存句子矩形，设置面板首选宽度
@@ -626,7 +634,8 @@ final class AppModel: ObservableObject {
                 let initialContent = ParagraphOverlayContent(
                     originalText: paragraph.text,
                     translationState: .loading,
-                    serviceResults: initialServiceResults
+                    serviceResults: initialServiceResults,
+                    bodyFontSize: bodyFontSize
                 )
                 updateOverlay(state: .paragraphResult(initialContent), anchor: mouseLocation)
 
