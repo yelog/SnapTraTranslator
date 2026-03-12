@@ -26,7 +26,7 @@ enum SettingsWindowLayout {
     static let sentenceContentWidth: CGFloat = 450
     static let generalContentHeight: CGFloat = 590
     static let dictionaryContentHeight: CGFloat = 550
-    static let sentenceContentHeight: CGFloat = 750
+    static let sentenceContentHeight: CGFloat = 580
     static let aboutContentHeight: CGFloat = 520
     static let outerPadding: CGFloat = 16
     static let animationDuration: TimeInterval = 0.24
