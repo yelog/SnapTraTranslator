@@ -19,16 +19,11 @@ struct SentenceSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 // Sentence Translation Master Toggle
-                VStack(alignment: .leading, spacing: 8) {
-                    Toggle(L("Enable Sentence Translation"), isOn: $model.settings.sentenceTranslationEnabled)
-                        .font(.system(size: 14, weight: .medium))
-                    
-                    if model.settings.sentenceTranslationEnabled {
-                        Text(L("Double-click %@ to translate the paragraph under cursor", model.settings.hotkeyDisplayText))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                SettingsToggleRow(
+                    title: L("Enable Sentence Translation"),
+                    subtitle: L("Double-click %@ to translate the paragraph under cursor", model.settings.hotkeyDisplayText),
+                    isOn: $model.settings.sentenceTranslationEnabled
+                )
                 .padding(.horizontal)
                 .padding(.top)
                 

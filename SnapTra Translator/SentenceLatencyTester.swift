@@ -24,6 +24,7 @@ final class SentenceLatencyTester: ObservableObject {
 
     private let service: SentenceTranslationService
     private let session: URLSession
+    private let timeout: TimeInterval = 5.0
 
     init(service: SentenceTranslationService? = nil, session: URLSession? = nil) {
         self.service = service ?? SentenceTranslationService()
@@ -77,12 +78,14 @@ final class SentenceLatencyTester: ObservableObject {
         let startTime = Date()
 
         do {
-            let result = try await service.translate(
-                text: testText,
-                provider: type,
-                sourceLanguage: sourceLanguage,
-                targetLanguage: targetLanguage
-            )
+            let result = try await withTimeout(seconds: timeout) { [self] in
+                try await service.translate(
+                    text: testText,
+                    provider: type,
+                    sourceLanguage: sourceLanguage,
+                    targetLanguage: targetLanguage
+                )
+            }
 
             guard let translation = result, !translation.isEmpty else {
                 return .failed
@@ -91,6 +94,8 @@ final class SentenceLatencyTester: ObservableObject {
             let elapsed = Date().timeIntervalSince(startTime) * 1000  // Convert to ms
             return .success(elapsed)
 
+        } catch is TimeoutError {
+            return .failed
         } catch {
             return .failed
         }
@@ -101,5 +106,26 @@ final class SentenceLatencyTester: ObservableObject {
         configuration.timeoutIntervalForRequest = 10
         configuration.timeoutIntervalForResource = 15
         return URLSession(configuration: configuration)
+    }
+
+    private struct TimeoutError: Error {}
+
+    private func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask {
+                try await operation()
+            }
+
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw TimeoutError()
+            }
+
+            defer { group.cancelAll() }
+            guard let result = try await group.next() else {
+                throw TimeoutError()
+            }
+            return result
+        }
     }
 }
