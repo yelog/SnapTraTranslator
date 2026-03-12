@@ -3,10 +3,6 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var model: AppModel
 
-    private var hasAnyPronunciationEnabled: Bool {
-        model.settings.playWordPronunciation || model.settings.playSentencePronunciation
-    }
-
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -106,16 +102,6 @@ Text(L("Word"))
                                 }
                             }
                         }
-
-                        Divider()
-                            .opacity(0.5)
-
-                        TTSProviderSelectorRow(
-                            title: L("Pronunciation Service"),
-                            subtitle: L("Choose the voice service for pronunciation"),
-                            selection: $model.settings.ttsProvider
-                        )
-                        .opacity(hasAnyPronunciationEnabled ? 1 : 0.5)
                     }
                 }
 
@@ -627,75 +613,6 @@ struct LanguageSelectorRow: View {
                             Text(language.displayName)
                                 .font(.system(size: 13))
                             if selection == language {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 11, weight: .semibold))
-                            }
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Text(selection.displayName)
-                        .font(.system(size: 12, weight: .medium))
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                }
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(.quaternary.opacity(isHovering ? 0.7 : 0.5))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(.quaternary.opacity(0.5), lineWidth: 0.5)
-                )
-            }
-            .menuStyle(.borderlessButton)
-            .frame(width: 140)
-            .onHover { hovering in
-                isHovering = hovering
-            }
-        }
-    }
-}
-
-// MARK: - TTS Provider Selector Row
-
-struct TTSProviderSelectorRow: View {
-    let title: String
-    let subtitle: String
-    @Binding var selection: TTSProvider
-    @State private var isHovering = false
-
-    var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(.primary)
-                Text(subtitle)
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(.tertiary)
-            }
-
-            Spacer()
-
-            Menu {
-                ForEach(TTSProvider.allCases) { provider in
-                    Button {
-                        selection = provider
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(provider.displayName)
-                                    .font(.system(size: 13))
-                                Text(provider.description)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                            }
-                            if selection == provider {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 11, weight: .semibold))
                             }

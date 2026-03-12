@@ -82,8 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
         model.settings.$playWordPronunciation
             .combineLatest(model.settings.$playSentencePronunciation)
-            .combineLatest(model.settings.$ttsProvider)
-            .sink { [weak self] _, _ in
+            .combineLatest(model.settings.$wordTTSProvider)
+            .combineLatest(model.settings.$sentenceTTSProvider)
+            .sink { [weak self] _ in
                 self?.updateDynamicMenuItems()
             }
             .store(in: &cancellables)
@@ -272,12 +273,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // Update continuous translation menu item state (checkmark)
         continuousTranslationMenuItem?.state = model.settings.continuousTranslation ? .on : .off
         
-        // Update provider info item
-        let provider = model.settings.ttsProvider
-        let providerName = provider == .apple
-            ? L("System")
-            : provider.displayName
-        let providerTitle = String(format: L("Provider: %@"), providerName)
+        // Update provider info item to show both Word and Sentence providers
+        let wordProvider = model.settings.wordTTSProvider
+        let sentenceProvider = model.settings.sentenceTTSProvider
+        let wordName = wordProvider == .apple ? L("System") : wordProvider.displayName
+        let sentenceName = sentenceProvider == .apple ? L("System") : sentenceProvider.displayName
+        let providerTitle = "\(L("Word")): \(wordName)  ·  \(L("Sentence")): \(sentenceName)"
         
         // Style the provider info with secondary color
         let attributes: [NSAttributedString.Key: Any] = [

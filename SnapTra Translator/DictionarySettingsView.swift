@@ -10,21 +10,14 @@ import SwiftUI
 
 struct TTSServiceRow: View {
     let provider: TTSProvider
-    let isSelected: Bool
+    let isWordSelected: Bool
+    let isSentenceSelected: Bool
     let latency: TTSLatencyTester.LatencyResult
-    let onSelect: () -> Void
+    let onWordSelect: () -> Void
+    let onSentenceSelect: () -> Void
     
     var body: some View {
         HStack(spacing: 12) {
-            Circle()
-                .strokeBorder(isSelected ? Color.accentColor : Color.secondary.opacity(0.5), lineWidth: 1.5)
-                .frame(width: 16, height: 16)
-                .overlay {
-                    if isSelected {
-                        Circle().fill(Color.accentColor).frame(width: 8, height: 8)
-                    }
-                }
-            
             providerIcon
                 .frame(width: 24, height: 24)
 
@@ -38,14 +31,41 @@ struct TTSServiceRow: View {
 
             Spacer()
 
+            HStack(spacing: 16) {
+                selectionButton(isSelected: isWordSelected, label: L("Word"), action: onWordSelect)
+                selectionButton(isSelected: isSentenceSelected, label: L("Sentence"), action: onSentenceSelect)
+            }
+
             latencyView
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onSelect()
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(.quaternary, lineWidth: 0.5)
+        )
+    }
+
+    @ViewBuilder
+    private func selectionButton(isSelected: Bool, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Circle()
+                .strokeBorder(isSelected ? Color.accentColor : Color.secondary.opacity(0.5), lineWidth: 1.5)
+                .frame(width: 16, height: 16)
+                .overlay {
+                    if isSelected {
+                        Circle().fill(Color.accentColor).frame(width: 8, height: 8)
+                    }
+                }
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .frame(width: 24, height: 24)
+        .help(label)
     }
 
     @ViewBuilder
@@ -331,7 +351,7 @@ struct DictionarySettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(L("Pronunciation Service"))
                     .font(.headline)
-                Text(L("Apple is the offline local service, others require network. If a third-party service fails, it will automatically fallback to Apple local service."))
+                Text(L("Select different TTS services for word and sentence pronunciation. Apple is offline, others require network."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -340,27 +360,40 @@ struct DictionarySettingsView: View {
             .padding(.top)
 
             VStack(spacing: 6) {
+                HStack(spacing: 12) {
+                    Spacer()
+                    Text(L("Word"))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16)
+                    Text(L("Sentence"))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16)
+                    Text(L("Latency"))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 60, alignment: .trailing)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+
                 ForEach(TTSProvider.allCases) { provider in
                     TTSServiceRow(
                         provider: provider,
-                        isSelected: model.settings.ttsProvider == provider,
+                        isWordSelected: model.settings.wordTTSProvider == provider,
+                        isSentenceSelected: model.settings.sentenceTTSProvider == provider,
                         latency: ttsTester.latencies[provider] ?? .pending,
-                        onSelect: { model.settings.ttsProvider = provider }
-                    )
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color(nsColor: .controlBackgroundColor))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(.quaternary, lineWidth: 0.5)
+                        onWordSelect: { model.settings.wordTTSProvider = provider },
+                        onSentenceSelect: { model.settings.sentenceTTSProvider = provider }
                     )
                 }
             }
             .padding(.horizontal)
 
             // English Accent Selection (only for services that support it)
-            if model.settings.ttsProvider != .apple && model.settings.ttsProvider != .google {
+            if model.settings.wordTTSProvider != .apple && model.settings.wordTTSProvider != .google
+                || model.settings.sentenceTTSProvider != .apple && model.settings.sentenceTTSProvider != .google {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text(L("English Accent"))

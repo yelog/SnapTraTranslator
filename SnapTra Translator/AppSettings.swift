@@ -133,6 +133,8 @@ enum AppSettingKey {
     static let continuousTranslation = "continuousTranslation"
     static let lastScreenRecordingStatus = "lastScreenRecordingStatus"
     static let ttsProvider = "ttsProvider"
+    static let wordTTSProvider = "wordTTSProvider"
+    static let sentenceTTSProvider = "sentenceTTSProvider"
     static let appLanguage = "appLanguage"
     static let englishAccent = "englishAccent"
     static let sentenceTranslationEnabled = "sentenceTranslationEnabled"

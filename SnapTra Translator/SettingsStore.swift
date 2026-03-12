@@ -98,8 +98,11 @@ final class SettingsStore: ObservableObject {
             saveSentenceTranslationSources()
         }
     }
-    @Published var ttsProvider: TTSProvider {
-        didSet { defaults.set(ttsProvider.rawValue, forKey: AppSettingKey.ttsProvider) }
+    @Published var wordTTSProvider: TTSProvider {
+        didSet { defaults.set(wordTTSProvider.rawValue, forKey: AppSettingKey.wordTTSProvider) }
+    }
+    @Published var sentenceTTSProvider: TTSProvider {
+        didSet { defaults.set(sentenceTTSProvider.rawValue, forKey: AppSettingKey.sentenceTTSProvider) }
     }
     @Published var appLanguage: AppLanguage {
         didSet {
@@ -158,10 +161,27 @@ final class SettingsStore: ObservableObject {
         // Load sentence translation sources
         sentenceTranslationSources = Self.loadOrMigrateSentenceTranslationSources(defaults: defaults)
 
-        // Load TTS provider (migrate removed "edge" → "bing")
-        var ttsProviderValue = defaults.string(forKey: AppSettingKey.ttsProvider)
-        if ttsProviderValue == "edge" { ttsProviderValue = "bing" }
-        ttsProvider = TTSProvider(rawValue: ttsProviderValue ?? "apple") ?? .apple
+        // Load TTS providers with migration from old single ttsProvider
+        let hasOldTTSKey = defaults.object(forKey: AppSettingKey.ttsProvider) != nil
+        let hasNewTTSKeys = defaults.object(forKey: AppSettingKey.wordTTSProvider) != nil
+            || defaults.object(forKey: AppSettingKey.sentenceTTSProvider) != nil
+
+        if hasOldTTSKey && !hasNewTTSKeys {
+            // Migrate from old single ttsProvider to two separate providers
+            var oldProvider = defaults.string(forKey: AppSettingKey.ttsProvider)
+            if oldProvider == "edge" { oldProvider = "bing" }
+            let provider = TTSProvider(rawValue: oldProvider ?? "apple") ?? .apple
+            wordTTSProvider = provider
+            sentenceTTSProvider = provider
+        } else {
+            var wordProviderValue = defaults.string(forKey: AppSettingKey.wordTTSProvider)
+            if wordProviderValue == "edge" { wordProviderValue = "bing" }
+            wordTTSProvider = TTSProvider(rawValue: wordProviderValue ?? "apple") ?? .apple
+
+            var sentenceProviderValue = defaults.string(forKey: AppSettingKey.sentenceTTSProvider)
+            if sentenceProviderValue == "edge" { sentenceProviderValue = "bing" }
+            sentenceTTSProvider = TTSProvider(rawValue: sentenceProviderValue ?? "apple") ?? .apple
+        }
         
         // Load app language
         let appLanguageValue = defaults.string(forKey: AppSettingKey.appLanguage)
