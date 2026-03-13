@@ -188,10 +188,6 @@ struct SentenceServiceRow: View {
             Image("TTSYoudao")
                 .resizable()
                 .interpolation(.high)
-        case .deepl:
-            Image(systemName: "diamond.fill")
-                .font(.system(size: 15))
-                .foregroundStyle(Color(red: 0.05, green: 0.24, blue: 0.63))
         }
     }
 
@@ -265,8 +261,6 @@ struct SentenceServiceRow: View {
             return L("Bing Translate")
         case .youdao:
             return L("Youdao Translate")
-        case .deepl:
-            return L("DeepL Translate")
         }
     }
 
@@ -281,8 +275,6 @@ struct SentenceServiceRow: View {
             return L("Bing web translation")
         case .youdao:
             return L("Youdao web translation")
-        case .deepl:
-            return L("DeepL web translation")
         }
     }
 }

@@ -14,7 +14,6 @@ struct SentenceTranslationSource: Identifiable, Codable, Equatable {
         case google
         case bing
         case youdao
-        case deepl
     }
 
     var displayName: String {
@@ -41,8 +40,6 @@ extension SentenceTranslationSource.SourceType {
             return String(localized: "Bing Translate")
         case .youdao:
             return String(localized: "Youdao Translate")
-        case .deepl:
-            return String(localized: "DeepL Translate")
         }
     }
 
@@ -56,8 +53,6 @@ extension SentenceTranslationSource.SourceType {
             return String(localized: "Bing web translation")
         case .youdao:
             return String(localized: "Youdao web translation")
-        case .deepl:
-            return String(localized: "DeepL web translation")
         }
     }
 }
@@ -340,7 +335,6 @@ final class SettingsStore: ObservableObject {
             SentenceTranslationSource(id: UUID(), type: .google, isEnabled: false),
             SentenceTranslationSource(id: UUID(), type: .bing, isEnabled: false),
             SentenceTranslationSource(id: UUID(), type: .youdao, isEnabled: false),
-            SentenceTranslationSource(id: UUID(), type: .deepl, isEnabled: false),
         ]
     }
 

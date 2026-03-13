@@ -37,7 +37,7 @@ final class SentenceLatencyTester: ObservableObject {
         isTesting = true
         defer { isTesting = false }
 
-        let testTypes: [SentenceTranslationSource.SourceType] = [.google, .bing, .youdao, .deepl]
+        let testTypes: [SentenceTranslationSource.SourceType] = [.google, .bing, .youdao]
 
         // Reset to testing state
         for type in testTypes {
@@ -60,7 +60,7 @@ final class SentenceLatencyTester: ObservableObject {
         switch type {
         case .native:
             return .local
-        case .google, .bing, .youdao, .deepl:
+        case .google, .bing, .youdao:
             return await testThirdPartyService(type: type)
         }
     }
