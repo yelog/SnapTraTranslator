@@ -11,8 +11,7 @@ import SwiftUI
 
 private func appVersionString() -> String {
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
-    let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
-    return "v\(version) (\(build))"
+    return "v\(version)"
 }
 
 private func openAppStore() {
