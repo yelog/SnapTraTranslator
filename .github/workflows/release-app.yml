@@ -1,0 +1,172 @@
+name: release-app
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v1.0.0)"
+        required: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode 16.2
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Import signing certificate
+        env:
+          CERTIFICATE_P12_BASE64: ${{ secrets.CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$CERTIFICATE_P12_BASE64" | base64 --decode > /tmp/certificate.p12
+
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import /tmp/certificate.p12 \
+            -P "$CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          rm -f /tmp/certificate.p12
+
+      - name: Build, sign, and package
+        env:
+          VERSION: ${{ steps.version.outputs.tag }}
+          CODESIGN_ENABLED: "1"
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: bash scripts/build/package-app.sh
+
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH"
+          fi
+
+      - name: Determine release type
+        id: release_type
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          
+          # 判断是否 pre-release (包含 beta, alpha, rc 的 tag)
+          PRERELEASE="false"
+          if [[ "$TAG" =~ -(beta|alpha|rc)\.[0-9]+$ ]]; then
+            PRERELEASE="true"
+            echo "Detected pre-release tag: $TAG"
+          fi
+          
+          echo "is_prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "Release type: $PRERELEASE (tag: $TAG)"
+
+      - name: Extract changelog for release notes
+        id: extract_changelog
+        run: |
+          VERSION="${{ steps.version.outputs.tag }}"
+          VERSION="${VERSION#v}"
+
+          # Extract changelog entry from CHANGELOG.md
+          changelog_body=$(python3 << PYTHON
+          import re
+
+          try:
+              with open('CHANGELOG.md', 'r', encoding='utf-8') as f:
+                  content = f.read()
+          except Exception:
+              print("")
+              exit(0)
+
+          # Find version section: ## [x.x.x] - YYYY-MM-DD
+          pattern = rf'## \[{re.escape("$VERSION")}\] - \d{{4}}-\d{{2}}-\d{{2}}\n(.*?)(?=\n## \[|$)'
+          match = re.search(pattern, content, re.DOTALL)
+          if not match:
+              print("")
+              exit(0)
+
+          section = match.group(1).strip()
+          if not section:
+              print("")
+              exit(0)
+
+          # Convert to markdown format
+          lines = []
+          for line in section.split('\n'):
+              line = line.strip()
+              if line:
+                  lines.append(line)
+
+          print('\n'.join(lines))
+          PYTHON
+          )
+
+          # Save to file for multi-line output
+          echo "$changelog_body" > /tmp/release_notes.md
+          echo "Extracted changelog:"
+          cat /tmp/release_notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          DMG_PATH="dist/SnapTra-Translator-${TAG#v}.dmg"
+          SHA_PATH="${DMG_PATH}.sha256"
+
+          PRERELEASE_FLAG=""
+          if [ "${{ steps.release_type.outputs.is_prerelease }}" == "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          # Check if we have custom release notes
+          if [ -s /tmp/release_notes.md ]; then
+            echo "Using changelog from CHANGELOG.md"
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file /tmp/release_notes.md \
+              $PRERELEASE_FLAG \
+              "$DMG_PATH" \
+              "$SHA_PATH"
+          else
+            echo "Using auto-generated notes"
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes \
+              $PRERELEASE_FLAG \
+              "$DMG_PATH" \
+              "$SHA_PATH"
+          fi
