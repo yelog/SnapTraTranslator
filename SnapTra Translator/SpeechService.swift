@@ -9,6 +9,7 @@ final class SpeechService {
     private var audioPlayer: AVAudioPlayer?
     private let ttsServiceFactory = TTSServiceFactory()
     private let logger = Logger(subsystem: "com.yelog.SnapTra-Translator", category: "SpeechService")
+    private var isCancelled = false
     
     func speak(
         _ text: String,
@@ -18,8 +19,8 @@ final class SpeechService {
     ) {
         logger.info("🔊 Speaking with provider: \(provider.rawValue), text: \(text)")
         
-        // Stop current playback
         stopSpeaking()
+        isCancelled = false
         
         switch provider {
         case .apple:
@@ -39,6 +40,7 @@ final class SpeechService {
     }
     
     func stopSpeaking() {
+        isCancelled = true
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
@@ -109,7 +111,8 @@ final class SpeechService {
             #endif
             
             try await MainActor.run {
-                // Analyze audio data
+                guard !self.isCancelled else { return }
+                
                 self.analyzeAudioData(audioData, provider: provider)
                 
                 do {
