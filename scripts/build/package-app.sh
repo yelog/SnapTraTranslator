@@ -20,12 +20,15 @@ rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
 
 # Step 2: Build Release version
+# Disable code signing during build - we'll sign with Developer ID after build
 echo "==> Building with xcodebuild"
 xcodebuild -project "$PROJECT" \
     -scheme "$SCHEME" \
     -configuration Release \
     -destination "platform=macOS" \
     -derivedDataPath "$DIST_DIR/DerivedData" \
+    CODE_SIGN_IDENTITY=- \
+    CODE_SIGNING_REQUIRED=NO \
     clean build
 
 # Step 3: Locate the built app
