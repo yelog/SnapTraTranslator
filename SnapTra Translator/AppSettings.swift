@@ -138,6 +138,8 @@ enum AppSettingKey {
     static let appLanguage = "appLanguage"
     static let englishAccent = "englishAccent"
     static let sentenceTranslationEnabled = "sentenceTranslationEnabled"
+    static let autoCheckUpdates = "autoCheckUpdates"
+    static let updateChannel = "updateChannel"
 }
 
 enum EnglishAccent: String, CaseIterable, Identifiable {
@@ -157,5 +159,30 @@ enum EnglishAccent: String, CaseIterable, Identifiable {
     
     var isAmerican: Bool {
         self == .american
+    }
+}
+
+enum UpdateChannel: String, CaseIterable, Identifiable {
+    case stable
+    case beta
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .stable:
+            return L("Stable")
+        case .beta:
+            return L("Beta")
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .stable:
+            return L("Receive stable releases only")
+        case .beta:
+            return L("Receive beta releases for early access to new features")
+        }
     }
 }

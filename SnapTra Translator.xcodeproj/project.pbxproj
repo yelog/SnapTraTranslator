@@ -132,6 +132,9 @@
 				D3F4D9002F14D1A2004035A9 /* SnapTra Translator */,
 			);
 			name = "SnapTra Translator";
+			packageProductDependencies = (
+				E1SPARKLE000000000000002 /* Sparkle */,
+			);
 			productName = "Snap Translate";
 			productReference = D3F4D8FE2F14D1A2004035A9 /* SnapTra Translator.app */;
 			productType = "com.apple.product-type.application";
@@ -182,6 +185,9 @@
 			);
 			mainGroup = D3F4D8F52F14D1A2004035A9;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				E1SPARKLE000000000000001 /* XCRemoteSwiftPackageReference "https://github.com/sparkle-project/Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D3F4D8FF2F14D1A2004035A9 /* Products */;
 			projectDirPath = "";
@@ -502,6 +508,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		E1SPARKLE000000000000001 /* XCRemoteSwiftPackageReference */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.6.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E1SPARKLE000000000000002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E1SPARKLE000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = D3F4D8F62F14D1A2004035A9 /* Project object */;
 }

@@ -110,6 +110,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // Initialize localization manager with saved language
         LocalizationManager.shared.setLanguage(model.settings.appLanguage)
 
+        // Initialize Sparkle auto-updater
+        UpdateChecker.shared.initialize()
+        UpdateChecker.shared.startAutoCheckIfNeeded()
+
         Task {
             await refreshAndUpdateVisibility()
         }
@@ -238,7 +242,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         )
         aboutItem.target = self
         menu.addItem(aboutItem)
-        
+
+        // Check for Updates
+        let checkUpdatesItem = NSMenuItem(
+            title: L("Check for Updates..."),
+            action: #selector(checkForUpdates),
+            keyEquivalent: ""
+        )
+        checkUpdatesItem.target = self
+        menu.addItem(checkUpdatesItem)
+
         // Quit
         let quitItem = NSMenuItem(
             title: L("Quit"),
@@ -324,6 +337,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     @MainActor @objc private func toggleContinuousTranslation() {
         model.settings.continuousTranslation.toggle()
+    }
+
+    @objc private func checkForUpdates() {
+        UpdateChecker.shared.checkForUpdatesWithUI()
     }
 
     @objc private func quitApp() {

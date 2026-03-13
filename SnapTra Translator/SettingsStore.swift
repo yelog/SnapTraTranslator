@@ -59,6 +59,8 @@ extension SentenceTranslationSource.SourceType {
 
 @MainActor
 final class SettingsStore: ObservableObject {
+    static let shared = SettingsStore()
+
     @Published var playWordPronunciation: Bool {
         didSet { defaults.set(playWordPronunciation, forKey: AppSettingKey.playWordPronunciation) }
     }
@@ -110,6 +112,17 @@ final class SettingsStore: ObservableObject {
     }
     @Published var sentenceTranslationEnabled: Bool {
         didSet { defaults.set(sentenceTranslationEnabled, forKey: AppSettingKey.sentenceTranslationEnabled) }
+    }
+    @Published var autoCheckUpdates: Bool {
+        didSet {
+            defaults.set(autoCheckUpdates, forKey: AppSettingKey.autoCheckUpdates)
+        }
+    }
+    @Published var updateChannel: UpdateChannel {
+        didSet {
+            defaults.set(updateChannel.rawValue, forKey: AppSettingKey.updateChannel)
+            UpdateChecker.shared.updateFeedURL()
+        }
     }
 
     private let defaults: UserDefaults
@@ -189,6 +202,13 @@ final class SettingsStore: ObservableObject {
         // Load sentence translation enabled (default to true for backward compatibility)
         let sentenceTranslationEnabledValue = defaults.object(forKey: AppSettingKey.sentenceTranslationEnabled) as? Bool
         sentenceTranslationEnabled = sentenceTranslationEnabledValue ?? true
+
+        // Load auto update settings
+        let autoCheckUpdatesValue = defaults.object(forKey: AppSettingKey.autoCheckUpdates) as? Bool
+        autoCheckUpdates = autoCheckUpdatesValue ?? true
+
+        let updateChannelValue = defaults.string(forKey: AppSettingKey.updateChannel)
+        updateChannel = UpdateChannel(rawValue: updateChannelValue ?? "stable") ?? .stable
     }
 
     private static func loadOrMigrateDictionarySources(defaults: UserDefaults) -> [DictionarySource] {
