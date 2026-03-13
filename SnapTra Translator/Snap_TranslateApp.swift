@@ -31,7 +31,7 @@ struct Snap_TranslateApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     private let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-    private lazy var model = AppModel()
+    @MainActor private lazy var model = AppModel()
     private var cancellables = Set<AnyCancellable>()
     private var statusItem: NSStatusItem?
     private var settingsWindowController: SettingsWindowController?
@@ -85,7 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             .combineLatest(model.settings.$wordTTSProvider)
             .combineLatest(model.settings.$sentenceTTSProvider)
             .sink { [weak self] _ in
-                self?.updateDynamicMenuItems()
+                Task { @MainActor in
+                    self?.updateDynamicMenuItems()
+                }
             }
             .store(in: &cancellables)
 
@@ -99,7 +101,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // Listen for language changes to update menu
         NotificationCenter.default.publisher(for: .languageChanged)
             .sink { [weak self] _ in
-                self?.updateMenuLanguage()
+                Task { @MainActor in
+                    self?.updateMenuLanguage()
+                }
             }
             .store(in: &cancellables)
 
@@ -137,7 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         isManualWindowOpen = true
     }
 
-    private func configureStatusItem() {
+    @MainActor private func configureStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         if let button = item.button {
@@ -155,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         statusItem = item
     }
 
-    private func createStatusBarMenu() -> NSMenu {
+    @MainActor private func createStatusBarMenu() -> NSMenu {
         let menu = NSMenu()
         menu.delegate = self
         
@@ -265,7 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         return item
     }
 
-    private func updateDynamicMenuItems() {
+    @MainActor private func updateDynamicMenuItems() {
         // Update pronunciation submenu item states
         wordPronunciationMenuItem?.state = model.settings.playWordPronunciation ? .on : .off
         sentencePronunciationMenuItem?.state = model.settings.playSentencePronunciation ? .on : .off
@@ -291,7 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         )
     }
 
-    private func updateMenuLanguage() {
+    @MainActor private func updateMenuLanguage() {
         // Recreate menu with new language
         if let item = statusItem {
             let menu = createStatusBarMenu()
@@ -301,7 +305,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     // MARK: - NSMenuDelegate
 
-    func menuWillOpen(_ menu: NSMenu) {
+    @MainActor func menuWillOpen(_ menu: NSMenu) {
         // Update menu item states before showing
         updateDynamicMenuItems()
     }
@@ -326,11 +330,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         NSApp.terminate(nil)
     }
 
-    @objc private func openAbout() {
+    @MainActor @objc private func openAbout() {
         openSettings(initialTab: .about)
     }
 
-    @objc func openSettingsWindow() {
+    @MainActor @objc func openSettingsWindow() {
         openSettings(initialTab: .general)
     }
 
