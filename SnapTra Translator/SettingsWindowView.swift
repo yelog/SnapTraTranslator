@@ -11,8 +11,7 @@ import Translation
 
 enum SettingsTab: String, CaseIterable {
     case general = "General"
-    case dictionary = "Dictionary"
-    case sentence = "Sentence"
+    case service = "Service"
     case about = "About"
 }
 
@@ -22,21 +21,17 @@ extension Notification.Name {
 
 enum SettingsWindowLayout {
     static let defaultContentWidth: CGFloat = 470
-    static let dictionaryContentWidth: CGFloat = 986
-    static let sentenceContentWidth: CGFloat = 450
+    static let dictionaryContentWidth: CGFloat = 650
     static let generalContentHeight: CGFloat = 620
     static let dictionaryContentHeight: CGFloat = 550
-    static let sentenceContentHeight: CGFloat = 580
     static let aboutContentHeight: CGFloat = 520
     static let outerPadding: CGFloat = 16
     static let animationDuration: TimeInterval = 0.24
 
     static func contentWidth(for tab: SettingsTab) -> CGFloat {
         switch tab {
-        case .dictionary:
+        case .service:
             return dictionaryContentWidth
-        case .sentence:
-            return sentenceContentWidth
         default:
             return defaultContentWidth
         }
@@ -46,10 +41,8 @@ enum SettingsWindowLayout {
         switch tab {
         case .general:
             return generalContentHeight
-        case .dictionary:
+        case .service:
             return dictionaryContentHeight
-        case .sentence:
-            return sentenceContentHeight
         case .about:
             return aboutContentHeight
         }
@@ -91,17 +84,9 @@ struct SettingsWindowView: View {
                 hidesScrollIndicator: hidesTabScrollIndicator
             )
                 .tabItem {
-                    Label(L("Dictionary"), systemImage: "books.vertical")
+                    Label(L("Service"), systemImage: "square.grid.2x2")
                 }
-                .tag(SettingsTab.dictionary)
-
-            SentenceSettingsView(
-                hidesScrollIndicator: hidesTabScrollIndicator
-            )
-                .tabItem {
-                    Label(L("Sentence"), systemImage: "text.bubble")
-                }
-                .tag(SettingsTab.sentence)
+                .tag(SettingsTab.service)
 
             AboutSettingsView(
                 hidesScrollIndicator: hidesTabScrollIndicator

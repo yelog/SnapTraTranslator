@@ -249,27 +249,41 @@ struct DictionarySettingsView: View {
     @State private var hasTestedTTS = false
     @State private var hasTestedDictionaries = false
     @State private var hasTestedSentence = false
+    @State private var selectedTab: DictionaryTab = .dictionary
     var hidesScrollIndicator: Bool = false
 
-    var body: some View {
-        ScrollView {
-            HStack(alignment: .top, spacing: 20) {
-                dictionarySection
-                    .frame(maxWidth: .infinity)
+    enum DictionaryTab: String, CaseIterable {
+        case dictionary
+        case sentence
+        case pronunciation
 
-                ttsSection
-                    .frame(maxWidth: .infinity)
-
-                sentenceTranslationSection
-                    .frame(maxWidth: .infinity)
+        var title: String {
+            switch self {
+            case .dictionary: return L("Dictionary")
+            case .sentence: return L("Sentence")
+            case .pronunciation: return L("Pronunciation")
             }
-            .background(
-                ScrollViewScrollerConfigurator(
-                    hidesVerticalScroller: hidesScrollIndicator
-                )
-            )
         }
-        .scrollIndicators(hidesScrollIndicator ? .hidden : .automatic, axes: .vertical)
+
+        var icon: String {
+            switch self {
+            case .dictionary: return "books.vertical"
+            case .sentence: return "text.bubble"
+            case .pronunciation: return "speaker.wave.2"
+            }
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            leftSidebar
+                .frame(width: 160)
+
+            Divider()
+
+            rightContent
+                .frame(maxWidth: .infinity)
+        }
         .onAppear {
             loadSources()
             loadSentenceSources()
@@ -286,6 +300,65 @@ struct DictionarySettingsView: View {
                 Task { await sentenceLatencyTester.testAll() }
             }
         }
+    }
+
+    private var leftSidebar: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            sidebarButton(for: .dictionary)
+            sidebarButton(for: .sentence)
+            sidebarButton(for: .pronunciation)
+            Spacer()
+        }
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+    }
+
+    private func sidebarButton(for tab: DictionaryTab) -> some View {
+        let isSelected = selectedTab == tab
+        return Button {
+            selectedTab = tab
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: tab.icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 20)
+                Text(tab.title)
+                    .font(.system(size: 13, weight: .medium))
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+    }
+
+    @ViewBuilder
+    private var rightContent: some View {
+        ScrollView {
+            Group {
+                switch selectedTab {
+                case .dictionary:
+                    dictionarySection
+                case .sentence:
+                    sentenceTranslationSection
+                case .pronunciation:
+                    ttsSection
+                }
+            }
+            .padding()
+            .background(
+                ScrollViewScrollerConfigurator(
+                    hidesVerticalScroller: hidesScrollIndicator
+                )
+            )
+        }
+        .scrollIndicators(hidesScrollIndicator ? .hidden : .automatic, axes: .vertical)
     }
     
     private var dictionarySection: some View {
