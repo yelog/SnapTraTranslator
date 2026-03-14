@@ -9,6 +9,8 @@ BUNDLE_ID="com.yelog.snaptra-translator"
 SCHEME="SnapTra Translator"
 PROJECT="$REPO_ROOT/SnapTra Translator.xcodeproj"
 
+source "$SCRIPT_DIR/sparkle-release-utils.sh"
+
 # Determine version from git tag, fallback to "0.0.0-dev"
 VERSION="${VERSION:-$(git -C "$REPO_ROOT" describe --tags --abbrev=0 2>/dev/null || echo "0.0.0-dev")}"
 VERSION="${VERSION#v}"  # strip leading 'v'
@@ -42,8 +44,13 @@ fi
 
 echo "==> Built app found at $APP_PATH"
 
-# Step 4: Add distribution channel marker for GitHub releases
+# Step 4: Inject GitHub release metadata before signing
 if [ "${DISTRIBUTION_CHANNEL:-}" = "github" ]; then
+    SPARKLE_VERSION="$(compute_sparkle_version "$VERSION")"
+    echo "==> Setting Sparkle bundle version to $SPARKLE_VERSION for GitHub distribution"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $SPARKLE_VERSION" "$APP_PATH/Contents/Info.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $SPARKLE_VERSION" "$APP_PATH/Contents/Info.plist"
+
     echo "==> Adding GitHub distribution marker to Info.plist"
     /usr/libexec/PlistBuddy -c "Add :DISTRIBUTION_CHANNEL string 'github'" "$APP_PATH/Contents/Info.plist" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c "Set :DISTRIBUTION_CHANNEL 'github'" "$APP_PATH/Contents/Info.plist"

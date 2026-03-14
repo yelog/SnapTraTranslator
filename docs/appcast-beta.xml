@@ -2,7 +2,7 @@
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
         <title>SnapTra Translator Beta Changelog</title>
-        <link>https://yelog.github.io/SnapTraTranslator/appcast-beta.xml</link>
+        <link>https://snaptra.yelog.org/appcast-beta.xml</link>
         <description>Beta releases for early access to new features.</description>
         <language>en</language>
         <sparkle:edPublicKey>OJo/oEqSjtmok1HYx+XgFHLq1FkUAJs8hsDms0+Uv98=</sparkle:edPublicKey>

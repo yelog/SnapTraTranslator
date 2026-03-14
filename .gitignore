@@ -6,6 +6,8 @@
 
 # Xcode
 build/
+!scripts/build/
+!scripts/build/*.sh
 DerivedData/
 *.pbxuser
 !default.pbxuser

@@ -125,9 +125,9 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
         let url: String
         switch channel {
         case .stable:
-            url = "https://yelog.github.io/SnapTraTranslator/appcast.xml"
+            url = "https://snaptra.yelog.org/appcast.xml"
         case .beta:
-            url = "https://yelog.github.io/SnapTraTranslator/appcast-beta.xml"
+            url = "https://snaptra.yelog.org/appcast-beta.xml"
         }
         print("[UpdateChecker] Using feed URL for channel '\(channel)': \(url)")
         return url

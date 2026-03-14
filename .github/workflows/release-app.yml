@@ -87,13 +87,14 @@ jobs:
         id: release_type
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          
+          source scripts/build/sparkle-release-utils.sh
+
           PRERELEASE="false"
-          if [[ "$TAG" =~ -(beta|alpha|rc)\.[0-9]+$ ]]; then
+          if is_prerelease_version "$TAG"; then
             PRERELEASE="true"
             echo "Detected pre-release tag: $TAG"
           fi
-          
+
           echo "is_prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
           echo "Release type: $PRERELEASE (tag: $TAG)"
 
@@ -123,36 +124,12 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           DMG_PATH="dist/SnapTra-Translator-${TAG#v}.dmg"
           VERSION="${TAG#v}"
+          source scripts/build/sparkle-release-utils.sh
 
           FILE_SIZE=$(stat -f%z "$DMG_PATH")
           SIGNATURE=$(cat "${DMG_PATH}.sparkle-signature")
-
-          BASE_VERSION=$(echo "$VERSION" | sed -E 's/([0-9]+)\.([0-9]+)\.([0-9]+).*/\1\2\3/')
-
-          if [[ "$VERSION" =~ -(alpha|beta|rc)\.?([0-9]+) ]]; then
-            PRERELEASE_TYPE="${BASH_REMATCH[1]}"
-            PRERELEASE_NUM="${BASH_REMATCH[2]:-0}"
-            case "$PRERELEASE_TYPE" in
-              alpha) OFFSET=0 ;;
-              beta)  OFFSET=0 ;;
-              rc)    OFFSET=90 ;;
-              *)     OFFSET=0 ;;
-            esac
-            SPARKLE_VERSION="${BASE_VERSION}$(printf "%02d" $((OFFSET + PRERELEASE_NUM)))"
-          else
-            SPARKLE_VERSION="${BASE_VERSION}99"
-          fi
-
-          IS_BETA="false"
-          if [[ "$TAG" =~ -(beta|alpha|rc) ]]; then
-            IS_BETA="true"
-          fi
-
-          if [ "$IS_BETA" == "true" ]; then
-            APPCAST_FILE="docs/appcast-beta.xml"
-          else
-            APPCAST_FILE="docs/appcast.xml"
-          fi
+          SPARKLE_VERSION="$(compute_sparkle_version "$VERSION")"
+          APPCAST_FILE="$(appcast_file_for_version "$VERSION")"
 
           echo "Updating $APPCAST_FILE for version $VERSION (sparkle:version=$SPARKLE_VERSION)"
 
