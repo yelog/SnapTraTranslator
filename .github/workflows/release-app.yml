@@ -257,21 +257,20 @@ jobs:
                       val = val[1:-1]
                   enclosure.set(key, val)
 
-          comment_found = False
+          insert_index = None
+
+          # Find the correct insert position: after sparkle:edPublicKey if it exists
           for i, child in enumerate(channel):
               if isinstance(child, ET.Element):
-                  if i > 0:
-                      prev = channel[i-1]
-                      if hasattr(prev, 'tag') and prev.tag is ET.Comment:
-                          comment_text = str(prev).lower()
-                          if 'latest' in comment_text and ('beta' in comment_text or 'stable' in comment_text or 'release' in comment_text):
-                              channel.insert(i, item)
-                              comment_found = True
-                              break
+                  if child.tag == '{http://www.andymatuschak.org/xml-namespaces/sparkle}edPublicKey':
+                      insert_index = i + 1
+                      break
 
-          if not comment_found:
-              insert_pos = 4
-              channel.insert(insert_pos, item)
+          # If no edPublicKey found, insert after language element (position 4)
+          if insert_index is None:
+              insert_index = 4
+
+          channel.insert(insert_index, item)
 
           tree.write('$APPCAST_FILE', encoding='UTF-8', xml_declaration=True)
 

@@ -5,6 +5,7 @@
         <link>https://yelog.github.io/SnapTraTranslator/appcast-beta.xml</link>
         <description>Beta releases for early access to new features.</description>
         <language>en</language>
+        <sparkle:edPublicKey>OJo/oEqSjtmok1HYx+XgFHLq1FkUAJs8hsDms0+Uv98=</sparkle:edPublicKey>
         <item>
             <title>Version 1.3.4-beta.0</title>
             <pubDate>Sat, 14 Mar 2026 02:50:51 +0000</pubDate>
@@ -14,9 +15,5 @@
             <description>&lt;h2&gt;SnapTra Translator 1.3.4-beta.0&lt;/h2&gt;&lt;h4&gt;Added&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;add update channel selector for GitHub releases&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Fixed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;correct distribution channel detection logic&lt;/li&gt;&lt;/ul&gt;</description>
             <enclosure url="https://github.com/yelog/SnapTraTranslator/releases/download/v1.3.4-beta.0/SnapTra-Translator-1.3.4-beta.0.dmg" length="5011035" type="application/octet-stream" sparkle:edSignature="7jIsClqaghuu53iTk4Y24AeKYRtJeJ0aitcjOUicMDaxT80KXEDOwg0O5ttcTU8oz6P8P2FtaDix0TghJZnyAg==" />
         </item>
-            <sparkle:edPublicKey>OJo/oEqSjtmok1HYx+XgFHLq1FkUAJs8hsDms0+Uv98=</sparkle:edPublicKey>
-
-        
-
     </channel>
 </rss>
