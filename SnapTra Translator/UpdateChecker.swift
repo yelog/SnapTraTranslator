@@ -106,8 +106,7 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
     // MARK: - App Store
 
     private func openAppStore() {
-        let appStoreID = "6739151165"
-        if let url = URL(string: "macappstore://apps.apple.com/app/id\(appStoreID)") {
+        if let url = URL(string: "https://apps.apple.com/cn/app/snaptra-translator/id6757981764") {
             NSWorkspace.shared.open(url)
         }
     }
