@@ -5,7 +5,16 @@
         <link>https://yelog.github.io/SnapTraTranslator/appcast.xml</link>
         <description>Most recent changes with links to updates.</description>
         <language>en</language>
-        <sparkle:edPublicKey>OJo/oEqSjtmok1HYx+XgFHLq1FkUAJs8hsDms0+Uv98=</sparkle:edPublicKey>
+        <item>
+            <title>Version 1.3.3</title>
+            <pubDate>Sat, 14 Mar 2026 02:06:53 +0000</pubDate>
+            <sparkle:version>13399</sparkle:version>
+            <sparkle:shortVersionString>1.3.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description>&lt;h2&gt;SnapTra Translator 1.3.3&lt;/h2&gt;&lt;h4&gt;Added&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;integrate Sparkle for automatic in-app updates&lt;/li&gt;&lt;li&gt;support different update channels for GitHub vs App Store&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Fixed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;correct App Store URL and ID for update check&lt;/li&gt;&lt;/ul&gt;</description>
+            <enclosure url="https://github.com/yelog/SnapTraTranslator/releases/download/v1.3.3/SnapTra-Translator-1.3.3.dmg" length="5001393" type="application/octet-stream" sparkle:edSignature="xXhfi5Y60WTRD94Winxr3XQrYgL+ZHQjOtA7/z/bzgeTtQYGdJ2UyFvvSXLruCMZX3LTeTwl42saqbpqDrVCBQ==" />
+        </item>
+            <sparkle:edPublicKey>OJo/oEqSjtmok1HYx+XgFHLq1FkUAJs8hsDms0+Uv98=</sparkle:edPublicKey>
 
         
 
