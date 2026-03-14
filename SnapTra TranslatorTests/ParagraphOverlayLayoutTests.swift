@@ -78,4 +78,59 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         XCTAssertEqual(style.firstLineHeadIndent, 0, accuracy: 0.001)
         XCTAssertEqual(style.headIndent, 0, accuracy: 0.001)
     }
+
+    func testParagraphFontSizingUsesActualContainerWidth() {
+        let sample = ParagraphFontSizingSample(
+            text: "• Instant OCR translation - Captures screen region around cursor and detects the word closest to your pointer",
+            weight: .medium
+        )
+        let measuredWidth = ParagraphFontSizing.maximumLineWidth(
+            for: sample.text,
+            font: .systemFont(ofSize: ParagraphFontSizing.baseFontSize, weight: sample.weight)
+        )
+
+        let narrowFontSize = ParagraphFontSizing.optimalFontSize(
+            for: [sample],
+            containerWidth: 520,
+            horizontalPadding: 18
+        )
+        let wideFontSize = ParagraphFontSizing.optimalFontSize(
+            for: [sample],
+            containerWidth: measuredWidth * 2 + 36,
+            horizontalPadding: 18
+        )
+
+        XCTAssertGreaterThan(wideFontSize, narrowFontSize)
+        XCTAssertGreaterThan(wideFontSize, 20)
+    }
+
+    func testParagraphFontSizingUsesLongestReadyTranslationLine() {
+        let original = ParagraphFontSizingSample(
+            text: "Short source line",
+            weight: .medium
+        )
+        let translation = ParagraphFontSizingSample(
+            text: "Translated output becomes the limiting line because it is substantially longer than the source content",
+            weight: .semibold
+        )
+        let translationWidth = ParagraphFontSizing.maximumLineWidth(
+            for: translation.text,
+            font: .systemFont(ofSize: ParagraphFontSizing.baseFontSize, weight: translation.weight)
+        )
+        let containerWidth = translationWidth + 36
+
+        let originalOnlyFontSize = ParagraphFontSizing.optimalFontSize(
+            for: [original],
+            containerWidth: containerWidth,
+            horizontalPadding: 18
+        )
+        let sharedFontSize = ParagraphFontSizing.optimalFontSize(
+            for: [original, translation],
+            containerWidth: containerWidth,
+            horizontalPadding: 18
+        )
+
+        XCTAssertEqual(sharedFontSize, ParagraphFontSizing.baseFontSize, accuracy: 0.25)
+        XCTAssertLessThan(sharedFontSize, originalOnlyFontSize)
+    }
 }

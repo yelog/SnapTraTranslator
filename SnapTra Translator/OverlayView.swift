@@ -16,10 +16,6 @@ struct OverlayView: View {
     private let compactSectionMinHeight: CGFloat = 28
     private let paragraphTextHorizontalPadding: CGFloat = 18
 
-    private static let minParagraphFontSize: CGFloat = 10
-    private static let maxParagraphFontSize: CGFloat = 20
-    private static let baseParagraphFontSize: CGFloat = 13
-
     init(
         paragraphOverlayMaxHeightOverride: CGFloat? = nil,
         paragraphOverlayScrollingEnabledOverride: Bool? = nil
@@ -229,12 +225,11 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func paragraphResultView(content: ParagraphOverlayContent) -> some View {
-        let optimalFontSize: CGFloat = {
-            if let originalText = content.originalText, !originalText.isEmpty {
-                return calculateOptimalFontSize(for: originalText, containerWidth: paragraphOverlayWidth)
-            }
-            return Self.baseParagraphFontSize
-        }()
+        let optimalFontSize = ParagraphFontSizing.optimalFontSize(
+            for: paragraphFontSizingSamples(from: content),
+            containerWidth: overlayWidth,
+            horizontalPadding: paragraphTextHorizontalPadding
+        )
 
         VStack(alignment: .leading, spacing: 0) {
             paragraphTopBar()
@@ -478,32 +473,45 @@ struct OverlayView: View {
         }
     }
 
-    private func calculateOptimalFontSize(
-        for text: String,
-        containerWidth: CGFloat
-    ) -> CGFloat {
-        let lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
-        guard !lines.isEmpty else { return Self.baseParagraphFontSize }
+    private func paragraphFontSizingSamples(
+        from content: ParagraphOverlayContent
+    ) -> [ParagraphFontSizingSample] {
+        var samples: [ParagraphFontSizingSample] = []
 
-        let availableWidth = containerWidth - paragraphTextHorizontalPadding * 2
-        let baseFont = NSFont.systemFont(ofSize: Self.baseParagraphFontSize, weight: .medium)
-
-        var maxLineWidth: CGFloat = 0
-        for line in lines {
-            let attributedString = NSAttributedString(
-                string: line,
-                attributes: [.font: baseFont]
+        if let originalText = content.originalText, !originalText.isEmpty {
+            samples.append(
+                ParagraphFontSizingSample(
+                    text: originalText,
+                    weight: .medium
+                )
             )
-            let textSize = attributedString.size()
-            maxLineWidth = max(maxLineWidth, textSize.width)
         }
 
-        guard maxLineWidth > 0 else { return Self.baseParagraphFontSize }
+        if case .ready(let translatedText) = content.translationState,
+           !translatedText.isEmpty {
+            samples.append(
+                ParagraphFontSizingSample(
+                    text: translatedText,
+                    weight: .semibold
+                )
+            )
+        }
 
-        let scaleFactor = availableWidth / maxLineWidth
-        let optimalSize = Self.baseParagraphFontSize * scaleFactor
+        for result in content.serviceResults {
+            guard case .ready(let translatedText) = result.state,
+                  !translatedText.isEmpty else {
+                continue
+            }
 
-        return min(max(optimalSize, Self.minParagraphFontSize), Self.maxParagraphFontSize)
+            samples.append(
+                ParagraphFontSizingSample(
+                    text: translatedText,
+                    weight: .medium
+                )
+            )
+        }
+
+        return samples
     }
 
     @ViewBuilder
@@ -1120,6 +1128,61 @@ struct LoadingDotsView: View {
         .onAppear {
             animating = true
         }
+    }
+}
+
+struct ParagraphFontSizingSample {
+    let text: String
+    let weight: NSFont.Weight
+}
+
+enum ParagraphFontSizing {
+    static let minFontSize: CGFloat = 10
+    static let maxFontSize: CGFloat = 36
+    static let baseFontSize: CGFloat = 13
+
+    static func optimalFontSize(
+        for samples: [ParagraphFontSizingSample],
+        containerWidth: CGFloat,
+        horizontalPadding: CGFloat
+    ) -> CGFloat {
+        let availableWidth = max(1, containerWidth - horizontalPadding * 2)
+        let maxLineWidth = samples
+            .compactMap { sample -> CGFloat? in
+                let trimmedText = sample.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedText.isEmpty else { return nil }
+
+                let font = NSFont.systemFont(ofSize: baseFontSize, weight: sample.weight)
+                let width = maximumLineWidth(for: trimmedText, font: font)
+                return width > 0 ? width : nil
+            }
+            .max()
+
+        guard let maxLineWidth else {
+            return baseFontSize
+        }
+
+        let scaleFactor = availableWidth / maxLineWidth
+        let optimalSize = baseFontSize * scaleFactor
+        return min(max(optimalSize, minFontSize), maxFontSize)
+    }
+
+    static func maximumLineWidth(
+        for text: String,
+        font: NSFont
+    ) -> CGFloat {
+        ParagraphTextStructure.fromText(text)
+            .blocks
+            .map(\.displayText)
+            .filter { !$0.isEmpty }
+            .map {
+                ceil(
+                    ($0 as NSString).size(
+                        withAttributes: [.font: font]
+                    ).width
+                )
+            }
+            .max() ?? 0
     }
 }
 
