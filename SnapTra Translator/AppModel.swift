@@ -516,22 +516,24 @@ final class AppModel: ObservableObject {
             let enabledSources = settings.dictionarySources.filter(\.isEnabled)
             await withTaskGroup(of: Void.self) { group in
                 if !languagePair.isSameLanguage {
-                    group.addTask { [weak self, translationBridge] in
-                        guard let self else { return }
-                        let translationState = await self.loadPrimaryTranslationState(
-                            word: selected.text,
-                            languagePair: languagePair,
-                            sourceLanguage: sourceLanguage,
-                            targetLanguage: targetLanguage,
-                            translationBridge: translationBridge
-                        )
-                        await self.applyPrimaryTranslationState(
-                            translationState,
-                            lookupID: lookupID,
-                            anchor: mouseLocation
-                        )
+                    if #available(macOS 15.0, *) {
+                        group.addTask { [weak self, translationBridge] in
+                            guard let self else { return }
+                            let translationState = await self.loadPrimaryTranslationState(
+                                word: selected.text,
+                                languagePair: languagePair,
+                                sourceLanguage: sourceLanguage,
+                                targetLanguage: targetLanguage,
+                                translationBridge: translationBridge
+                            )
+                            await self.applyPrimaryTranslationState(
+                                translationState,
+                                lookupID: lookupID,
+                                anchor: mouseLocation
+                            )
+                        }
+                        await Task.yield()
                     }
-                    await Task.yield()
                 }
 
                 for source in enabledSources {

@@ -358,12 +358,21 @@ final class SettingsStore: ObservableObject {
     }
 
     private static func defaultSentenceTranslationSources() -> [SentenceTranslationSource] {
-        [
-            SentenceTranslationSource(id: UUID(), type: .native, isEnabled: true),
-            SentenceTranslationSource(id: UUID(), type: .google, isEnabled: false),
-            SentenceTranslationSource(id: UUID(), type: .bing, isEnabled: false),
-            SentenceTranslationSource(id: UUID(), type: .youdao, isEnabled: false),
-        ]
+        if #available(macOS 15.0, *) {
+            return [
+                SentenceTranslationSource(id: UUID(), type: .native, isEnabled: true),
+                SentenceTranslationSource(id: UUID(), type: .google, isEnabled: false),
+                SentenceTranslationSource(id: UUID(), type: .bing, isEnabled: false),
+                SentenceTranslationSource(id: UUID(), type: .youdao, isEnabled: false),
+            ]
+        } else {
+            return [
+                SentenceTranslationSource(id: UUID(), type: .native, isEnabled: false),
+                SentenceTranslationSource(id: UUID(), type: .google, isEnabled: false),
+                SentenceTranslationSource(id: UUID(), type: .bing, isEnabled: false),
+                SentenceTranslationSource(id: UUID(), type: .youdao, isEnabled: true),
+            ]
+        }
     }
 
     private static func persistSentenceTranslationSources(

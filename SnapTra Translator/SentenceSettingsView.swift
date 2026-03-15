@@ -107,6 +107,16 @@ struct SentenceServiceRow: View {
     var onToggle: () -> Void
     @StateObject private var localizationManager = LocalizationManager.shared
 
+    private var isNativeUnavailable: Bool {
+        if source.isNative {
+            if #available(macOS 15.0, *) {
+                return false
+            }
+            return true
+        }
+        return false
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Top: Drag handle + Icon + Name + Toggle (single row)
@@ -145,12 +155,26 @@ struct SentenceServiceRow: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
+                    .disabled(isNativeUnavailable)
                     .onChange(of: source.isEnabled) { _, _ in
                         onToggle()
                     }
             }
             .padding(.vertical, 8)
             .contentShape(Rectangle())
+
+            // Unavailable warning for native translation on macOS 14
+            if isNativeUnavailable {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.orange)
+                    Text(L("Requires macOS 15 or later"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 4)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -165,7 +189,7 @@ struct SentenceServiceRow: View {
         // Special styling for native translation
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.accentColor.opacity(0.3), lineWidth: source.isNative ? 1.5 : 0)
+                .stroke(Color.accentColor.opacity(isNativeUnavailable ? 0 : 0.3), lineWidth: source.isNative ? 1.5 : 0)
         )
     }
 

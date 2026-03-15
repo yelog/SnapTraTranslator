@@ -827,86 +827,88 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func primaryTranslationSection(content: OverlayContent) -> some View {
-        let targetIsEnglish = model.settings.targetLanguage.hasPrefix("en")
-        let shouldHideReadyTranslation = targetIsEnglish && !content.definitions.isEmpty
+        if #available(macOS 15.0, *) {
+            let targetIsEnglish = model.settings.targetLanguage.hasPrefix("en")
+            let shouldHideReadyTranslation = targetIsEnglish && !content.definitions.isEmpty
 
-        VStack(alignment: .leading, spacing: 0) {
-            switch content.primaryTranslationState {
-            case .loading:
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .scaleEffect(0.85)
-                    Text(L("Translating"))
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                    LoadingDotsView()
-                    Spacer()
-                }
-                .padding(.horizontal, 18)
-                .padding(.bottom, 16)
-
-            case .ready(let translation, _):
-                if !shouldHideReadyTranslation {
+            VStack(alignment: .leading, spacing: 0) {
+                switch content.primaryTranslationState {
+                case .loading:
                     HStack(spacing: 8) {
-                        if !content.definitions.isEmpty {
-                            Text(translation)
-                                .font(.system(size: 17, weight: .medium, design: .rounded))
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: colorScheme == .dark
-                                            ? [
-                                                Color(red: 0.2, green: 0.6, blue: 1.0),
-                                                Color(red: 0.5, green: 0.5, blue: 0.95),
-                                            ]
-                                            : [
-                                                Color(red: 0.1, green: 0.4, blue: 0.85),
-                                                Color(red: 0.35, green: 0.3, blue: 0.8),
-                                            ],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .tracking(0.3)
-
-                            if !model.settings.continuousTranslation {
-                                CopyButton(text: translation)
-                            }
-                        } else {
-                            Text(translation)
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
-                                .foregroundStyle(.primary)
-                                .tracking(0.2)
-
-                            if !model.settings.continuousTranslation {
-                                CopyButton(text: translation)
-                            }
-                        }
-
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.85)
+                        Text(L("Translating"))
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        LoadingDotsView()
                         Spacer()
                     }
                     .padding(.horizontal, 18)
-                    .padding(.bottom, content.definitions.isEmpty ? 16 : 8)
-                }
+                    .padding(.bottom, 16)
 
-            case .empty:
-                EmptyView()
+                case .ready(let translation, _):
+                    if !shouldHideReadyTranslation {
+                        HStack(spacing: 8) {
+                            if !content.definitions.isEmpty {
+                                Text(translation)
+                                    .font(.system(size: 17, weight: .medium, design: .rounded))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: colorScheme == .dark
+                                                ? [
+                                                    Color(red: 0.2, green: 0.6, blue: 1.0),
+                                                    Color(red: 0.5, green: 0.5, blue: 0.95),
+                                                ]
+                                                : [
+                                                    Color(red: 0.1, green: 0.4, blue: 0.85),
+                                                    Color(red: 0.35, green: 0.3, blue: 0.8),
+                                                ],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                                    .tracking(0.3)
 
-            case .failed(let message):
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.circle")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Text(message)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                    Spacer()
+                                if !model.settings.continuousTranslation {
+                                    CopyButton(text: translation)
+                                }
+                            } else {
+                                Text(translation)
+                                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.primary)
+                                    .tracking(0.2)
+
+                                if !model.settings.continuousTranslation {
+                                    CopyButton(text: translation)
+                                }
+                            }
+
+                            Spacer()
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.bottom, content.definitions.isEmpty ? 16 : 8)
+                    }
+
+                case .empty:
+                    EmptyView()
+
+                case .failed(let message):
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.circle")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Text(message)
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 16)
                 }
-                .padding(.horizontal, 18)
-                .padding(.bottom, 16)
             }
+            .frame(maxWidth: .infinity, minHeight: shouldHideReadyTranslation ? 8 : compactSectionMinHeight, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity, minHeight: shouldHideReadyTranslation ? 8 : compactSectionMinHeight, alignment: .topLeading)
     }
 
     @ViewBuilder
