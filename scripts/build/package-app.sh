@@ -54,6 +54,20 @@ if [ "${DISTRIBUTION_CHANNEL:-}" = "github" ]; then
     echo "==> Adding GitHub distribution marker to Info.plist"
     /usr/libexec/PlistBuddy -c "Add :DISTRIBUTION_CHANNEL string 'github'" "$APP_PATH/Contents/Info.plist" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c "Set :DISTRIBUTION_CHANNEL 'github'" "$APP_PATH/Contents/Info.plist"
+
+    echo "==> Validating Sparkle sandbox settings for GitHub distribution"
+    SPARKLE_PUBLIC_KEY=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
+    INSTALLER_LAUNCHER_ENABLED=$(/usr/libexec/PlistBuddy -c "Print :SUEnableInstallerLauncherService" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
+
+    if [ -z "$SPARKLE_PUBLIC_KEY" ]; then
+        echo "ERROR: SUPublicEDKey is missing from $APP_PATH/Contents/Info.plist"
+        exit 1
+    fi
+
+    if [ "$INSTALLER_LAUNCHER_ENABLED" != "true" ]; then
+        echo "ERROR: SUEnableInstallerLauncherService must be true for sandboxed GitHub builds"
+        exit 1
+    fi
 fi
 
 # Step 5: Code sign the .app bundle (CI only, must happen BEFORE creating DMG)

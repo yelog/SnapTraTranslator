@@ -22,6 +22,8 @@ resolve_identity() {
 # Signs the .app bundle (must run BEFORE creating DMG)
 cmd_sign() {
     local APP_DIR="${1:?Usage: $0 sign <path-to-app>}"
+    local bundle_id
+    local expanded_entitlements=""
     resolve_identity
 
     # Sign embedded frameworks first (inside-out order)
@@ -29,7 +31,8 @@ cmd_sign() {
         for framework in "$APP_DIR/Contents/Frameworks"/*.framework; do
             if [ -d "$framework" ]; then
                 echo "==> Signing embedded framework: $(basename "$framework")"
-                codesign --force --deep --options runtime \
+                # Preserve nested helper signatures inside frameworks such as Sparkle.
+                codesign --force --options runtime \
                     --sign "$SIGNING_IDENTITY" \
                     --timestamp \
                     "$framework"
@@ -40,11 +43,17 @@ cmd_sign() {
     # Sign the main app bundle
     echo "==> Signing main app bundle"
     if [ -f "$ENTITLEMENTS" ]; then
+        bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_DIR/Contents/Info.plist")
+        expanded_entitlements="$(mktemp /tmp/snaptra-entitlements.XXXXXX)"
+        sed "s|\$(PRODUCT_BUNDLE_IDENTIFIER)|$bundle_id|g" "$ENTITLEMENTS" > "$expanded_entitlements"
+
         codesign --force --options runtime \
-            --entitlements "$ENTITLEMENTS" \
+            --entitlements "$expanded_entitlements" \
             --sign "$SIGNING_IDENTITY" \
             --timestamp \
             "$APP_DIR"
+
+        rm -f "$expanded_entitlements"
     else
         echo "Warning: Entitlements file not found at $ENTITLEMENTS, signing without entitlements"
         codesign --force --options runtime \

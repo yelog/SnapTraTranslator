@@ -38,9 +38,22 @@
 		E1B333333333333333333333 /* ParagraphOverlayLayoutTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ParagraphOverlayLayoutTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		E1C444444444444444444444 /* Exceptions for "SnapTra Translator" folder in "SnapTra Translator" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = D3F4D8FD2F14D1A2004035A9 /* SnapTra Translator */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D3F4D9002F14D1A2004035A9 /* SnapTra Translator */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E1C444444444444444444444 /* Exceptions for "SnapTra Translator" folder in "SnapTra Translator" target */,
+			);
 			path = "SnapTra Translator";
 			sourceTree = "<group>";
 		};
@@ -413,12 +426,14 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "SnapTra Translator/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "SnapTra Translator";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSScreenCaptureUsageDescription = "SnapTra Translator needs screen recording to detect words under the cursor.";
+				INFOPLIST_KEY_SUEnableInstallerLauncherService = YES;
 				INFOPLIST_KEY_SUPublicEDKey = "OJo/oEqSjtmok1HYx+XgFHLq1FkUAJs8hsDms0+Uv98=";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -453,12 +468,14 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "SnapTra Translator/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "SnapTra Translator";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSScreenCaptureUsageDescription = "SnapTra Translator needs screen recording to detect words under the cursor.";
+				INFOPLIST_KEY_SUEnableInstallerLauncherService = YES;
 				INFOPLIST_KEY_SUPublicEDKey = "OJo/oEqSjtmok1HYx+XgFHLq1FkUAJs8hsDms0+Uv98=";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
