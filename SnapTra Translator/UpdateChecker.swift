@@ -1,14 +1,15 @@
 import AppKit
 import Combine
 import Foundation
+#if DIRECT_DISTRIBUTION
 import Sparkle
+#endif
 
 enum DistributionChannel {
     case github
     case appStore
 
     static var current: DistributionChannel {
-        // Only GitHub Release builds have DISTRIBUTION_CHANNEL set
         if let channel = Bundle.main.infoDictionary?["DISTRIBUTION_CHANNEL"] as? String,
            channel == "github" {
             return .github
@@ -22,21 +23,16 @@ enum DistributionChannel {
 }
 
 @MainActor
-final class UpdateChecker: NSObject, SPUUpdaterDelegate, ObservableObject {
+final class UpdateChecker: NSObject, ObservableObject {
     static let shared = UpdateChecker()
 
-    private var updaterController: SPUStandardUpdaterController?
-    private let checkInterval: TimeInterval = 24 * 60 * 60
-    private let checkTimeout: TimeInterval = 60 // 检查超时时间 60 秒
-    private var autoCheckTimer: Timer?
-    private var checkTimeoutTimer: Timer?
+    let checkInterval: TimeInterval = 24 * 60 * 60
+    let checkTimeout: TimeInterval = 60
 
     @Published var isCheckingForUpdates = false
 
     var isGitHubRelease: Bool {
         #if DEBUG
-        // Debug mode: allow forcing GitHub release mode for testing
-        // 直接从 UserDefaults 读取，确保能获取最新值
         let debugEnabled = UserDefaults.standard.bool(forKey: AppSettingKey.debugShowChannelSelector)
         if debugEnabled {
             return true
@@ -49,34 +45,97 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate, ObservableObject {
         super.init()
     }
 
-    func initialize() {
-        guard updaterController == nil else { return }
+    fileprivate func openAppStore() {
+        if let url = URL(string: "https://apps.apple.com/cn/app/snaptra-translator/id6757981764") {
+            NSWorkspace.shared.open(url)
+        }
+    }
 
-        updaterController = SPUStandardUpdaterController(
+    fileprivate func openGitHubReleases() {
+        let channelValue = UserDefaults.standard.string(forKey: AppSettingKey.updateChannel) ?? "stable"
+        let channel = UpdateChannel(rawValue: channelValue) ?? .stable
+
+        let urlString: String
+        switch channel {
+        case .stable:
+            urlString = "https://github.com/yelog/SnapTraTranslator/releases/latest"
+        case .beta:
+            urlString = "https://github.com/yelog/SnapTraTranslator/releases"
+        }
+
+        if let url = URL(string: urlString) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    fileprivate func showSparkleNotInitializedAlert() {
+        let alert = NSAlert()
+        alert.messageText = L("Update Check Failed")
+        alert.informativeText = L("Auto-updater is not available. Please visit GitHub to download the latest version.")
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: L("Go to GitHub"))
+        alert.addButton(withTitle: L("OK"))
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            openGitHubReleases()
+        }
+    }
+
+    fileprivate func showUpdateFailedAlert(error: Error) {
+        let alert = NSAlert()
+        alert.messageText = L("Update Check Failed")
+        alert.informativeText = "\(L("Auto-update failed. You can download the latest version from GitHub."))\n\n\(L("Error")): \(error.localizedDescription)"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L("Download from GitHub"))
+        alert.addButton(withTitle: L("OK"))
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            openGitHubReleases()
+        }
+    }
+}
+
+#if DIRECT_DISTRIBUTION
+@MainActor
+extension UpdateChecker: SPUUpdaterDelegate {
+    private struct SparkleState {
+        static var updaterController: SPUStandardUpdaterController?
+        static var autoCheckTimer: Timer?
+        static var checkTimeoutTimer: Timer?
+    }
+
+    func initialize() {
+        guard SparkleState.updaterController == nil else { return }
+
+        SparkleState.updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: self,
             userDriverDelegate: nil
         )
 
-        if let updater = updaterController?.updater {
+        if let updater = SparkleState.updaterController?.updater {
             updater.automaticallyChecksForUpdates = SettingsStore.shared.autoCheckUpdates && isGitHubRelease
             updater.updateCheckInterval = checkInterval
         }
     }
 
     func updateFeedURL() {
-        guard let updater = updaterController?.updater else { return }
-        
+        guard let updater = SparkleState.updaterController?.updater else { return }
+
         updater.clearFeedURLFromUserDefaults()
-        
+
         let defaults = UserDefaults.standard
         let sparkleKeys = defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("SU") }
         for key in sparkleKeys {
             defaults.removeObject(forKey: key)
         }
-        
+
         updater.resetUpdateCycle()
-        
+
         print("[UpdateChecker] Feed URL updated, Sparkle cache cleared for channel: \(SettingsStore.shared.updateChannel)")
     }
 
@@ -88,7 +147,7 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate, ObservableObject {
             self?.checkForUpdates(silent: true)
         }
 
-        autoCheckTimer = Timer.scheduledTimer(withTimeInterval: checkInterval, repeats: true) { [weak self] _ in
+        SparkleState.autoCheckTimer = Timer.scheduledTimer(withTimeInterval: checkInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard SettingsStore.shared.autoCheckUpdates else { return }
                 self?.checkForUpdates(silent: true)
@@ -103,7 +162,7 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate, ObservableObject {
         }
 
         if isGitHubRelease {
-            if let controller = updaterController {
+            if let controller = SparkleState.updaterController {
                 if silent {
                     controller.updater.checkForUpdatesInBackground()
                 } else {
@@ -126,7 +185,7 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate, ObservableObject {
         }
 
         if isGitHubRelease {
-            if let controller = updaterController {
+            if let controller = SparkleState.updaterController {
                 startUpdateCheck()
                 controller.checkForUpdates(nil)
             } else {
@@ -137,14 +196,11 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate, ObservableObject {
         }
     }
 
-    // MARK: - Update Check State Management
-
     private func startUpdateCheck() {
         isCheckingForUpdates = true
 
-        // 启动超时计时器，防止用户跳过版本或关闭窗口后状态卡住
-        checkTimeoutTimer?.invalidate()
-        checkTimeoutTimer = Timer.scheduledTimer(withTimeInterval: checkTimeout, repeats: false) { [weak self] _ in
+        SparkleState.checkTimeoutTimer?.invalidate()
+        SparkleState.checkTimeoutTimer = Timer.scheduledTimer(withTimeInterval: checkTimeout, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.resetUpdateCheckState()
                 print("[UpdateChecker] Update check timed out after \(self?.checkTimeout ?? 0)s")
@@ -154,25 +210,14 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate, ObservableObject {
 
     private func resetUpdateCheckState() {
         isCheckingForUpdates = false
-        checkTimeoutTimer?.invalidate()
-        checkTimeoutTimer = nil
+        SparkleState.checkTimeoutTimer?.invalidate()
+        SparkleState.checkTimeoutTimer = nil
     }
-
-    // MARK: - App Store
-
-    private func openAppStore() {
-        if let url = URL(string: "https://apps.apple.com/cn/app/snaptra-translator/id6757981764") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    // MARK: - SPUUpdaterDelegate
 
     func feedURLString(for updater: SPUUpdater) -> String? {
-        // 直接从 UserDefaults 读取，确保获取最新值
         let channelValue = UserDefaults.standard.string(forKey: AppSettingKey.updateChannel) ?? "stable"
         let channel = UpdateChannel(rawValue: channelValue) ?? .stable
-        
+
         let url: String
         switch channel {
         case .stable:
@@ -216,55 +261,27 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate, ObservableObject {
             self.showUpdateFailedAlert(error: error)
         }
     }
+}
+#else
+@MainActor
+extension UpdateChecker {
+    func initialize() {}
 
-    // MARK: - GitHub Releases
+    func updateFeedURL() {}
 
-    private func openGitHubReleases() {
-        let channelValue = UserDefaults.standard.string(forKey: AppSettingKey.updateChannel) ?? "stable"
-        let channel = UpdateChannel(rawValue: channelValue) ?? .stable
+    func startAutoCheckIfNeeded() {}
 
-        let urlString: String
-        switch channel {
-        case .stable:
-            urlString = "https://github.com/yelog/SnapTraTranslator/releases/latest"
-        case .beta:
-            urlString = "https://github.com/yelog/SnapTraTranslator/releases"
-        }
-
-        if let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
-        }
+    func checkForUpdates(silent: Bool = false) {
+        guard !silent else { return }
+        openAppStore()
     }
 
-    // MARK: - Alerts
-
-    private func showSparkleNotInitializedAlert() {
-        let alert = NSAlert()
-        alert.messageText = L("Update Check Failed")
-        alert.informativeText = L("Auto-updater is not available. Please visit GitHub to download the latest version.")
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: L("Go to GitHub"))
-        alert.addButton(withTitle: L("OK"))
-
-        NSApp.activate(ignoringOtherApps: true)
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            openGitHubReleases()
+    func checkForUpdatesWithUI() {
+        guard !isCheckingForUpdates else {
+            print("[UpdateChecker] Update check already in progress, skipping")
+            return
         }
-    }
-
-    private func showUpdateFailedAlert(error: Error) {
-        let alert = NSAlert()
-        alert.messageText = L("Update Check Failed")
-        alert.informativeText = "\(L("Auto-update failed. You can download the latest version from GitHub."))\n\n\(L("Error")): \(error.localizedDescription)"
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: L("Download from GitHub"))
-        alert.addButton(withTitle: L("OK"))
-
-        NSApp.activate(ignoringOtherApps: true)
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            openGitHubReleases()
-        }
+        openAppStore()
     }
 }
+#endif
