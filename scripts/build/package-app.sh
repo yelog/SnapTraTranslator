@@ -6,7 +6,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DIST_DIR="$REPO_ROOT/dist"
 APP_NAME="SnapTra Translator"
 BUNDLE_ID="com.yelog.snaptra-translator"
-SCHEME="SnapTra Translator"
+SCHEME="${SCHEME:-SnapTra Translator Direct}"
 PROJECT="$REPO_ROOT/SnapTra Translator.xcodeproj"
 
 source "$SCRIPT_DIR/sparkle-release-utils.sh"
@@ -44,30 +44,30 @@ fi
 
 echo "==> Built app found at $APP_PATH"
 
-# Step 4: Inject GitHub release metadata before signing
-if [ "${DISTRIBUTION_CHANNEL:-}" = "github" ]; then
-    SPARKLE_VERSION="$(compute_sparkle_version "$VERSION")"
-    echo "==> Setting Sparkle bundle version to $SPARKLE_VERSION for GitHub distribution"
-    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $SPARKLE_VERSION" "$APP_PATH/Contents/Info.plist" 2>/dev/null || \
-    /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $SPARKLE_VERSION" "$APP_PATH/Contents/Info.plist"
+# Step 4: Inject direct-distribution release metadata before signing
+SPARKLE_VERSION="$(compute_sparkle_version "$VERSION")"
+echo "==> Setting Sparkle bundle version to $SPARKLE_VERSION for direct distribution"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $SPARKLE_VERSION" "$APP_PATH/Contents/Info.plist" 2>/dev/null || \
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $SPARKLE_VERSION" "$APP_PATH/Contents/Info.plist"
 
-    echo "==> Adding GitHub distribution marker to Info.plist"
-    /usr/libexec/PlistBuddy -c "Add :DISTRIBUTION_CHANNEL string 'github'" "$APP_PATH/Contents/Info.plist" 2>/dev/null || \
-    /usr/libexec/PlistBuddy -c "Set :DISTRIBUTION_CHANNEL 'github'" "$APP_PATH/Contents/Info.plist"
+echo "==> Validating Sparkle sandbox settings for direct distribution"
+SPARKLE_PUBLIC_KEY=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
+INSTALLER_LAUNCHER_ENABLED=$(/usr/libexec/PlistBuddy -c "Print :SUEnableInstallerLauncherService" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
+DISTRIBUTION_CHANNEL_VALUE=$(/usr/libexec/PlistBuddy -c "Print :DISTRIBUTION_CHANNEL" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
 
-    echo "==> Validating Sparkle sandbox settings for GitHub distribution"
-    SPARKLE_PUBLIC_KEY=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
-    INSTALLER_LAUNCHER_ENABLED=$(/usr/libexec/PlistBuddy -c "Print :SUEnableInstallerLauncherService" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
+if [ -z "$SPARKLE_PUBLIC_KEY" ]; then
+    echo "ERROR: SUPublicEDKey is missing from $APP_PATH/Contents/Info.plist"
+    exit 1
+fi
 
-    if [ -z "$SPARKLE_PUBLIC_KEY" ]; then
-        echo "ERROR: SUPublicEDKey is missing from $APP_PATH/Contents/Info.plist"
-        exit 1
-    fi
+if [ "$INSTALLER_LAUNCHER_ENABLED" != "true" ]; then
+    echo "ERROR: SUEnableInstallerLauncherService must be true for sandboxed direct builds"
+    exit 1
+fi
 
-    if [ "$INSTALLER_LAUNCHER_ENABLED" != "true" ]; then
-        echo "ERROR: SUEnableInstallerLauncherService must be true for sandboxed GitHub builds"
-        exit 1
-    fi
+if [ "$DISTRIBUTION_CHANNEL_VALUE" != "github" ]; then
+    echo "ERROR: DISTRIBUTION_CHANNEL must be 'github' for direct builds"
+    exit 1
 fi
 
 # Step 5: Code sign the .app bundle (CI only, must happen BEFORE creating DMG)
