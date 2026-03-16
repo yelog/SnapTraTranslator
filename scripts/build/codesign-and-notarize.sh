@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ENTITLEMENTS="$REPO_ROOT/SnapTra Translator/Snap Translate.entitlements"
+ENTITLEMENTS="$REPO_ROOT/SnapTra Translator/SnapTra Direct.entitlements"
 
 # ─── Resolve signing identity ───
 resolve_identity() {
