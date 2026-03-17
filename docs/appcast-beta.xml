@@ -7,6 +7,15 @@
         <language>en</language>
         <sparkle:edPublicKey>OJo/oEqSjtmok1HYx+XgFHLq1FkUAJs8hsDms0+Uv98=</sparkle:edPublicKey>
         <item>
+            <title>Version 1.3.5</title>
+            <pubDate>Tue, 17 Mar 2026 01:49:55 +0000</pubDate>
+            <sparkle:version>13599</sparkle:version>
+            <sparkle:shortVersionString>1.3.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description>&lt;h2&gt;SnapTra Translator 1.3.5&lt;/h2&gt;&lt;h4&gt;Added&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;split App Store and direct builds&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Changed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;remove unused online dictionary services&lt;/li&gt;&lt;li&gt;point release scripts at direct scheme&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Fixed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;improve phonetic extraction and validation&lt;/li&gt;&lt;li&gt;cleanup state when double-tap with sentence translation disabled&lt;/li&gt;&lt;li&gt;stabilize short translation overlay sizing&lt;/li&gt;&lt;li&gt;share bundle id across channels&lt;/li&gt;&lt;/ul&gt;</description>
+            <enclosure url="https://github.com/yelog/SnapTraTranslator/releases/download/v1.3.5/SnapTra-Translator-1.3.5.dmg" length="4951444" type="application/octet-stream" sparkle:edSignature="ySwI7Tw27SzZ5GOFYoVGbzFmoienfONRl0WSD2Tcixr6M6L+nsDjvFCWHCYpKmEEbDZWZRStXB0aOUyJuS6FDQ==" />
+        </item>
+        <item>
             <title>Version 1.3.5-beta.2</title>
             <pubDate>Mon, 16 Mar 2026 10:49:11 +0000</pubDate>
             <sparkle:version>13502</sparkle:version>

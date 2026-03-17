@@ -128,9 +128,13 @@ jobs:
           FILE_SIZE=$(stat -f%z "$DMG_PATH")
           SIGNATURE=$(cat "${DMG_PATH}.sparkle-signature")
           SPARKLE_VERSION="$(compute_sparkle_version "$VERSION")"
-          APPCAST_FILE="$(appcast_file_for_version "$VERSION")"
+          APPCAST_FILES="$(appcast_file_for_version "$VERSION")"
 
-          echo "Updating $APPCAST_FILE for version $VERSION (sparkle:version=$SPARKLE_VERSION)"
+          echo "Updating appcast files for version $VERSION (sparkle:version=$SPARKLE_VERSION)"
+          echo "Appcast files: $APPCAST_FILES"
+
+          for APPCAST_FILE in $APPCAST_FILES; do
+            echo "Processing $APPCAST_FILE"
 
           python3 << PYTHON_SCRIPT
           import xml.etree.ElementTree as ET
@@ -270,8 +274,9 @@ jobs:
 
           print(f"Successfully added version $VERSION to $APPCAST_FILE")
           PYTHON_SCRIPT
+          done
 
-          echo "appcast_file=$APPCAST_FILE" >> "$GITHUB_OUTPUT"
+          echo "appcast_files=$APPCAST_FILES" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push appcast changes

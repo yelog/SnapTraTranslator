@@ -52,6 +52,6 @@ appcast_file_for_version() {
     if is_prerelease_version "$1"; then
         echo "docs/appcast-beta.xml"
     else
-        echo "docs/appcast.xml"
+        echo "docs/appcast.xml docs/appcast-beta.xml"
     fi
 }
