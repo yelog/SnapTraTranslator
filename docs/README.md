@@ -16,6 +16,8 @@ A lightweight macOS menu bar app that instantly translates words under your curs
 ### Translation Modes
 - **Continuous translation** - Keep translating as you move the mouse while holding the hotkey
 - **Single lookup mode** - One translation per hotkey press with interactive bubble (copy, close buttons)
+- **Sentence translation** - Select text in any app, press the hotkey with cursor inside selection to translate the sentence
+- **Paragraph translation** - Double-tap the hotkey to OCR and translate an entire paragraph under the cursor
 
 ### Supported Languages
 Chinese (Simplified), Chinese (Traditional), English, Japanese, Korean, French, German, Spanish, Italian, Portuguese, Russian, Arabic, Thai, Vietnamese
@@ -23,6 +25,7 @@ Chinese (Simplified), Chinese (Traditional), English, Japanese, Korean, French, 
 ### Customization
 - **Single-key hotkey** - Configure trigger key from modifier keys (Shift, Control, Option, Command, Fn)
 - **Source/target language selection** - Choose your translation language pair
+- **Auto mutual translation** - Enable Chinese <-> English auto-detection to translate in both directions with one setting
 - **Launch at login** - Auto-start when you log in
 - **Debug OCR region** - Visualize capture area and detected word bounding boxes for troubleshooting
 
