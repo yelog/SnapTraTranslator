@@ -7,8 +7,21 @@
 ## Project Overview
 - **Xcode project**: `SnapTra Translator.xcodeproj`
 - **SwiftUI macOS app**: Menu bar (accessory) app for instant OCR translation
-- **Target**: `SnapTra Translator` (single app target, no test targets)
+- **Current macOS targets**: `SnapTra Translator` and `SnapTra Translator Direct`
 - **Minimum macOS**: 14.0 (translation features require macOS 15.0+)
+
+## Repository Layout
+- `SnapTra Translator/`: current macOS app sources and resources
+- `SnapTra Translator/Shared/`: shared Swift contracts and pure logic extracted from the macOS app
+- `docs/plans/`: design and implementation plans
+- `apps/windows/`: placeholder for future native Windows shell
+- `apps/linux/`: placeholder for future native Linux shell
+- `Native/core/`: placeholder for future extracted shared native logic
+
+### Boundary Rules
+- Keep shipping macOS behavior stable unless the task explicitly requires behavior changes.
+- Do not add incomplete Windows/Linux build systems or project files unless explicitly requested.
+- Do not move platform shell logic into `Native/core`; keep that directory limited to proven pure logic.
 
 ## Build / Run / Test Commands
 

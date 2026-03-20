@@ -72,6 +72,17 @@ xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" 
 xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" clean
 ```
 
+## Repository Roadmap
+
+The current shipping product remains the macOS app in the Xcode project. The repository now also reserves landing zones for future native platform work:
+
+- `SnapTra Translator/Shared` for shared Swift contracts and pure logic
+- `apps/windows` for a future native Windows shell
+- `apps/linux` for a future native Linux shell
+- `Native/core` for future extracted native logic only after it proves stable
+
+These directories are documentation and architecture placeholders for now. No Windows or Linux build system is wired into the current macOS release target.
+
 ## Usage
 
 1. **Grant permissions** - Launch the app and grant Screen Recording permission when prompted

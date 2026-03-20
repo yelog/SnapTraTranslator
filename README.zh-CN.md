@@ -68,6 +68,17 @@ xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" 
 xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" clean
 ```
 
+## 仓库路线图
+
+当前正式发布的仍然是 Xcode 工程中的 macOS 应用。仓库已经预留后续原生多平台扩展的落点：
+
+- `SnapTra Translator/Shared`：共享 Swift 协议与纯逻辑
+- `apps/windows`：未来的 Windows 原生壳层
+- `apps/linux`：未来的 Linux 原生壳层
+- `Native/core`：后续验证稳定后再抽取的共享原生逻辑
+
+这些目录目前只承担文档和架构占位作用，还没有接入 Windows 或 Linux 的构建系统，不会影响当前 macOS 发布目标。
+
 ## 使用方法
 
 1. **授予权限** - 启动应用，按提示授予屏幕录制权限
