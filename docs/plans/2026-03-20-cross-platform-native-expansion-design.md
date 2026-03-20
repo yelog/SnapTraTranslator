@@ -2,6 +2,16 @@
 
 **Goal:** Add Windows and Linux versions without destabilizing the existing macOS App Store product, while preserving the current macOS feature set and keeping each desktop build as native and lightweight as practical.
 
+## Status as of 2026-03-20
+
+- The Phase 0 macOS refactor described in this document is complete.
+- `AppModel` now depends on injected platform services instead of directly owning Apple translation and language-pack managers.
+- Shared domain code now contains the moved pure models and OCR DTOs needed for future platform shells.
+- Offline dictionary storage and the macOS system dictionary adapter are now separated.
+- App Store and Direct entitlement boundaries remain unchanged, and both schemes pass Debug and Release builds.
+- Windows and Linux shells described below have not been implemented yet.
+- `Native/core` remains a placeholder directory and has not been linked into the macOS targets.
+
 ## Problem
 
 - The current app is a macOS-first codebase that directly binds product logic to Apple-only frameworks such as `AppKit`, `ScreenCaptureKit`, `Vision`, `Translation`, and `CoreServices`.
@@ -289,9 +299,10 @@ Windows needs the same orchestration semantics as macOS, but not the same shell 
 
 ### Phase 0
 
-- Introduce protocols and `PlatformServices`
-- Keep default macOS behavior identical
-- Reclassify shared models and pure helpers
+- Completed on 2026-03-20
+- Introduced protocols and `PlatformServices`
+- Kept default macOS behavior identical
+- Reclassified shared models and pure helpers
 
 ### Phase 1
 

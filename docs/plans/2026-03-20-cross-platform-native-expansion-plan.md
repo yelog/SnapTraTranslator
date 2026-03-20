@@ -8,6 +8,18 @@
 
 **Tech Stack:** Swift, SwiftUI, AppKit, local Swift Package or shared source group, SQLite3, Xcode project configuration, future WinUI 3 / GTK4 shells
 
+## Status as of 2026-03-20
+
+- Phase 0 refactor is complete in the macOS codebase.
+- Task 1 completed: shared service contracts and `PlatformServices` are in place.
+- Task 2 completed: macOS adapters now provide Apple translation and language-availability services through providers instead of direct `AppModel` ownership.
+- Task 3 completed: `DictionaryEntry`, `LookupDirection`, `ParagraphTextStructure`, and OCR DTOs now live under `Shared/Domain`.
+- Task 4 completed: offline SQLite dictionary storage is separated from the macOS system dictionary provider.
+- Task 5 completed: repository landing zones for Windows, Linux, and `Native/core` are documented.
+- Task 6 completed: App Store and Direct boundary files remain unchanged relative to `origin/main..HEAD`.
+- Verification completed with `SnapTra Translator` and `SnapTra Translator Direct` Debug and Release builds.
+- Remaining work is outside Phase 0: native Windows shell, native Linux shell, and any future shared `native/core` implementation are still pending.
+
 ---
 
 ### Task 1: Create shared service contracts and bootstrap container
