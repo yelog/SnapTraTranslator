@@ -72,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             }
         }
 
-        model.permissions.$status
+        model.permissions.statusPublisher
             .sink { [weak self] _ in
                 self?.scheduleVisibilityUpdate()
             }

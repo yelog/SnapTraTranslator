@@ -194,7 +194,7 @@ final class AppModel: ObservableObject {
     @Published var overlayPreferredWidth: CGFloat? = nil
 
     @Published var settings: SettingsStore
-    let permissions: PermissionManager
+    let permissions: any PermissionProviding
     let translationBridge: TranslationBridge
     private var _languagePackManager: Any?
 
@@ -204,12 +204,12 @@ final class AppModel: ObservableObject {
         set { _languagePackManager = newValue }
     }
 
-    private let hotkeyManager = HotkeyManager()
-    private let captureService = ScreenCaptureService()
-    private let ocrService = OCRService()
-    private let dictionaryService = DictionaryService()
-    private let speechService = SpeechService()
-    private let sentenceTranslationService = SentenceTranslationService()
+    private let hotkeyManager: any HotkeyControlling
+    private let captureService: any ScreenCaptureProviding
+    private let ocrService: any OCRProviding
+    private let dictionaryService: any DictionaryProviding
+    private let speechService: any SpeechProviding
+    private let sentenceTranslationService: any SentenceTranslationProviding
     let dictionaryDownload: DictionaryDownloadManager
     private var cancellables = Set<AnyCancellable>()
     private var lookupTask: Task<Void, Never>?
@@ -235,13 +235,24 @@ final class AppModel: ObservableObject {
     lazy var overlayWindowController = OverlayWindowController(model: self)
 
     @MainActor
-    init(settings: SettingsStore? = nil, permissions: PermissionManager? = nil) {
+    init(
+        settings: SettingsStore? = nil,
+        permissions: PermissionManager? = nil,
+        services: PlatformServices? = nil
+    ) {
         let resolvedSettings = settings ?? SettingsStore()
         let resolvedPermissions = permissions ?? PermissionManager()
+        let resolvedServices = services ?? MacPlatformServices.make(permissions: resolvedPermissions)
         self.settings = resolvedSettings
-        self.permissions = resolvedPermissions
+        self.permissions = resolvedServices.permissions
         self.translationBridge = TranslationBridge()
-        self.dictionaryDownload = DictionaryDownloadManager(offlineService: dictionaryService.offlineService)
+        self.hotkeyManager = resolvedServices.hotkey
+        self.captureService = resolvedServices.screenCapture
+        self.ocrService = resolvedServices.ocr
+        self.dictionaryService = resolvedServices.dictionary
+        self.speechService = resolvedServices.speech
+        self.sentenceTranslationService = resolvedServices.sentenceTranslation
+        self.dictionaryDownload = DictionaryDownloadManager(offlineService: resolvedServices.dictionary.offlineService)
 
         // Forward SettingsStore changes to AppModel so SwiftUI redraws
         resolvedSettings.objectWillChange
@@ -274,7 +285,7 @@ final class AppModel: ObservableObject {
                 .store(in: &cancellables)
         }
         bindSettings()
-        resolvedPermissions.$status
+        self.permissions.statusPublisher
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
             }
@@ -288,7 +299,7 @@ final class AppModel: ObservableObject {
         hotkeyManager.onDoubleTap = { [weak self] in
             self?.handleHotkeyDoubleTap()
         }
-        resolvedPermissions.refreshStatus()
+        self.permissions.refreshStatus()
         Task {
             await checkLanguageAvailability()
         }
@@ -1059,7 +1070,7 @@ final class AppModel: ObservableObject {
         }
         .store(in: &cancellables)
 
-        permissions.$status
+        permissions.statusPublisher
             .sink { [weak self] status in
                 if status.screenRecording {
                     self?.restartHotkey()
@@ -1317,7 +1328,7 @@ final class AppModel: ObservableObject {
     private static func lookupDictionarySection(
         word: String,
         source: DictionarySource,
-        dictionaryService: DictionaryService,
+        dictionaryService: any DictionaryProviding,
         sourceIdentifier: String,
         targetIdentifier: String,
         preferEnglish: Bool,

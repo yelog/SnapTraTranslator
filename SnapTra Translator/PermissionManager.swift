@@ -69,3 +69,9 @@ final class PermissionManager: ObservableObject {
         }
     }
 }
+
+extension PermissionManager: PermissionProviding {
+    var statusPublisher: AnyPublisher<PermissionStatus, Never> {
+        $status.eraseToAnyPublisher()
+    }
+}

@@ -637,3 +637,5 @@ final class OCRService {
         return screenHeight * 0.75
     }
 }
+
+extension OCRService: OCRProviding {}

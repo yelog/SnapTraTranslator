@@ -114,6 +114,7 @@ struct HotkeyGestureStateMachine {
     }
 }
 
+@MainActor
 final class HotkeyManager {
     var onTrigger: (() -> Void)?
     var onRelease: (() -> Void)?
@@ -239,3 +240,5 @@ final class HotkeyManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: delayedRelease)
     }
 }
+
+extension HotkeyManager: HotkeyControlling {}

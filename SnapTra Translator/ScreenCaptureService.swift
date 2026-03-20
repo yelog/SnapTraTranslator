@@ -9,6 +9,7 @@ struct CaptureRegion {
     var scaleFactor: CGFloat
 }
 
+@MainActor
 final class ScreenCaptureService {
     let captureSize = CGSize(width: 520, height: 140)
     let paragraphCaptureScale: CGFloat = 0.6
@@ -127,3 +128,5 @@ final class ScreenCaptureService {
         return configuration
     }
 }
+
+extension ScreenCaptureService: ScreenCaptureProviding {}

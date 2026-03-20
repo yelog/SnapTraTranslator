@@ -150,6 +150,8 @@ final class SpeechService {
     }
 }
 
+extension SpeechService: SpeechProviding {}
+
 // MARK: - TTS Service Factory
 
 @MainActor

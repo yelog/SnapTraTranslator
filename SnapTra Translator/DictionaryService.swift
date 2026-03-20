@@ -930,3 +930,5 @@ final class DictionaryService {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
+
+extension DictionaryService: DictionaryProviding {}
