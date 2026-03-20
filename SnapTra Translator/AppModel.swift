@@ -266,6 +266,12 @@ final class AppModel: ObservableObject {
                     self?.objectWillChange.send()
                 }
                 .store(in: &cancellables)
+
+            manager.$languageStatuses
+                .sink { [weak self] statuses in
+                    self?.syncCachedLanguageStatuses(statuses)
+                }
+                .store(in: &cancellables)
         }
         bindSettings()
         resolvedPermissions.$status
@@ -1104,11 +1110,10 @@ final class AppModel: ObservableObject {
     private func checkLanguageAvailability() async {
         guard #available(macOS 15.0, *) else { return }
         let pairs = requiredLanguagePairsForCurrentSettings()
-        var statusesByKey: [String: CachedLanguageAvailabilityStatus] = [:]
-
-        for pair in pairs {
-            statusesByKey[pair.key] = await languageAvailabilityStatus(for: pair, useCache: false)
-        }
+        let statusesByKey = await refreshedLanguageAvailabilityStatuses(
+            for: pairs,
+            retrySupportedStatuses: true
+        )
 
         let key = pairs
             .map { pair in
@@ -1171,15 +1176,116 @@ final class AppModel: ObservableObject {
 
         let status: CachedLanguageAvailabilityStatus
         if #available(macOS 15.0, *) {
-            let availability = LanguageAvailability()
-            let systemStatus = await availability.status(from: pair.sourceLanguage, to: pair.targetLanguage)
-            status = CachedLanguageAvailabilityStatus(systemStatus)
+            status = await refreshLanguageAvailabilityStatus(for: pair)
         } else {
             status = .unsupported
         }
 
         cachedLanguageStatuses[pair.key] = status
         return status
+    }
+
+    @available(macOS 15.0, *)
+    func refreshLanguageAvailabilityStatus(
+        from sourceIdentifier: String,
+        to targetIdentifier: String,
+        showLoading: Bool = false
+    ) async -> LanguageAvailability.Status {
+        let pair = LookupLanguagePair.fixed(
+            sourceIdentifier: sourceIdentifier,
+            targetIdentifier: targetIdentifier
+        )
+        let status = await refreshLanguageAvailabilityStatus(
+            for: pair,
+            showLoading: showLoading
+        )
+        return status.translationStatus
+    }
+
+    @available(macOS 15.0, *)
+    func refreshLanguageAvailabilityStatusForCurrentSettings(
+        retrySupportedStatus: Bool = false
+    ) async -> LanguageAvailability.Status {
+        let pair = resolveLookupLanguagePair()
+        var status = await refreshLanguageAvailabilityStatus(for: pair)
+
+        if retrySupportedStatus, status == .supported {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            status = await refreshLanguageAvailabilityStatus(for: pair)
+        }
+
+        return status.translationStatus
+    }
+
+    @available(macOS 15.0, *)
+    private func refreshedLanguageAvailabilityStatuses(
+        for pairs: [LookupLanguagePair],
+        retrySupportedStatuses: Bool
+    ) async -> [String: CachedLanguageAvailabilityStatus] {
+        var statusesByKey: [String: CachedLanguageAvailabilityStatus] = [:]
+
+        for pair in pairs {
+            statusesByKey[pair.key] = await refreshLanguageAvailabilityStatus(for: pair)
+        }
+
+        guard retrySupportedStatuses else {
+            return statusesByKey
+        }
+
+        let supportedPairs = pairs.filter { statusesByKey[$0.key] == .supported }
+        guard !supportedPairs.isEmpty else {
+            return statusesByKey
+        }
+
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+
+        for pair in supportedPairs {
+            statusesByKey[pair.key] = await refreshLanguageAvailabilityStatus(for: pair)
+        }
+
+        return statusesByKey
+    }
+
+    @available(macOS 15.0, *)
+    private func refreshLanguageAvailabilityStatus(
+        for pair: LookupLanguagePair,
+        showLoading: Bool = false
+    ) async -> CachedLanguageAvailabilityStatus {
+        if pair.isSameLanguage {
+            cachedLanguageStatuses[pair.key] = .installed
+            return .installed
+        }
+
+        let status: CachedLanguageAvailabilityStatus
+        if let manager = languagePackManager {
+            let systemStatus: LanguageAvailability.Status
+            if showLoading {
+                systemStatus = await manager.checkLanguagePair(
+                    from: pair.sourceIdentifier,
+                    to: pair.targetIdentifier
+                )
+            } else {
+                systemStatus = await manager.checkLanguagePairQuiet(
+                    from: pair.sourceIdentifier,
+                    to: pair.targetIdentifier
+                )
+            }
+            status = CachedLanguageAvailabilityStatus(systemStatus)
+        } else {
+            let availability = LanguageAvailability()
+            let systemStatus = await availability.status(from: pair.sourceLanguage, to: pair.targetLanguage)
+            status = CachedLanguageAvailabilityStatus(systemStatus)
+        }
+
+        cachedLanguageStatuses[pair.key] = status
+        return status
+    }
+
+    @available(macOS 15.0, *)
+    private func syncCachedLanguageStatuses(_ statuses: [String: LanguageAvailability.Status]) {
+        for (key, status) in statuses {
+            cachedLanguageStatuses[key] = CachedLanguageAvailabilityStatus(status)
+        }
     }
 
     private func message(for status: CachedLanguageAvailabilityStatus) -> String {

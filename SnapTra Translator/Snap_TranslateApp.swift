@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var visibilityTask: Task<Void, Never>?
     private var isManualWindowOpen = false
     private var shouldShowWindowAfterPermissionGrant = false
+    private var hasCompletedInitialLanguageAvailabilityCheck = false
 
     private var settingsWindow: NSWindow? {
         settingsWindowController?.window
@@ -460,15 +461,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         var needsSettings = !model.permissions.status.screenRecording
 
         if #available(macOS 15.0, *) {
-            let status = await model.languagePackManager?.checkLanguagePairQuiet(
-                from: model.settings.sourceLanguage,
-                to: model.settings.targetLanguage
+            let status = await model.refreshLanguageAvailabilityStatusForCurrentSettings(
+                retrySupportedStatus: !hasCompletedInitialLanguageAvailabilityCheck
             )
-            if let status {
-                needsSettings = needsSettings || status != .installed
-            } else {
-                needsSettings = true
-            }
+            hasCompletedInitialLanguageAvailabilityCheck = true
+            needsSettings = needsSettings || status != .installed
         }
 
         if needsSettings {
