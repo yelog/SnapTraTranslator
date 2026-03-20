@@ -2,22 +2,6 @@ import CoreText
 import Foundation
 import Vision
 
-struct RecognizedWord: Equatable {
-    var text: String
-    var boundingBox: CGRect
-}
-
-struct RecognizedTextLine: Equatable {
-    var text: String
-    var boundingBox: CGRect
-}
-
-struct RecognizedParagraph: Equatable {
-    var text: String
-    var lines: [RecognizedTextLine]
-    var boundingBox: CGRect
-}
-
 final class OCRService {
     func recognizeWords(in image: CGImage, language: String) async throws -> [RecognizedWord] {
         let observations = try await recognizeObservations(in: image, language: language)

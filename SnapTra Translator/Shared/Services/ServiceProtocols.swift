@@ -61,6 +61,37 @@ protocol SentenceTranslationProviding: AnyObject {
 }
 
 @MainActor
+protocol PrimaryTranslationProviding: AnyObject {
+    func translate(
+        text: String,
+        sourceLanguage: String?,
+        targetLanguage: String,
+        timeout: TimeInterval
+    ) async throws -> String
+
+    func translateBatch(
+        texts: [String],
+        sourceLanguage: String?,
+        targetLanguage: String,
+        timeout: TimeInterval
+    ) async throws -> [String]
+
+    func cancelAllPendingRequests()
+}
+
+@MainActor
+protocol LanguageAvailabilityProviding: AnyObject {
+    var isChecking: Bool { get }
+    var isCheckingPublisher: AnyPublisher<Bool, Never> { get }
+    var statusesPublisher: AnyPublisher<[String: LanguageAvailabilityStatus], Never> { get }
+
+    func checkLanguagePair(from sourceLanguage: String, to targetLanguage: String) async -> LanguageAvailabilityStatus
+    func checkLanguagePairQuiet(from sourceLanguage: String, to targetLanguage: String) async -> LanguageAvailabilityStatus
+    func getStatus(from sourceLanguage: String, to targetLanguage: String) -> LanguageAvailabilityStatus?
+    func openTranslationSettings()
+}
+
+@MainActor
 protocol SpeechProviding: AnyObject {
     func speak(
         _ text: String,

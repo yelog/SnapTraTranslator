@@ -7,7 +7,6 @@
 
 import AppKit
 import SwiftUI
-import Translation
 
 enum SettingsTab: String, CaseIterable {
     case general = "General"
@@ -291,7 +290,7 @@ struct GeneralSettingsView: View {
             if pair.isSameLanguage {
                 return true
             }
-            return model.languagePackManager?.getStatus(
+            return model.languageAvailability?.getStatus(
                 from: pair.sourceIdentifier,
                 to: pair.targetIdentifier
             ) == .installed
@@ -310,9 +309,9 @@ struct GeneralSettingsView: View {
 
     @available(macOS 15.0, *)
     private func refreshLanguageStatuses() async {
-        guard let manager = model.languagePackManager else { return }
+        guard let languageAvailability = model.languageAvailability else { return }
         for pair in requiredLanguagePairs where !pair.isSameLanguage {
-            _ = await manager.checkLanguagePair(from: pair.sourceIdentifier, to: pair.targetIdentifier)
+            _ = await languageAvailability.checkLanguagePair(from: pair.sourceIdentifier, to: pair.targetIdentifier)
         }
     }
 
@@ -667,7 +666,7 @@ struct GeneralTranslationLanguageRow: View {
             .tint(.accentColor)
             .onChange(of: targetLanguage) { _, newValue in
                 Task { @MainActor in
-                    let status = await model.languagePackManager?.checkLanguagePair(
+                    let status = await model.languageAvailability?.checkLanguagePair(
                         from: sourceLanguage,
                         to: newValue
                     )
@@ -681,7 +680,7 @@ struct GeneralTranslationLanguageRow: View {
         .padding(.vertical, 10)
         .alert(L("Language Pack Required"), isPresented: $showingUnavailableAlert) {
             Button(L("Open Settings")) {
-                model.languagePackManager?.openTranslationSettings()
+                model.languageAvailability?.openTranslationSettings()
             }
             Button(L("Cancel"), role: .cancel) { }
         } message: {
@@ -689,7 +688,7 @@ struct GeneralTranslationLanguageRow: View {
         }
         .onAppear {
             Task { @MainActor in
-                let status = await model.languagePackManager?.checkLanguagePair(
+                let status = await model.languageAvailability?.checkLanguagePair(
                     from: sourceLanguage,
                     to: targetLanguage
                 )
@@ -702,7 +701,7 @@ struct GeneralTranslationLanguageRow: View {
 
     @ViewBuilder
     private var statusIcon: some View {
-        let isChecking = model.languagePackManager?.isChecking ?? false
+        let isChecking = model.languageAvailability?.isChecking ?? false
         let isSameLanguage = sourceLanguage == targetLanguage ||
             (sourceLanguage.hasPrefix("en") && targetLanguage.hasPrefix("en")) ||
             (sourceLanguage.hasPrefix("zh") && targetLanguage.hasPrefix("zh"))
@@ -720,7 +719,7 @@ struct GeneralTranslationLanguageRow: View {
         } else if let status = status {
             Button {
                 Task { @MainActor in
-                    let newStatus = await model.languagePackManager?.checkLanguagePair(
+                    let newStatus = await model.languageAvailability?.checkLanguagePair(
                         from: sourceLanguage,
                         to: targetLanguage
                     )
@@ -740,9 +739,9 @@ struct GeneralTranslationLanguageRow: View {
         }
     }
 
-    private func getLanguagePackStatus(_ language: String) -> LanguageAvailability.Status? {
+    private func getLanguagePackStatus(_ language: String) -> LanguageAvailabilityStatus? {
         guard sourceLanguage != language else { return nil }
-        return model.languagePackManager?.getStatus(from: sourceLanguage, to: language)
+        return model.languageAvailability?.getStatus(from: sourceLanguage, to: language)
     }
 
     private func languageName(for id: String) -> String {

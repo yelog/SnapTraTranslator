@@ -8,7 +8,6 @@
 import AppKit
 import Combine
 import SwiftUI
-import Translation
 
 @main
 struct Snap_TranslateApp: App {
@@ -64,11 +63,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         configureStatusItem()
         checkPermissionGrantRestart()
 
-        if #available(macOS 15.0, *) {
-            createTranslationServiceWindow(model: model)
+        if #available(macOS 15.0, *),
+           let provider = model.primaryTranslation as? MacPrimaryTranslationProvider {
+            MacTranslationServiceHost.installIfNeeded(for: provider)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                 guard let self else { return }
-                warmupServices(model: self.model)
+                MacTranslationServiceHost.warmupIfNeeded(
+                    provider: provider,
+                    sourceLanguage: self.model.settings.sourceLanguage,
+                    targetLanguage: self.model.settings.targetLanguage
+                )
             }
         }
 
@@ -543,59 +547,5 @@ final class SettingsWindowController: NSWindowController {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-}
-
-@available(macOS 15.0, *)
-func createTranslationServiceWindow(model: AppModel) {
-    guard TranslationServiceWindowHolder.shared.window == nil else { return }
-
-    let translationView = TranslationBridgeView(
-        bridge: model.translationBridge
-    )
-
-    let hostingView = NSHostingView(rootView: translationView)
-    hostingView.frame = NSRect(x: 0, y: 0, width: 1, height: 1)
-
-    let window = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
-        styleMask: [.borderless],
-        backing: .buffered,
-        defer: false
-    )
-    window.contentView = hostingView
-    window.isReleasedWhenClosed = false
-    window.level = .floating
-    window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
-    window.isOpaque = false
-    window.backgroundColor = .clear
-    window.setIsVisible(false)
-
-    TranslationServiceWindowHolder.shared.window = window
-}
-
-@available(macOS 15.0, *)
-class TranslationServiceWindowHolder {
-    static let shared = TranslationServiceWindowHolder()
-    var window: NSWindow?
-    private init() {}
-}
-
-@available(macOS 15.0, *)
-func warmupServices(model: AppModel) {
-    Task { @MainActor in
-        try? await Task.sleep(nanoseconds: 500_000_000)
-
-        let sourceLanguage = Locale.Language(identifier: model.settings.sourceLanguage)
-        let targetLanguage = Locale.Language(identifier: model.settings.targetLanguage)
-
-        _ = try? await model.translationBridge.translate(
-            text: "hello",
-            source: sourceLanguage,
-            target: targetLanguage,
-            timeout: 10.0
-        )
-
-        print("✅ Translation service warmed up (source: \(model.settings.sourceLanguage), target: \(model.settings.targetLanguage))")
     }
 }

@@ -6,6 +6,8 @@ struct PlatformServices {
     let screenCapture: any ScreenCaptureProviding
     let ocr: any OCRProviding
     let dictionary: any DictionaryProviding
+    let primaryTranslation: any PrimaryTranslationProviding
     let speech: any SpeechProviding
     let sentenceTranslation: any SentenceTranslationProviding
+    let languageAvailability: (any LanguageAvailabilityProviding)?
 }
