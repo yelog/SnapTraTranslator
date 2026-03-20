@@ -1,14 +1,32 @@
-# Windows Native Shell Placeholder
+# Windows Native Shell
 
-This directory is reserved for the future native Windows shell.
+This directory now contains the first native Windows shell scaffold for SnapTra.
 
-Planned scope:
-- WinUI 3 for settings and standard app surfaces
-- Win32 integration for tray icon, global hotkeys, and message loop
-- Windows screen capture and OCR where available
-- Shared dictionary assets and text-processing contracts from the main repository
+Current shape:
+- `SnapTra.Windows.sln` hosts a single packaged WinUI 3 project
+- `src/SnapTra.Windows` contains the shell, settings, and placeholder platform interfaces
+- `src/SnapTra.Windows/Assets` already contains checked-in placeholder MSIX icon assets
+- `tools/GeneratePlaceholderAssets.ps1` regenerates those assets on a Windows machine when branding changes
 
-Rules for future work:
-- Do not add unfinished project files until the service boundaries in the macOS codebase are stable.
-- Keep platform shell code out of the existing macOS Xcode target.
-- Reuse shared data formats and contracts before introducing new cross-platform dependencies.
+Bootstrap scope:
+- tray-first startup
+- hidden shell message window
+- native tray menu
+- global hotkey registration
+- minimal settings window
+- single-project MSIX packaging
+
+Out of scope for this milestone:
+- OCR
+- screen capture
+- dictionary lookup
+- translation
+- speech
+- any extra executable or helper process
+
+Notes:
+- The project files are written as a static scaffold here and still need a Windows machine for MSBuild/package verification.
+- Keep future Windows work under `apps/windows` so the macOS targets stay isolated.
+- Typical verification flow on Windows:
+  - `msbuild ./apps/windows/src/SnapTra.Windows/SnapTra.Windows.csproj /restore /p:Configuration=Debug`
+  - `msbuild ./apps/windows/src/SnapTra.Windows/SnapTra.Windows.csproj /restore /p:Configuration=Release /p:GenerateAppxPackageOnBuild=true`

@@ -1,0 +1,75 @@
+<Window
+    x:Class="SnapTra.Windows.Settings.SettingsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer>
+        <Grid
+            x:Name="RootGrid"
+            Padding="24">
+            <StackPanel Spacing="18">
+                <TextBlock
+                    Text="SnapTra Translator Windows Settings"
+                    Style="{ThemeResource TitleTextBlockStyle}" />
+
+                <TextBox
+                    Header="Source language"
+                    Text="{Binding SourceLanguage, Mode=TwoWay}" />
+
+                <TextBox
+                    Header="Target language"
+                    Text="{Binding TargetLanguage, Mode=TwoWay}" />
+
+                <TextBox
+                    Header="Hotkey modifiers"
+                    PlaceholderText="Ctrl+Shift"
+                    Text="{Binding HotkeyModifiers, Mode=TwoWay}" />
+
+                <TextBox
+                    Header="Hotkey key"
+                    PlaceholderText="T"
+                    Text="{Binding HotkeyKey, Mode=TwoWay}" />
+
+                <ToggleSwitch
+                    Header="Enable global hotkey"
+                    IsOn="{Binding IsHotkeyEnabled, Mode=TwoWay}" />
+
+                <CheckBox
+                    Content="Launch at login (placeholder only)"
+                    IsChecked="{Binding LaunchAtLoginRequested, Mode=TwoWay}" />
+
+                <Border
+                    Padding="16"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="10">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Shell status" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        <TextBlock Text="{Binding ShellStatus}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding HotkeyStatus}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding PersistenceStatus}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <Border
+                    Padding="16"
+                    Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                    CornerRadius="10">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Future platform services" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        <TextBlock Text="{Binding OcrStatus}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding TranslationStatus}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding DictionaryStatus}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button
+                        Content="Save settings"
+                        Click="OnSaveClicked" />
+                    <Button
+                        Content="Close"
+                        Click="OnCloseClicked" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</Window>
