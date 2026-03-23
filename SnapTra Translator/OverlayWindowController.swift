@@ -269,6 +269,35 @@ final class ParagraphHighlightWindowController: NSWindowController {
     }
 }
 
+enum WordOverlayPlacement {
+    case below
+    case above
+}
+
+enum WordOverlayLayout {
+    static let gap: CGFloat = 12
+    static let edgeInset: CGFloat = 50
+
+    static func resolve(
+        panelHeight: CGFloat,
+        anchor: CGPoint,
+        screenFrame: CGRect
+    ) -> WordOverlayPlacement {
+        let spaceBelow = anchor.y - screenFrame.minY - gap - edgeInset
+        let spaceAbove = screenFrame.maxY - anchor.y - gap - edgeInset
+
+        if panelHeight <= spaceBelow {
+            return .below
+        }
+
+        if panelHeight <= spaceAbove {
+            return .above
+        }
+
+        return spaceBelow >= spaceAbove ? .below : .above
+    }
+}
+
 enum ParagraphOverlayPlacement {
     case below
     case above
@@ -697,8 +726,22 @@ final class OverlayWindowController: NSWindowController {
     }
 
     private func anchoredOrigin(for anchor: CGPoint, size: CGSize, in screenFrame: CGRect) -> CGPoint {
-        let offset = CGPoint(x: 12, y: -12)
-        let proposedOrigin = CGPoint(x: anchor.x + offset.x, y: anchor.y + offset.y - size.height)
+        let placement = WordOverlayLayout.resolve(
+            panelHeight: size.height,
+            anchor: anchor,
+            screenFrame: screenFrame
+        )
+
+        let offsetX: CGFloat = 12
+        let proposedOrigin: CGPoint
+
+        switch placement {
+        case .below:
+            proposedOrigin = CGPoint(x: anchor.x + offsetX, y: anchor.y - WordOverlayLayout.gap - size.height)
+        case .above:
+            proposedOrigin = CGPoint(x: anchor.x + offsetX, y: anchor.y + WordOverlayLayout.gap)
+        }
+
         return clampedOrigin(proposedOrigin, size: size, in: screenFrame)
     }
 
