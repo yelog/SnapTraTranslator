@@ -158,6 +158,9 @@ jobs:
           if existing_item is not None:
               enclosure = existing_item.find('enclosure')
               if enclosure is not None:
+                  for attr in list(enclosure.attrib.keys()):
+                      if 'edSignature' in attr or attr == 'length':
+                          del enclosure.attrib[attr]
                   enclosure.set('length', '$FILE_SIZE')
                   sig_parts = '$SIGNATURE'.split()
                   for part in sig_parts:
