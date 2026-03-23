@@ -371,7 +371,10 @@ jobs:
             PRERELEASE_FLAG="--prerelease"
           fi
 
-          if [ -s /tmp/release_notes.md ]; then
+          if gh release view "$TAG" &>/dev/null; then
+            echo "Release $TAG already exists, uploading assets..."
+            gh release upload "$TAG" "$DMG_PATH" "$SHA_PATH" --clobber
+          elif [ -s /tmp/release_notes.md ]; then
             echo "Using changelog from CHANGELOG.md"
             gh release create "$TAG" \
               --title "$TAG" \
