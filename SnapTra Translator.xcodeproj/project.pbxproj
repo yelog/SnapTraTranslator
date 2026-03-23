@@ -498,7 +498,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.6-beta.1;
+				MARKETING_VERSION = 1.3.6-beta.2;
 				PRODUCT_BUNDLE_IDENTIFIER = org.yelog.SnapTraTranslate;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -538,7 +538,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.6-beta.1;
+				MARKETING_VERSION = 1.3.6-beta.2;
 				PRODUCT_BUNDLE_IDENTIFIER = org.yelog.SnapTraTranslate;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -578,7 +578,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.6-beta.1;
+				MARKETING_VERSION = 1.3.6-beta.2;
 				PRODUCT_BUNDLE_IDENTIFIER = org.yelog.SnapTraTranslate;
 				PRODUCT_NAME = "SnapTra Translator";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -619,7 +619,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.6-beta.1;
+				MARKETING_VERSION = 1.3.6-beta.2;
 				PRODUCT_BUNDLE_IDENTIFIER = org.yelog.SnapTraTranslate;
 				PRODUCT_NAME = "SnapTra Translator";
 				PROVISIONING_PROFILE_SPECIFIER = "";
