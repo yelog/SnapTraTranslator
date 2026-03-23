@@ -147,110 +147,119 @@ jobs:
           root = tree.getroot()
           channel = root.find('channel')
 
-          existing = False
+          existing_item = None
           for item in channel.findall('item'):
               version_elem = item.find('{http://www.andymatuschak.org/xml-namespaces/sparkle}version')
               if version_elem is not None and version_elem.text == '$SPARKLE_VERSION':
-                  print(f"Version $SPARKLE_VERSION already exists in appcast, skipping")
-                  existing = True
+                  print(f"Version $SPARKLE_VERSION already exists in appcast, updating signature and size")
+                  existing_item = item
                   break
 
-          if existing:
-              exit(0)
-
-          item = ET.Element('item')
-
-          title = ET.SubElement(item, 'title')
-          title.text = f'Version $VERSION'
-
-          pubDate = ET.SubElement(item, 'pubDate')
-          pubDate.text = datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S +0000')
-
-          sparkle_version = ET.SubElement(item, '{http://www.andymatuschak.org/xml-namespaces/sparkle}version')
-          sparkle_version.text = '$SPARKLE_VERSION'
-
-          sparkle_short = ET.SubElement(item, '{http://www.andymatuschak.org/xml-namespaces/sparkle}shortVersionString')
-          sparkle_short.text = '$VERSION'
-
-          sparkle_min = ET.SubElement(item, '{http://www.andymatuschak.org/xml-namespaces/sparkle}minimumSystemVersion')
-          sparkle_min.text = '14.0'
-
-          description = ET.SubElement(item, 'description')
-
-          def parse_changelog(version):
-              try:
-                  with open('CHANGELOG.md', 'r', encoding='utf-8') as f:
-                      content = f.read()
-              except Exception:
-                  return None
-
-              pattern = rf'## \[{re.escape(version)}\].*?\n(.*?)(?=\n## \[|$)'
-              match = re.search(pattern, content, re.DOTALL)
-              if not match:
-                  return None
-
-              section = match.group(1).strip()
-              if not section:
-                  return None
-
-              html_parts = [f'<h2>SnapTra Translator {version}</h2>']
-              current_list = []
-              current_heading = None
-
-              for line in section.split('\n'):
-                  line = line.strip()
-                  if not line:
-                      continue
-                  if line.startswith('### '):
-                      if current_list:
-                          html_parts.append(f'<ul>{"".join(current_list)}</ul>')
-                          current_list = []
-                      current_heading = line[4:]
-                      html_parts.append(f'<h4>{current_heading}</h4>')
-                  elif line.startswith('- '):
-                      item_text = line[2:]
-                      current_list.append(f'<li>{item_text}</li>')
-                  elif line.startswith('* '):
-                      item_text = line[2:]
-                      current_list.append(f'<li>{item_text}</li>')
-
-              if current_list:
-                  html_parts.append(f'<ul>{"".join(current_list)}</ul>')
-
-              return ''.join(html_parts) if len(html_parts) > 1 else None
-
-          changelog_html = parse_changelog('$VERSION')
-          if changelog_html:
-              description.text = changelog_html
+          if existing_item is not None:
+              enclosure = existing_item.find('enclosure')
+              if enclosure is not None:
+                  enclosure.set('length', '$FILE_SIZE')
+                  sig_parts = '$SIGNATURE'.split()
+                  for part in sig_parts:
+                      if '=' in part:
+                          key, val = part.split('=', 1)
+                          if val.startswith('"') and val.endswith('"'):
+                              val = val[1:-1]
+                          enclosure.set(key, val)
+                  print(f"Updated enclosure for existing version $SPARKLE_VERSION")
           else:
-              description.text = f'<h2>SnapTra Translator $VERSION</h2><ul><li>Version $VERSION release</li></ul>'
+              item = ET.Element('item')
 
-          enclosure = ET.SubElement(item, 'enclosure')
-          enclosure.set('url', 'https://github.com/yelog/SnapTraTranslator/releases/download/$TAG/SnapTra-Translator-$VERSION.dmg')
-          enclosure.set('length', '$FILE_SIZE')
-          enclosure.set('type', 'application/octet-stream')
-          sig_parts = '$SIGNATURE'.split()
-          for part in sig_parts:
-              if '=' in part:
-                  key, val = part.split('=', 1)
-                  if val.startswith('"') and val.endswith('"'):
-                      val = val[1:-1]
-                  enclosure.set(key, val)
+              title = ET.SubElement(item, 'title')
+              title.text = f'Version $VERSION'
 
-          insert_index = None
+              pubDate = ET.SubElement(item, 'pubDate')
+              pubDate.text = datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S +0000')
 
-          # Find the correct insert position: after sparkle:edPublicKey if it exists
-          for i, child in enumerate(channel):
-              if isinstance(child, ET.Element):
-                  if child.tag == '{http://www.andymatuschak.org/xml-namespaces/sparkle}edPublicKey':
-                      insert_index = i + 1
-                      break
+              sparkle_version = ET.SubElement(item, '{http://www.andymatuschak.org/xml-namespaces/sparkle}version')
+              sparkle_version.text = '$SPARKLE_VERSION'
 
-          # If no edPublicKey found, insert after language element (position 4)
-          if insert_index is None:
-              insert_index = 4
+              sparkle_short = ET.SubElement(item, '{http://www.andymatuschak.org/xml-namespaces/sparkle}shortVersionString')
+              sparkle_short.text = '$VERSION'
 
-          channel.insert(insert_index, item)
+              sparkle_min = ET.SubElement(item, '{http://www.andymatuschak.org/xml-namespaces/sparkle}minimumSystemVersion')
+              sparkle_min.text = '14.0'
+
+              description = ET.SubElement(item, 'description')
+
+              def parse_changelog(version):
+                  try:
+                      with open('CHANGELOG.md', 'r', encoding='utf-8') as f:
+                          content = f.read()
+                  except Exception:
+                      return None
+
+                  pattern = rf'## \[{re.escape(version)}\].*?\n(.*?)(?=\n## \[|$)'
+                  match = re.search(pattern, content, re.DOTALL)
+                  if not match:
+                      return None
+
+                  section = match.group(1).strip()
+                  if not section:
+                      return None
+
+                  html_parts = [f'<h2>SnapTra Translator {version}</h2>']
+                  current_list = []
+                  current_heading = None
+
+                  for line in section.split('\n'):
+                      line = line.strip()
+                      if not line:
+                          continue
+                      if line.startswith('### '):
+                          if current_list:
+                              html_parts.append(f'<ul>{"".join(current_list)}</ul>')
+                              current_list = []
+                          current_heading = line[4:]
+                          html_parts.append(f'<h4>{current_heading}</h4>')
+                      elif line.startswith('- '):
+                          item_text = line[2:]
+                          current_list.append(f'<li>{item_text}</li>')
+                      elif line.startswith('* '):
+                          item_text = line[2:]
+                          current_list.append(f'<li>{item_text}</li>')
+
+                  if current_list:
+                      html_parts.append(f'<ul>{"".join(current_list)}</ul>')
+
+                  return ''.join(html_parts) if len(html_parts) > 1 else None
+
+              changelog_html = parse_changelog('$VERSION')
+              if changelog_html:
+                  description.text = changelog_html
+              else:
+                  description.text = f'<h2>SnapTra Translator $VERSION</h2><ul><li>Version $VERSION release</li></ul>'
+
+              enclosure = ET.SubElement(item, 'enclosure')
+              enclosure.set('url', 'https://github.com/yelog/SnapTraTranslator/releases/download/$TAG/SnapTra-Translator-$VERSION.dmg')
+              enclosure.set('length', '$FILE_SIZE')
+              enclosure.set('type', 'application/octet-stream')
+              sig_parts = '$SIGNATURE'.split()
+              for part in sig_parts:
+                  if '=' in part:
+                      key, val = part.split('=', 1)
+                      if val.startswith('"') and val.endswith('"'):
+                          val = val[1:-1]
+                      enclosure.set(key, val)
+
+              insert_index = None
+
+              for i, child in enumerate(channel):
+                  if isinstance(child, ET.Element):
+                      if child.tag == '{http://www.andymatuschak.org/xml-namespaces/sparkle}edPublicKey':
+                          insert_index = i + 1
+                          break
+
+              if insert_index is None:
+                  insert_index = 4
+
+              channel.insert(insert_index, item)
+              print(f"Added new version $VERSION to $APPCAST_FILE")
 
           tree.write('$APPCAST_FILE', encoding='UTF-8', xml_declaration=True)
 
