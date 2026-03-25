@@ -528,7 +528,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private func updateDockIconVisibility(show: Bool) {
         if show {
             NSApp.setActivationPolicy(.regular)
-        } else if !isManualWindowOpen {
+        } else {
             NSApp.setActivationPolicy(.accessory)
         }
     }
