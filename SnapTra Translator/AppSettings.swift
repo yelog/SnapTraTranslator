@@ -122,6 +122,8 @@ enum AppSettingKey {
     static let playPronunciation = "playPronunciation"
     static let playWordPronunciation = "playWordPronunciation"
     static let playSentencePronunciation = "playSentencePronunciation"
+    static let copyWord = "copyWord"
+    static let copySentence = "copySentence"
     static let launchAtLogin = "launchAtLogin"
     static let singleKey = "singleKey"
     static let sourceLanguage = "sourceLanguage"

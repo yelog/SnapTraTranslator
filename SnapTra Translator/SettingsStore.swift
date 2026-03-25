@@ -67,6 +67,12 @@ final class SettingsStore: ObservableObject {
     @Published var playSentencePronunciation: Bool {
         didSet { defaults.set(playSentencePronunciation, forKey: AppSettingKey.playSentencePronunciation) }
     }
+    @Published var copyWord: Bool {
+        didSet { defaults.set(copyWord, forKey: AppSettingKey.copyWord) }
+    }
+    @Published var copySentence: Bool {
+        didSet { defaults.set(copySentence, forKey: AppSettingKey.copySentence) }
+    }
     @Published var launchAtLogin: Bool {
         didSet { defaults.set(launchAtLogin, forKey: AppSettingKey.launchAtLogin) }
     }
@@ -164,6 +170,11 @@ final class SettingsStore: ObservableObject {
             playWordPronunciation = playWordPronunciationValue ?? true
             playSentencePronunciation = playSentencePronunciationValue ?? true
         }
+
+        let copyWordValue = defaults.object(forKey: AppSettingKey.copyWord) as? Bool
+        let copySentenceValue = defaults.object(forKey: AppSettingKey.copySentence) as? Bool
+        copyWord = copyWordValue ?? false
+        copySentence = copySentenceValue ?? false
 
         let launchAtLoginValue = defaults.object(forKey: AppSettingKey.launchAtLogin) as? Bool
         let loginStatus = loginItemStatus ?? LoginItemManager.isEnabled()

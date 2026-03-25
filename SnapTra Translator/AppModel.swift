@@ -526,6 +526,12 @@ final class AppModel: ObservableObject {
                     useAmericanAccent: settings.englishAccent.isAmerican
                 )
             }
+
+            if settings.copyWord {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(selected.text, forType: .string)
+            }
             guard !Task.isCancelled, activeLookupID == lookupID else { return }
 
             let initialContent = makeInitialOverlayContent(
@@ -657,6 +663,12 @@ final class AppModel: ObservableObject {
                         provider: settings.sentenceTTSProvider,
                         useAmericanAccent: settings.englishAccent.isAmerican
                     )
+                }
+
+                if settings.copySentence {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(paragraph.text, forType: .string)
                 }
 
                 let enabledServices = settings.sentenceTranslationSources

@@ -24,7 +24,7 @@ enum SettingsWindowLayout {
     static let defaultContentWidth: CGFloat = 400
     static let aboutContentWidth: CGFloat = 370
     static let dictionaryContentWidth: CGFloat = 650
-    static let generalContentHeight: CGFloat = 520
+    static let generalContentHeight: CGFloat = 580
     static let dictionaryContentHeight: CGFloat = 550
     static let systemContentHeight: CGFloat = 260
     static let aboutContentHeight: CGFloat = 520
@@ -423,6 +423,59 @@ struct GeneralSettingsView: View {
                                 )
                                 .onTapGesture {
                                     model.settings.playSentencePronunciation.toggle()
+                                }
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+
+                    Divider()
+                        .padding(.horizontal, 14)
+                        .opacity(0.5)
+
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L("Copy to Clipboard"))
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundStyle(.primary)
+                            Text(L("Auto-copy original text after translation"))
+                                .font(.system(size: 11, weight: .regular))
+                                .foregroundStyle(.tertiary)
+                        }
+                        Spacer()
+                        HStack(spacing: 6) {
+                            Text(L("Word"))
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(model.settings.copyWord ? Color.accentColor : .primary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .fill(model.settings.copyWord ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .strokeBorder(model.settings.copyWord ? Color.accentColor.opacity(0.5) : Color.secondary.opacity(0.2), lineWidth: 1)
+                                )
+                                .onTapGesture {
+                                    model.settings.copyWord.toggle()
+                                }
+
+                            Text(L("Sentence"))
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(model.settings.copySentence ? Color.accentColor : .primary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .fill(model.settings.copySentence ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .strokeBorder(model.settings.copySentence ? Color.accentColor.opacity(0.5) : Color.secondary.opacity(0.2), lineWidth: 1)
+                                )
+                                .onTapGesture {
+                                    model.settings.copySentence.toggle()
                                 }
                         }
                     }

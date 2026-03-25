@@ -63,6 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private weak var pronunciationMenuItem: NSMenuItem?
     private weak var wordPronunciationMenuItem: NSMenuItem?
     private weak var sentencePronunciationMenuItem: NSMenuItem?
+    private weak var copyMenuItem: NSMenuItem?
+    private weak var copyWordMenuItem: NSMenuItem?
+    private weak var copySentenceMenuItem: NSMenuItem?
     private weak var continuousTranslationMenuItem: NSMenuItem?
     private weak var providerInfoMenuItem: NSMenuItem?
     #if DEBUG
@@ -286,6 +289,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         pronunciationMenuItem.submenu = pronunciationSubmenu
         menu.addItem(pronunciationMenuItem)
         self.pronunciationMenuItem = pronunciationMenuItem
+
+        // Copy to Clipboard submenu
+        let copySubmenu = NSMenu()
+
+        let copyWordItem = NSMenuItem(
+            title: L("Word"),
+            action: #selector(toggleCopyWord),
+            keyEquivalent: ""
+        )
+        copyWordItem.target = self
+        copySubmenu.addItem(copyWordItem)
+        self.copyWordMenuItem = copyWordItem
+
+        let copySentenceItem = NSMenuItem(
+            title: L("Sentence"),
+            action: #selector(toggleCopySentence),
+            keyEquivalent: ""
+        )
+        copySentenceItem.target = self
+        copySubmenu.addItem(copySentenceItem)
+        self.copySentenceMenuItem = copySentenceItem
+
+        let copyMenuItem = NSMenuItem(
+            title: L("Copy to Clipboard"),
+            action: nil,
+            keyEquivalent: ""
+        )
+        copyMenuItem.submenu = copySubmenu
+        menu.addItem(copyMenuItem)
+        self.copyMenuItem = copyMenuItem
         
         // Actions section
         // Settings
@@ -355,7 +388,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // Update pronunciation submenu item states
         wordPronunciationMenuItem?.state = model.settings.playWordPronunciation ? .on : .off
         sentencePronunciationMenuItem?.state = model.settings.playSentencePronunciation ? .on : .off
-        
+
+        // Update copy submenu item states
+        copyWordMenuItem?.state = model.settings.copyWord ? .on : .off
+        copySentenceMenuItem?.state = model.settings.copySentence ? .on : .off
+
         // Update continuous translation menu item state (checkmark)
         continuousTranslationMenuItem?.state = model.settings.continuousTranslation ? .on : .off
         
@@ -407,6 +444,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     @MainActor @objc private func toggleSentencePronunciation() {
         model.settings.playSentencePronunciation.toggle()
+    }
+
+    @MainActor @objc private func toggleCopyWord() {
+        model.settings.copyWord.toggle()
+    }
+
+    @MainActor @objc private func toggleCopySentence() {
+        model.settings.copySentence.toggle()
     }
 
     @MainActor @objc private func toggleContinuousTranslation() {
