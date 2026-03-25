@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.7-beta.0] - 2026-03-25
+
+### Added
+- add Copy to Clipboard option for word and sentence translation
+- add Show Dock Icon toggle in System tab
+- add localization support for Learning module
+- add word learning module with spaced repetition
+
+### Changed
+- remove Spanish language support
+- add System tab and move launch/menu bar/language settings
+- remove fixed width from filter picker for compact layout
+
+### Fixed
+- persist showDockIcon setting across app restarts
+- hide Dock icon immediately when toggle is turned off
+- move Learning tab below pronunciation options
+
 ## [1.3.6] - 2026-03-23
 
 ### Added
