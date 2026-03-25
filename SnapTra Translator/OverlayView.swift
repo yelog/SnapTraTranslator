@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import SwiftData
 
 struct OverlayView: View {
     let paragraphOverlayMaxHeightOverride: CGFloat?
@@ -1513,10 +1514,13 @@ private struct ParagraphSectionCopyButton: View {
 // MARK: - Preview
 
 #Preview {
-    OverlayView()
+    let config = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try! ModelContainer(for: WordRecord.self, configurations: config)
+    return OverlayView()
         .environmentObject(AppModel(
             settings: SettingsStore(),
-            permissions: PermissionManager()
+            permissions: PermissionManager(),
+            modelContext: container.mainContext
         ))
         .frame(width: 500, height: 300)
         .background(.gray.opacity(0.3))

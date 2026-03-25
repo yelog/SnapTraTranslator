@@ -218,6 +218,7 @@ struct DictionarySettingsView: View {
     enum DictionaryTab: String, CaseIterable {
         case dictionary
         case sentence
+        case learning
         case wordPronunciation
         case sentencePronunciation
 
@@ -225,6 +226,7 @@ struct DictionarySettingsView: View {
             switch self {
             case .dictionary: return L("Word")
             case .sentence: return L("Sentence")
+            case .learning: return L("Learning")
             case .wordPronunciation: return L("Word Pronunciation")
             case .sentencePronunciation: return L("Sentence Pronunciation")
             }
@@ -234,6 +236,7 @@ struct DictionarySettingsView: View {
             switch self {
             case .dictionary: return "books.vertical"
             case .sentence: return "text.bubble"
+            case .learning: return "graduationcap"
             case .wordPronunciation: return "speaker.wave.2"
             case .sentencePronunciation: return "megaphone"
             }
@@ -268,6 +271,7 @@ struct DictionarySettingsView: View {
         VStack(alignment: .leading, spacing: 4) {
             sidebarButton(for: .dictionary)
             sidebarButton(for: .sentence)
+            sidebarButton(for: .learning)
             Divider()
                 .padding(.vertical, 4)
             sidebarButton(for: .wordPronunciation)
@@ -312,6 +316,8 @@ struct DictionarySettingsView: View {
                     dictionarySection
                 case .sentence:
                     sentenceTranslationSection
+                case .learning:
+                    learningSection
                 case .wordPronunciation:
                     wordPronunciationSection
                 case .sentencePronunciation:
@@ -575,6 +581,10 @@ struct DictionarySettingsView: View {
             .padding(.horizontal)
             .padding(.bottom)
         }
+    }
+
+    private var learningSection: some View {
+        LearningSettingsView(modelContext: model.modelContext)
     }
 
     // MARK: - Private Helpers

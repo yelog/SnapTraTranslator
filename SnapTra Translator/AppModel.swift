@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import Foundation
 import SwiftUI
+import SwiftData
 import Translation
 import UserNotifications
 
@@ -196,6 +197,8 @@ final class AppModel: ObservableObject {
     @Published var settings: SettingsStore
     let permissions: PermissionManager
     let translationBridge: TranslationBridge
+    var modelContext: ModelContext
+    lazy var learningService = LearningService(modelContext: modelContext)
     private var _languagePackManager: Any?
 
     @available(macOS 15.0, *)
@@ -240,12 +243,13 @@ final class AppModel: ObservableObject {
     ]
 
     @MainActor
-    init(settings: SettingsStore? = nil, permissions: PermissionManager? = nil) {
+    init(settings: SettingsStore? = nil, permissions: PermissionManager? = nil, modelContext: ModelContext) {
         let resolvedSettings = settings ?? SettingsStore()
         let resolvedPermissions = permissions ?? PermissionManager()
         self.settings = resolvedSettings
         self.permissions = resolvedPermissions
         self.translationBridge = TranslationBridge()
+        self.modelContext = modelContext
         self.dictionaryDownload = DictionaryDownloadManager(offlineService: dictionaryService.offlineService)
 
         // Forward SettingsStore changes to AppModel so SwiftUI redraws
@@ -532,6 +536,10 @@ final class AppModel: ObservableObject {
                     : .loading
             )
             updateOverlay(state: .result(initialContent), anchor: mouseLocation)
+
+            Task {
+                await learningService.recordLookup(word: selected.text)
+            }
 
             let enabledSources = settings.dictionarySources.filter(\.isEnabled)
             await withTaskGroup(of: Void.self) { group in

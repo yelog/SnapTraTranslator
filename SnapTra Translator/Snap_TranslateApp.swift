@@ -8,6 +8,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import SwiftData
 import Translation
 
 @main
@@ -31,7 +32,10 @@ struct Snap_TranslateApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     private let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-    @MainActor private lazy var model = AppModel()
+    private let modelContainer: ModelContainer
+    @MainActor private lazy var model: AppModel = {
+        AppModel(modelContext: modelContainer.mainContext)
+    }()
     private var cancellables = Set<AnyCancellable>()
     private var statusItem: NSStatusItem?
     private var settingsWindowController: SettingsWindowController?
@@ -39,6 +43,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var isManualWindowOpen = false
     private var shouldShowWindowAfterPermissionGrant = false
     private var hasCompletedInitialLanguageAvailabilityCheck = false
+
+    override init() {
+        do {
+            let schema = Schema([WordRecord.self])
+            let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+            modelContainer = try ModelContainer(for: schema, configurations: [configuration])
+        } catch {
+            fatalError("Failed to initialize SwiftData model container: \(error)")
+        }
+        super.init()
+    }
 
     private var settingsWindow: NSWindow? {
         settingsWindowController?.window
