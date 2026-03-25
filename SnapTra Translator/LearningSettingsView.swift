@@ -109,7 +109,7 @@ struct LearningSettingsView: View {
                     .foregroundStyle(.red)
             }
             .buttonStyle(.plain)
-            .help(L("Clear all learning data"))
+            .help(L("Clear learning data"))
             .confirmationDialog(
                 L("Clear All Learning Data?"),
                 isPresented: $showingClearConfirmation,
