@@ -26,7 +26,7 @@ enum SettingsWindowLayout {
     static let dictionaryContentWidth: CGFloat = 650
     static let generalContentHeight: CGFloat = 520
     static let dictionaryContentHeight: CGFloat = 550
-    static let systemContentHeight: CGFloat = 200
+    static let systemContentHeight: CGFloat = 260
     static let aboutContentHeight: CGFloat = 520
     static let aboutContentHeightWithChannelSelector: CGFloat = 650
     static let outerPadding: CGFloat = 16
@@ -828,6 +828,16 @@ struct SystemSettingsView: View {
                         title: L("Show Menu Bar Icon"),
                         subtitle: L("Display app icon in the status bar"),
                         isOn: $model.settings.showMenuBarIcon
+                    )
+
+                    Divider()
+                        .padding(.horizontal, 14)
+                        .opacity(0.5)
+
+                    ToggleRow(
+                        title: L("Show Dock Icon"),
+                        subtitle: L("Display app icon in the Dock"),
+                        isOn: $model.settings.showDockIcon
                     )
 
                     Divider()

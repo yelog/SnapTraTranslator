@@ -71,7 +71,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         guard !isRunningTests else { return }
-        NSApp.setActivationPolicy(.accessory)
+        if model.settings.showDockIcon {
+            NSApp.setActivationPolicy(.regular)
+        } else {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -117,6 +121,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             .sink { [weak self] show in
                 Task { @MainActor in
                     self?.updateStatusItemVisibility(show: show)
+                }
+            }
+            .store(in: &cancellables)
+
+        model.settings.$showDockIcon
+            .sink { [weak self] show in
+                Task { @MainActor in
+                    self?.updateDockIconVisibility(show: show)
                 }
             }
             .store(in: &cancellables)
@@ -507,7 +519,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private func hideDockIcon() {
         isManualWindowOpen = false
         settingsWindow?.orderOut(nil)
-        NSApp.setActivationPolicy(.accessory)
+        if !model.settings.showDockIcon {
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+
+    @MainActor
+    private func updateDockIconVisibility(show: Bool) {
+        if show {
+            NSApp.setActivationPolicy(.regular)
+        } else if !isManualWindowOpen {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
     #if DEBUG

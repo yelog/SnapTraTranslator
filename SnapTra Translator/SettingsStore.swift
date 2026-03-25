@@ -73,6 +73,10 @@ final class SettingsStore: ObservableObject {
     @Published var showMenuBarIcon: Bool {
         didSet { defaults.set(showMenuBarIcon, forKey: AppSettingKey.showMenuBarIcon) }
     }
+
+    @Published var showDockIcon: Bool = true {
+        didSet { defaults.set(showDockIcon, forKey: AppSettingKey.showDockIcon) }
+    }
     @Published var singleKey: SingleKey {
         didSet { defaults.set(singleKey.rawValue, forKey: AppSettingKey.singleKey) }
     }
