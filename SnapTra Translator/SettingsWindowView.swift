@@ -12,6 +12,7 @@ import Translation
 enum SettingsTab: String, CaseIterable {
     case general = "General"
     case service = "Service"
+    case system = "System"
     case about = "About"
 }
 
@@ -23,8 +24,9 @@ enum SettingsWindowLayout {
     static let defaultContentWidth: CGFloat = 400
     static let aboutContentWidth: CGFloat = 370
     static let dictionaryContentWidth: CGFloat = 650
-    static let generalContentHeight: CGFloat = 680
+    static let generalContentHeight: CGFloat = 520
     static let dictionaryContentHeight: CGFloat = 550
+    static let systemContentHeight: CGFloat = 200
     static let aboutContentHeight: CGFloat = 520
     static let aboutContentHeightWithChannelSelector: CGFloat = 650
     static let outerPadding: CGFloat = 16
@@ -47,12 +49,13 @@ enum SettingsWindowLayout {
             return generalContentHeight
         case .service:
             return dictionaryContentHeight
+        case .system:
+            return systemContentHeight
         case .about:
             if UpdateChecker.shared.isGitHubRelease {
                 return aboutContentHeightWithChannelSelector
             }
             #if DEBUG
-            // Debug mode: also check debugShowChannelSelector for testing
             if SettingsStore.shared.debugShowChannelSelector {
                 return aboutContentHeightWithChannelSelector
             }
@@ -95,9 +98,10 @@ struct SettingsWindowView: View {
             return SettingsWindowLayout.generalContentHeight
         case .service:
             return SettingsWindowLayout.dictionaryContentHeight
+        case .system:
+            return SettingsWindowLayout.systemContentHeight
         case .about:
             #if DEBUG
-            // Access debugShowChannelSelector to establish SwiftUI dependency
             if UpdateChecker.shared.isGitHubRelease || model.settings.debugShowChannelSelector {
                 return SettingsWindowLayout.aboutContentHeightWithChannelSelector
             }
@@ -127,6 +131,14 @@ struct SettingsWindowView: View {
                     Label(L("Service"), systemImage: "square.grid.2x2")
                 }
                 .tag(SettingsTab.service)
+
+            SystemSettingsView(
+                hidesScrollIndicator: hidesTabScrollIndicator
+            )
+                .tabItem {
+                    Label(L("System"), systemImage: "gearshape.2")
+                }
+                .tag(SettingsTab.system)
 
             AboutSettingsView(
                 hidesScrollIndicator: hidesTabScrollIndicator
@@ -445,34 +457,6 @@ struct GeneralSettingsView: View {
                         title: L("Debug OCR Region"),
                         subtitle: L("Show capture area when shortcut is pressed"),
                         isOn: $model.settings.debugShowOcrRegion
-                    )
-
-                    Divider()
-                        .padding(.horizontal, 14)
-                        .opacity(0.5)
-
-                    ToggleRow(
-                        title: L("Launch at Login"),
-                        subtitle: L("Start automatically when you log in"),
-                        isOn: $model.settings.launchAtLogin
-                    )
-
-                    Divider()
-                        .padding(.horizontal, 14)
-                        .opacity(0.5)
-
-                    ToggleRow(
-                        title: L("Show Menu Bar Icon"),
-                        subtitle: L("Display app icon in the status bar"),
-                        isOn: $model.settings.showMenuBarIcon
-                    )
-
-                    Divider()
-                        .padding(.horizontal, 14)
-                        .opacity(0.5)
-
-                    AppLanguagePickerRow(
-                        language: $model.settings.appLanguage
                     )
                 }
                 .background(
@@ -817,5 +801,62 @@ struct AppLanguagePickerRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+}
+
+// MARK: - System Settings View
+
+struct SystemSettingsView: View {
+    @EnvironmentObject var model: AppModel
+    var hidesScrollIndicator: Bool = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                VStack(spacing: 0) {
+                    ToggleRow(
+                        title: L("Launch at Login"),
+                        subtitle: L("Start automatically when you log in"),
+                        isOn: $model.settings.launchAtLogin
+                    )
+
+                    Divider()
+                        .padding(.horizontal, 14)
+                        .opacity(0.5)
+
+                    ToggleRow(
+                        title: L("Show Menu Bar Icon"),
+                        subtitle: L("Display app icon in the status bar"),
+                        isOn: $model.settings.showMenuBarIcon
+                    )
+
+                    Divider()
+                        .padding(.horizontal, 14)
+                        .opacity(0.5)
+
+                    AppLanguagePickerRow(
+                        language: $model.settings.appLanguage
+                    )
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(.background)
+                        .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
+                        .shadow(color: .black.opacity(0.02), radius: 1, x: 0, y: 1)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(.quaternary, lineWidth: 0.5)
+                )
+            }
+            .padding()
+            .background(
+                ScrollViewScrollerConfigurator(
+                    hidesVerticalScroller: hidesScrollIndicator
+                )
+            )
+        }
+        .scrollIndicators(hidesScrollIndicator ? .hidden : .automatic, axes: .vertical)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
