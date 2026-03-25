@@ -218,9 +218,9 @@ struct DictionarySettingsView: View {
     enum DictionaryTab: String, CaseIterable {
         case dictionary
         case sentence
-        case learning
         case wordPronunciation
         case sentencePronunciation
+        case learning
 
         var title: String {
             switch self {
@@ -271,11 +271,13 @@ struct DictionarySettingsView: View {
         VStack(alignment: .leading, spacing: 4) {
             sidebarButton(for: .dictionary)
             sidebarButton(for: .sentence)
-            sidebarButton(for: .learning)
             Divider()
                 .padding(.vertical, 4)
             sidebarButton(for: .wordPronunciation)
             sidebarButton(for: .sentencePronunciation)
+            Divider()
+                .padding(.vertical, 4)
+            sidebarButton(for: .learning)
             Spacer()
         }
         .padding(12)
