@@ -100,7 +100,6 @@ struct LearningSettingsView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .frame(width: 280)
 
             Button {
                 showingClearConfirmation = true
