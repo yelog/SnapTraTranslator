@@ -74,7 +74,7 @@ final class SettingsStore: ObservableObject {
         didSet { defaults.set(showMenuBarIcon, forKey: AppSettingKey.showMenuBarIcon) }
     }
 
-    @Published var showDockIcon: Bool = true {
+    @Published var showDockIcon: Bool {
         didSet { defaults.set(showDockIcon, forKey: AppSettingKey.showDockIcon) }
     }
     @Published var singleKey: SingleKey {
@@ -168,12 +168,14 @@ final class SettingsStore: ObservableObject {
         let launchAtLoginValue = defaults.object(forKey: AppSettingKey.launchAtLogin) as? Bool
         let loginStatus = loginItemStatus ?? LoginItemManager.isEnabled()
         let showMenuBarIconValue = defaults.object(forKey: AppSettingKey.showMenuBarIcon) as? Bool
+        let showDockIconValue = defaults.object(forKey: AppSettingKey.showDockIcon) as? Bool
         let singleKeyValue = defaults.string(forKey: AppSettingKey.singleKey)
         let debugShowOcrRegionValue = defaults.object(forKey: AppSettingKey.debugShowOcrRegion) as? Bool
         let continuousTranslationValue = defaults.object(forKey: AppSettingKey.continuousTranslation) as? Bool
 
         launchAtLogin = launchAtLoginValue ?? loginStatus
         showMenuBarIcon = showMenuBarIconValue ?? true
+        showDockIcon = showDockIconValue ?? true
         singleKey = SingleKey(rawValue: singleKeyValue ?? "leftControl") ?? .leftControl
         sourceLanguage = defaults.string(forKey: AppSettingKey.sourceLanguage) ?? "en"
         let defaultTarget = Self.defaultTargetLanguage()
