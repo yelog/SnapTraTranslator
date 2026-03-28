@@ -123,8 +123,11 @@ final class SettingsStore: ObservableObject {
     @Published var englishAccent: EnglishAccent {
         didSet { defaults.set(englishAccent.rawValue, forKey: AppSettingKey.englishAccent) }
     }
-    @Published var sentenceTranslationEnabled: Bool {
-        didSet { defaults.set(sentenceTranslationEnabled, forKey: AppSettingKey.sentenceTranslationEnabled) }
+    @Published var ocrSentenceTranslationEnabled: Bool {
+        didSet { defaults.set(ocrSentenceTranslationEnabled, forKey: AppSettingKey.ocrSentenceTranslationEnabled) }
+    }
+    @Published var selectedTextTranslationEnabled: Bool {
+        didSet { defaults.set(selectedTextTranslationEnabled, forKey: AppSettingKey.selectedTextTranslationEnabled) }
     }
     @Published var autoCheckUpdates: Bool {
         didSet {
@@ -230,9 +233,9 @@ final class SettingsStore: ObservableObject {
         let englishAccentValue = defaults.string(forKey: AppSettingKey.englishAccent)
         englishAccent = EnglishAccent(rawValue: englishAccentValue ?? "en-US") ?? .american
         
-        // Load sentence translation enabled (default to true for backward compatibility)
-        let sentenceTranslationEnabledValue = defaults.object(forKey: AppSettingKey.sentenceTranslationEnabled) as? Bool
-        sentenceTranslationEnabled = sentenceTranslationEnabledValue ?? true
+        let sentenceTranslationSettings = Self.loadSentenceTranslationSettings(defaults: defaults)
+        ocrSentenceTranslationEnabled = sentenceTranslationSettings.ocrSentenceTranslationEnabled
+        selectedTextTranslationEnabled = sentenceTranslationSettings.selectedTextTranslationEnabled
 
         // Load auto update settings
         let autoCheckUpdatesValue = defaults.object(forKey: AppSettingKey.autoCheckUpdates) as? Bool
@@ -352,6 +355,35 @@ final class SettingsStore: ObservableObject {
             (.google, false),
             (.freeDictionaryAPI, false),
         ]
+    }
+
+    static func loadSentenceTranslationSettings(
+        defaults: UserDefaults
+    ) -> (ocrSentenceTranslationEnabled: Bool, selectedTextTranslationEnabled: Bool) {
+        let ocrSentenceTranslationEnabledValue = defaults.object(
+            forKey: AppSettingKey.ocrSentenceTranslationEnabled
+        ) as? Bool
+        let legacySentenceTranslationEnabledValue = defaults.object(
+            forKey: AppSettingKey.legacySentenceTranslationEnabled
+        ) as? Bool
+        let resolvedOcrSentenceTranslationEnabled = ocrSentenceTranslationEnabledValue
+            ?? legacySentenceTranslationEnabledValue
+            ?? true
+        let selectedTextTranslationEnabled = defaults.object(
+            forKey: AppSettingKey.selectedTextTranslationEnabled
+        ) as? Bool ?? true
+
+        if ocrSentenceTranslationEnabledValue == nil {
+            defaults.set(
+                resolvedOcrSentenceTranslationEnabled,
+                forKey: AppSettingKey.ocrSentenceTranslationEnabled
+            )
+        }
+
+        return (
+            ocrSentenceTranslationEnabled: resolvedOcrSentenceTranslationEnabled,
+            selectedTextTranslationEnabled: selectedTextTranslationEnabled
+        )
     }
 
     private static func makeDictionarySource(

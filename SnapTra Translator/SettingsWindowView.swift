@@ -293,8 +293,12 @@ struct GeneralSettingsView: View {
     @State private var appeared = false
     var hidesScrollIndicator: Bool = false
 
-    private var allPermissionsGranted: Bool {
+    private var hasAnyTranslationCapability: Bool {
         model.permissions.status.screenRecording
+            || (
+                model.settings.selectedTextTranslationEnabled
+                    && model.permissions.status.accessibility
+            )
     }
 
     @available(macOS 15.0, *)
@@ -330,9 +334,9 @@ struct GeneralSettingsView: View {
 
     private var allReady: Bool {
         if #available(macOS 15.0, *) {
-            return allPermissionsGranted && targetLanguageReady
+            return hasAnyTranslationCapability && targetLanguageReady
         }
-        return allPermissionsGranted
+        return hasAnyTranslationCapability
     }
 
     var body: some View {
@@ -343,8 +347,21 @@ struct GeneralSettingsView: View {
                     GeneralPermissionRow(
                         icon: "rectangle.dashed.badge.record",
                         title: L("Screen Recording"),
+                        subtitle: L("Used for OCR word lookup and double-tap OCR sentence translation"),
                         isGranted: model.permissions.status.screenRecording,
                         action: { model.permissions.requestAndOpenScreenRecording() }
+                    )
+
+                    Divider()
+                        .padding(.horizontal, 14)
+                        .opacity(0.5)
+
+                    GeneralPermissionRow(
+                        icon: "figure.wave",
+                        title: L("Accessibility"),
+                        subtitle: L("Used for reading selected text and translating sentences"),
+                        isGranted: model.permissions.status.accessibility,
+                        action: { model.permissions.requestAndOpenAccessibility() }
                     )
                 }
                 .background(
@@ -497,9 +514,19 @@ struct GeneralSettingsView: View {
                         .opacity(0.5)
 
                     ToggleRow(
-                        title: L("Enable Sentence Translation"),
+                        title: L("Double-tap OCR Sentence Translation"),
                         subtitle: L("Double-click %@ to translate the paragraph under cursor", model.settings.hotkeyDisplayText),
-                        isOn: $model.settings.sentenceTranslationEnabled
+                        isOn: $model.settings.ocrSentenceTranslationEnabled
+                    )
+
+                    Divider()
+                        .padding(.horizontal, 14)
+                        .opacity(0.5)
+
+                    ToggleRow(
+                        title: L("Translate Selected Text"),
+                        subtitle: L("Hold %@ to translate selected text when the pointer is inside the selection", model.settings.hotkeyDisplayText),
+                        isOn: $model.settings.selectedTextTranslationEnabled
                     )
 
                     Divider()
@@ -590,6 +617,7 @@ struct GeneralSettingsView: View {
 struct GeneralPermissionRow: View {
     let icon: String
     let title: String
+    let subtitle: String
     let isGranted: Bool
     let action: () -> Void
 
@@ -601,9 +629,14 @@ struct GeneralPermissionRow: View {
                     .foregroundStyle(isGranted ? .green : .secondary)
                     .frame(width: 24)
 
-                Text(title)
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(.primary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(.tertiary)
+                }
 
                 Spacer()
 

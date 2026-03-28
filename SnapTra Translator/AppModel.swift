@@ -184,7 +184,8 @@ private struct DictionarySectionResult {
 
 private enum ActiveLookupMode {
     case word
-    case paragraph
+    case ocrSentence
+    case selectedTextSentence
 }
 
 @MainActor
@@ -210,6 +211,7 @@ final class AppModel: ObservableObject {
     private let hotkeyManager = HotkeyManager()
     private let captureService = ScreenCaptureService()
     private let ocrService = OCRService()
+    private let selectedTextService = SelectedTextService()
     private let dictionaryService = DictionaryService()
     private let speechService = SpeechService()
     private let sentenceTranslationService = SentenceTranslationService()
@@ -331,7 +333,7 @@ final class AppModel: ObservableObject {
 
     func handleHotkeyDoubleTap() {
         guard isHotkeyActive else { return }
-        guard settings.sentenceTranslationEnabled else {
+        guard settings.ocrSentenceTranslationEnabled else {
             isHotkeyActive = false
             stopMouseTracking()
             cancelActiveLookupWork()
@@ -343,7 +345,7 @@ final class AppModel: ObservableObject {
             settings.debugShowOcrRegion = false
             debugOverlayWindowController.hide()
         }
-        activeLookupMode = .paragraph
+        activeLookupMode = .ocrSentence
         stopMouseTracking()
         let mouseLocation = NSEvent.mouseLocation
         setOverlayAnchor(mouseLocation)
@@ -464,13 +466,35 @@ final class AppModel: ObservableObject {
 
     func performLookup(lookupID: UUID) async {
         guard !Task.isCancelled, activeLookupID == lookupID else { return }
-        guard permissions.status.screenRecording else {
-            updateOverlay(state: .error(L("Enable Screen Recording")), anchor: NSEvent.mouseLocation)
-            return
-        }
 
         let mouseLocation = NSEvent.mouseLocation
         guard activeLookupID == lookupID else { return }
+
+        switch resolveSinglePressLookupIntent(mouseLocation: mouseLocation) {
+        case .selectedTextSentence(let snapshot):
+            activeLookupMode = .selectedTextSentence
+            await performSelectedTextSentenceLookup(
+                snapshot: snapshot,
+                lookupID: lookupID,
+                mouseLocation: mouseLocation
+            )
+        case .ocrWord:
+            activeLookupMode = .word
+            await performOcrWordLookup(
+                lookupID: lookupID,
+                mouseLocation: mouseLocation
+            )
+        }
+    }
+
+    private func performOcrWordLookup(
+        lookupID: UUID,
+        mouseLocation: CGPoint
+    ) async {
+        guard permissions.status.screenRecording else {
+            updateOverlay(state: .error(L("Enable Screen Recording")), anchor: mouseLocation)
+            return
+        }
 
         // 只在调试模式下显示初始 loading 状态
         if settings.debugShowOcrRegion {
@@ -599,6 +623,84 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func resolveSinglePressLookupIntent(mouseLocation: CGPoint) -> SinglePressLookupIntent {
+        let selectionSnapshot = selectedTextService.currentSelectionSnapshot()
+        return SinglePressLookupRouter.resolve(
+            mouseLocation: mouseLocation,
+            isSelectedTextTranslationEnabled: settings.selectedTextTranslationEnabled,
+            hasAccessibilityPermission: permissions.status.accessibility,
+            selectionSnapshot: selectionSnapshot
+        )
+    }
+
+    private func performSelectedTextSentenceLookup(
+        snapshot: SelectedTextSnapshot,
+        lookupID: UUID,
+        mouseLocation: CGPoint
+    ) async {
+        activeParagraphRect = nil
+        overlayPreferredWidth = nil
+        paragraphHighlightWindowController.hide()
+
+        let languagePair = resolveParagraphLanguagePair()
+        let sourceLanguage = languagePair.sourceLanguage
+        let targetLanguage = languagePair.targetLanguage
+
+        if settings.playSentencePronunciation {
+            let languageCode = sourceLanguage.languageCode?.identifier
+            speechService.speak(
+                snapshot.text,
+                language: languageCode,
+                provider: settings.sentenceTTSProvider,
+                useAmericanAccent: settings.englishAccent.isAmerican
+            )
+        }
+
+        if settings.copySentence {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(snapshot.text, forType: .string)
+        }
+
+        let enabledServices = settings.sentenceTranslationSources
+            .filter { $0.isEnabled && !$0.isNative }
+
+        let initialContent = ParagraphOverlayContent(
+            originalText: snapshot.text,
+            translationState: .loading,
+            serviceResults: enabledServices.map { source in
+                ServiceTranslationResult(sourceType: source.type, state: .loading)
+            },
+            bodyFontSize: 14
+        )
+        updateOverlay(state: .paragraphResult(initialContent), anchor: mouseLocation)
+
+        Task {
+            await performThirdPartySentenceTranslations(
+                text: snapshot.text,
+                sourceLanguage: languagePair.sourceIdentifier,
+                targetLanguage: languagePair.targetIdentifier,
+                enabledServices: enabledServices,
+                lookupID: lookupID,
+                anchor: mouseLocation
+            )
+        }
+
+        let translationState = await loadSentenceTranslationState(
+            text: snapshot.text,
+            languagePair: languagePair,
+            sourceLanguage: sourceLanguage,
+            targetLanguage: targetLanguage,
+            translationBridge: translationBridge
+        )
+
+        applyParagraphTranslationState(
+            translationState,
+            lookupID: lookupID,
+            anchor: mouseLocation
+        )
+    }
+
     func performParagraphLookup(lookupID: UUID) async {
         guard !Task.isCancelled, activeLookupID == lookupID else { return }
         guard permissions.status.screenRecording else {
@@ -691,7 +793,7 @@ final class AppModel: ObservableObject {
 
                 // Start third-party translations in parallel
                 Task {
-                    await performThirdPartyParagraphTranslations(
+                    await performThirdPartySentenceTranslations(
                         text: paragraph.text,
                         sourceLanguage: languagePair.sourceIdentifier,
                         targetLanguage: languagePair.targetIdentifier,
@@ -876,7 +978,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func performThirdPartyParagraphTranslations(
+    private func performThirdPartySentenceTranslations(
         text: String,
         sourceLanguage: String,
         targetLanguage: String,
@@ -918,6 +1020,46 @@ final class AppModel: ObservableObject {
                     }
                 }
             }
+        }
+    }
+
+    private func loadSentenceTranslationState(
+        text: String,
+        languagePair: LookupLanguagePair,
+        sourceLanguage: Locale.Language,
+        targetLanguage: Locale.Language,
+        translationBridge: TranslationBridge
+    ) async -> ParagraphOverlayTranslationState {
+        let sourceText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sourceText.isEmpty else {
+            return .failed("No text selected")
+        }
+
+        if languagePair.isSameLanguage {
+            return .ready(sourceText)
+        }
+
+        if #available(macOS 15.0, *) {
+            let status = await languageAvailabilityStatus(for: languagePair)
+            guard status == .installed else {
+                return .failed(message(for: status))
+            }
+
+            do {
+                let translatedText = try await translationBridge.translate(
+                    text: sourceText,
+                    source: sourceLanguage,
+                    target: targetLanguage
+                ).trimmingCharacters(in: .whitespacesAndNewlines)
+
+                return translatedText.isEmpty ? .failed("No translation result") : .ready(translatedText)
+            } catch TranslationError.timeout {
+                return .failed("Translation timeout. Please try again.")
+            } catch {
+                return .failed("Translation failed: \(error.localizedDescription)")
+            }
+        } else {
+            return .failed("Translation requires macOS 15")
         }
     }
 
@@ -996,7 +1138,7 @@ final class AppModel: ObservableObject {
     }
 
     func updateOverlay(state: OverlayState, anchor: CGPoint? = nil) {
-        guard isHotkeyActive || activeLookupMode == .paragraph || !settings.continuousTranslation else { return }
+        guard isHotkeyActive || activeLookupMode == .ocrSentence || !settings.continuousTranslation else { return }
 
         if let anchor {
             setOverlayAnchor(anchor)
@@ -1014,7 +1156,7 @@ final class AppModel: ObservableObject {
             if overlayWindowController.isVisible {
                 refreshParagraphOverlayLayoutImmediately()
             } else {
-                overlayWindowController.show(at: overlayAnchor, makeKey: activeLookupMode == .paragraph)
+                overlayWindowController.show(at: overlayAnchor, makeKey: activeLookupMode == .ocrSentence)
             }
             overlayWindowController.setInteractive(true)
         case .result:
@@ -1024,9 +1166,9 @@ final class AppModel: ObservableObject {
             if overlayWindowController.isVisible {
                 scheduleOverlayLayoutRefresh()
             } else {
-                overlayWindowController.show(at: overlayAnchor, makeKey: activeLookupMode == .paragraph)
+                overlayWindowController.show(at: overlayAnchor, makeKey: activeLookupMode == .ocrSentence)
             }
-            if activeLookupMode == .paragraph || !settings.continuousTranslation {
+            if activeLookupMode == .ocrSentence || !settings.continuousTranslation {
                 overlayWindowController.setInteractive(true)
             }
         default:
@@ -1036,9 +1178,9 @@ final class AppModel: ObservableObject {
             if overlayWindowController.isVisible {
                 scheduleOverlayLayoutRefresh()
             } else {
-                overlayWindowController.show(at: overlayAnchor, makeKey: activeLookupMode == .paragraph)
+                overlayWindowController.show(at: overlayAnchor, makeKey: activeLookupMode == .ocrSentence)
             }
-            if activeLookupMode == .paragraph {
+            if activeLookupMode == .ocrSentence {
                 overlayWindowController.setInteractive(true)
             }
         }
@@ -1107,7 +1249,7 @@ final class AppModel: ObservableObject {
 
     private func handleScreenConfigurationChange() {
         captureService.invalidateCache()
-        guard isHotkeyActive || activeLookupMode == .paragraph else { return }
+        guard isHotkeyActive || activeLookupMode == .ocrSentence else { return }
         cancelActiveLookupWork()
         hideOverlay()
         debugOverlayWindowController.hide()
@@ -1617,7 +1759,7 @@ final class AppModel: ObservableObject {
     }
 
     private var isParagraphOverlayPresented: Bool {
-        activeLookupMode == .paragraph && overlayState != .idle
+        activeLookupMode == .ocrSentence && overlayState != .idle
     }
 
     private func syncParagraphEscapeMonitoring() {

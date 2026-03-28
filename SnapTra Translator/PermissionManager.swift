@@ -6,11 +6,15 @@ import ScreenCaptureKit
 
 struct PermissionStatus: Equatable {
     var screenRecording: Bool
+    var accessibility: Bool
 }
 
 @MainActor
 final class PermissionManager: ObservableObject {
-    @Published private(set) var status: PermissionStatus = PermissionStatus(screenRecording: false)
+    @Published private(set) var status: PermissionStatus = PermissionStatus(
+        screenRecording: false,
+        accessibility: false
+    )
 
     func refreshStatus() {
         Task { await refreshStatusAsync() }
@@ -18,7 +22,11 @@ final class PermissionManager: ObservableObject {
 
     func refreshStatusAsync() async {
         let screenRecordingAllowed = await screenRecordingStatus()
-        status = PermissionStatus(screenRecording: screenRecordingAllowed)
+        let accessibilityAllowed = accessibilityStatus()
+        status = PermissionStatus(
+            screenRecording: screenRecordingAllowed,
+            accessibility: accessibilityAllowed
+        )
     }
 
     func requestScreenRecording() {
@@ -31,8 +39,35 @@ final class PermissionManager: ObservableObject {
         refreshAfterDelay()
     }
 
+    func requestAccessibility() {
+        activateAppForPermissionPrompt()
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+    }
+
+    func requestAndOpenAccessibility() {
+        guard !accessibilityStatus() else {
+            openAccessibilitySettings()
+            refreshAfterDelay()
+            return
+        }
+
+        requestAccessibility()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self, !self.accessibilityStatus() else { return }
+            self.openAccessibilitySettings()
+        }
+        refreshAfterDelay()
+        refreshAfterDelay(seconds: 1.5)
+        refreshAfterDelay(seconds: 3.0)
+    }
+
     func openScreenRecordingSettings() {
         openPrivacyPane(anchor: "Privacy_ScreenCapture")
+    }
+
+    func openAccessibilitySettings() {
+        openPrivacyPane(anchor: "Privacy_Accessibility")
     }
 
     private func openPrivacyPane(anchor: String) {
@@ -63,8 +98,16 @@ final class PermissionManager: ObservableObject {
         }
     }
 
-    private func refreshAfterDelay() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+    private func accessibilityStatus() -> Bool {
+        AXIsProcessTrusted()
+    }
+
+    private func activateAppForPermissionPrompt() {
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func refreshAfterDelay(seconds: TimeInterval = 0.6) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
             self?.refreshStatus()
         }
     }

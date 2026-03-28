@@ -23,6 +23,51 @@ final class LookupLanguagePairTests: XCTestCase {
 
 @MainActor
 final class SettingsStoreMigrationTests: XCTestCase {
+    private let testKeys: [String] = [
+        AppSettingKey.playPronunciation,
+        AppSettingKey.playWordPronunciation,
+        AppSettingKey.playSentencePronunciation,
+        AppSettingKey.copyWord,
+        AppSettingKey.copySentence,
+        AppSettingKey.launchAtLogin,
+        AppSettingKey.showMenuBarIcon,
+        AppSettingKey.showDockIcon,
+        AppSettingKey.singleKey,
+        AppSettingKey.sourceLanguage,
+        AppSettingKey.targetLanguage,
+        AppSettingKey.debugShowOcrRegion,
+        AppSettingKey.continuousTranslation,
+        AppSettingKey.wordTTSProvider,
+        AppSettingKey.sentenceTTSProvider,
+        AppSettingKey.appLanguage,
+        AppSettingKey.englishAccent,
+        AppSettingKey.legacySentenceTranslationEnabled,
+        AppSettingKey.ocrSentenceTranslationEnabled,
+        AppSettingKey.selectedTextTranslationEnabled,
+        AppSettingKey.autoCheckUpdates,
+        AppSettingKey.updateChannel,
+        AppSettingKey.debugShowChannelSelector,
+        "dictionarySources",
+        "sentenceTranslationSources",
+    ]
+
+    private func makeDefaults(testName: String = #function) -> UserDefaults {
+        let defaults = UserDefaults.standard
+        reset(defaults)
+        return defaults
+    }
+
+    override func tearDown() {
+        reset(.standard)
+        super.tearDown()
+    }
+
+    private func reset(_ defaults: UserDefaults) {
+        for key in testKeys {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     func testDefaultDictionarySources() {
         let sources = SettingsStore.defaultDictionarySources(ecdictInstalled: false)
 
@@ -52,6 +97,102 @@ final class SettingsStoreMigrationTests: XCTestCase {
         XCTAssertFalse(migrated[2].isEnabled)
         XCTAssertFalse(migrated[3].isEnabled)
         XCTAssertFalse(migrated[4].isEnabled)
+    }
+
+    func testLegacySentenceTranslationSettingMigratesToOcrSentenceToggle() {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: AppSettingKey.legacySentenceTranslationEnabled)
+
+        let settings = SettingsStore.loadSentenceTranslationSettings(defaults: defaults)
+
+        XCTAssertFalse(settings.ocrSentenceTranslationEnabled)
+        XCTAssertEqual(
+            defaults.object(forKey: AppSettingKey.ocrSentenceTranslationEnabled) as? Bool,
+            false
+        )
+    }
+
+    func testSelectedTextTranslationDefaultsToEnabled() {
+        let defaults = makeDefaults()
+
+        let settings = SettingsStore.loadSentenceTranslationSettings(defaults: defaults)
+
+        XCTAssertTrue(settings.selectedTextTranslationEnabled)
+    }
+}
+
+@MainActor
+final class SelectedTextLookupRoutingTests: XCTestCase {
+    func testInsideSelectionRoutesToSelectedTextTranslation() {
+        let snapshot = SelectedTextSnapshot(
+            text: "Hello world",
+            selectedRange: NSRange(location: 0, length: 11),
+            bounds: CGRect(x: 100, y: 100, width: 120, height: 24),
+            sourceAppIdentifier: "com.apple.TextEdit"
+        )
+
+        let intent = SinglePressLookupRouter.resolve(
+            mouseLocation: CGPoint(x: 140, y: 110),
+            isSelectedTextTranslationEnabled: true,
+            hasAccessibilityPermission: true,
+            selectionSnapshot: snapshot
+        )
+
+        XCTAssertEqual(intent, .selectedTextSentence(snapshot))
+    }
+
+    func testOutsideSelectionFallsBackToOcrWord() {
+        let snapshot = SelectedTextSnapshot(
+            text: "Hello world",
+            selectedRange: NSRange(location: 0, length: 11),
+            bounds: CGRect(x: 100, y: 100, width: 120, height: 24),
+            sourceAppIdentifier: "com.apple.TextEdit"
+        )
+
+        let intent = SinglePressLookupRouter.resolve(
+            mouseLocation: CGPoint(x: 260, y: 200),
+            isSelectedTextTranslationEnabled: true,
+            hasAccessibilityPermission: true,
+            selectionSnapshot: snapshot
+        )
+
+        XCTAssertEqual(intent, .ocrWord)
+    }
+
+    func testMissingAccessibilityFallsBackToOcrWord() {
+        let snapshot = SelectedTextSnapshot(
+            text: "Hello world",
+            selectedRange: NSRange(location: 0, length: 11),
+            bounds: CGRect(x: 100, y: 100, width: 120, height: 24),
+            sourceAppIdentifier: "com.apple.TextEdit"
+        )
+
+        let intent = SinglePressLookupRouter.resolve(
+            mouseLocation: CGPoint(x: 140, y: 110),
+            isSelectedTextTranslationEnabled: true,
+            hasAccessibilityPermission: false,
+            selectionSnapshot: snapshot
+        )
+
+        XCTAssertEqual(intent, .ocrWord)
+    }
+
+    func testDisabledSelectedTextFeatureFallsBackToOcrWord() {
+        let snapshot = SelectedTextSnapshot(
+            text: "Hello world",
+            selectedRange: NSRange(location: 0, length: 11),
+            bounds: CGRect(x: 100, y: 100, width: 120, height: 24),
+            sourceAppIdentifier: "com.apple.TextEdit"
+        )
+
+        let intent = SinglePressLookupRouter.resolve(
+            mouseLocation: CGPoint(x: 140, y: 110),
+            isSelectedTextTranslationEnabled: false,
+            hasAccessibilityPermission: true,
+            selectionSnapshot: snapshot
+        )
+
+        XCTAssertEqual(intent, .ocrWord)
     }
 }
 
