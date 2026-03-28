@@ -4,6 +4,7 @@ import Foundation
 final class DictionaryService {
     /// Offline ECDICT database. Exposed so AppModel can pass it to DictionaryDownloadManager.
     let offlineService = OfflineDictionaryService()
+    let onlineService = OnlineDictionaryService()
 
     /// Performs a lookup using the provided dictionary sources in priority order.
     /// - Parameters:
@@ -46,11 +47,20 @@ final class DictionaryService {
     ) async -> DictionaryEntry? {
         guard source.isEnabled, let normalized = normalizeWord(word) else { return nil }
 
-        return Self.lookupFromLocalSource(
+        if let localEntry = Self.lookupFromLocalSource(
             source,
             word: normalized,
             preferEnglish: preferEnglish,
             offlineService: offlineService
+        ) {
+            return localEntry
+        }
+
+        return await onlineService.lookup(
+            normalized,
+            source: source.type,
+            sourceLanguage: sourceLanguage,
+            targetLanguage: targetLanguage
         )
     }
 
@@ -111,6 +121,8 @@ final class DictionaryService {
             )
         case .system:
             return lookupFromSystemDictionary(word: word, preferEnglish: preferEnglish)
+        case .youdao, .google, .freeDictionaryAPI:
+            return nil
         }
     }
 

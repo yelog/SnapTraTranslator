@@ -8,6 +8,7 @@ struct DictionaryEntry: Equatable {
         case googleTranslate
         case bingDictionary
         case youdaoDictionary
+        case freeDictionaryAPI
         case deepLTranslate
     }
 

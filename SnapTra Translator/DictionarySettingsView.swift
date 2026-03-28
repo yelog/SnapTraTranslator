@@ -162,6 +162,9 @@ struct DictionarySource: Identifiable, Codable, Equatable {
     enum SourceType: String, Codable {
         case system
         case ecdict
+        case youdao
+        case google
+        case freeDictionaryAPI
     }
 
     var displayName: String {
@@ -176,6 +179,12 @@ extension DictionarySource.SourceType {
             return L("Advanced Dictionary")
         case .system:
             return L("System Dictionary")
+        case .youdao:
+            return L("Youdao Dictionary")
+        case .google:
+            return L("Google Dictionary")
+        case .freeDictionaryAPI:
+            return L("Free Dictionary API")
         }
     }
 
@@ -185,11 +194,46 @@ extension DictionarySource.SourceType {
             return L("Advanced offline dictionary")
         case .system:
             return L("macOS built-in dictionary")
+        case .youdao:
+            return L("Rich English-Chinese web dictionary")
+        case .google:
+            return L("Structured web dictionary data")
+        case .freeDictionaryAPI:
+            return L("Free English dictionary API")
         }
     }
 
     var needsDownloadManagement: Bool {
         self == .ecdict
+    }
+
+    var isOnline: Bool {
+        switch self {
+        case .ecdict, .system:
+            return false
+        case .youdao, .google, .freeDictionaryAPI:
+            return true
+        }
+    }
+
+    var isExperimental: Bool {
+        switch self {
+        case .youdao, .google:
+            return true
+        case .ecdict, .system, .freeDictionaryAPI:
+            return false
+        }
+    }
+
+    var badges: [String] {
+        var results: [String] = []
+        if isOnline {
+            results.append(L("Requires network"))
+        }
+        if isExperimental {
+            results.append(L("Experimental"))
+        }
+        return results
     }
 }
 
@@ -595,7 +639,7 @@ struct DictionarySettingsView: View {
         switch type {
         case .ecdict:
             return convertState(model.dictionaryDownload.state)
-        case .system:
+        case .system, .youdao, .google, .freeDictionaryAPI:
             return nil
         }
     }
@@ -614,7 +658,7 @@ struct DictionarySettingsView: View {
         switch type {
         case .ecdict:
             model.dictionaryDownload.startDownload()
-        case .system:
+        case .system, .youdao, .google, .freeDictionaryAPI:
             break
         }
     }
@@ -623,7 +667,7 @@ struct DictionarySettingsView: View {
         switch type {
         case .ecdict:
             model.dictionaryDownload.cancelDownload()
-        case .system:
+        case .system, .youdao, .google, .freeDictionaryAPI:
             break
         }
     }
@@ -632,7 +676,7 @@ struct DictionarySettingsView: View {
         switch type {
         case .ecdict:
             model.dictionaryDownload.delete()
-        case .system:
+        case .system, .youdao, .google, .freeDictionaryAPI:
             break
         }
     }
@@ -641,7 +685,7 @@ struct DictionarySettingsView: View {
         switch type {
         case .ecdict:
             model.dictionaryDownload.retry()
-        case .system:
+        case .system, .youdao, .google, .freeDictionaryAPI:
             break
         }
     }
@@ -915,6 +959,22 @@ struct IntegratedDictionaryRow: View {
                     Text(source.type.subtitle)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+
+                    if !source.type.badges.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(source.type.badges, id: \.self) { badge in
+                                Text(badge)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(
+                                        Capsule()
+                                            .fill(Color.secondary.opacity(0.1))
+                                    )
+                            }
+                        }
+                    }
                 }
 
                 Spacer()
@@ -975,6 +1035,18 @@ struct IntegratedDictionaryRow: View {
             Image(systemName: "text.book.closed")
                 .font(.system(size: 16))
                 .foregroundStyle(.secondary)
+        case .youdao:
+            Image(systemName: "character.book.closed")
+                .font(.system(size: 16))
+                .foregroundStyle(.orange)
+        case .google:
+            Image(systemName: "globe")
+                .font(.system(size: 16))
+                .foregroundStyle(.blue)
+        case .freeDictionaryAPI:
+            Image(systemName: "books.vertical")
+                .font(.system(size: 16))
+                .foregroundStyle(.green)
         }
     }
 

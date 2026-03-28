@@ -72,6 +72,10 @@ struct OverlayView: View {
         paragraphOverlayScrollingEnabledOverride ?? false
     }
 
+    private var showsExtendedDictionaryDetails: Bool {
+        !model.settings.targetLanguage.hasPrefix("zh")
+    }
+
     var body: some View {
         Group {
             if isVisible {
@@ -644,7 +648,7 @@ struct OverlayView: View {
                 showsSpinner: true
             )
         case .ready(let entry):
-            definitionsSection(definitions: entry.definitions, showDividers: false)
+            definitionsSection(entry: entry, showDividers: false)
         case .empty:
             dictionaryStatusRow(text: L("No result"))
         case .failed(let message):
@@ -681,6 +685,24 @@ struct OverlayView: View {
                 L("System Dictionary"),
                 "book.closed",
                 .secondary
+            )
+        case .youdao:
+            return (
+                L("Youdao Dictionary"),
+                "text.book.closed",
+                .orange
+            )
+        case .google:
+            return (
+                L("Google Dictionary"),
+                "globe",
+                .blue
+            )
+        case .freeDictionaryAPI:
+            return (
+                L("Free Dictionary API"),
+                "books.vertical",
+                .green
             )
         }
     }
@@ -850,8 +872,11 @@ struct OverlayView: View {
     }
 
     @ViewBuilder
-    private func definitionsSection(definitions: [DictionaryEntry.Definition], showDividers: Bool = true) -> some View {
-        let grouped = groupedTranslations(from: definitions)
+    private func definitionsSection(entry: DictionaryEntry, showDividers: Bool = true) -> some View {
+        let grouped = groupedDefinitionContent(
+            from: entry.definitions,
+            includeSupplementaryDetails: showsExtendedDictionaryDetails
+        )
         if grouped.isEmpty {
             EmptyView()
         } else {
@@ -862,9 +887,13 @@ struct OverlayView: View {
                         .opacity(0.6)
                 }
 
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
                     ForEach(Array(grouped.enumerated()), id: \.offset) { _, group in
-                        definitionGroupRow(partOfSpeech: group.0, field: group.1, translations: group.2)
+                        definitionGroupRow(group: group)
+                    }
+
+                    if showsExtendedDictionaryDetails && entry.hasSynonyms {
+                        synonymsRow(entry.synonyms)
                     }
                 }
                 .padding(.horizontal, 18)
@@ -874,23 +903,23 @@ struct OverlayView: View {
     }
 
     @ViewBuilder
-    private func definitionGroupRow(partOfSpeech: String, field: String?, translations: [String]) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+    private func definitionGroupRow(group: DefinitionDisplayGroup) -> some View {
+        HStack(alignment: .top, spacing: 10) {
             HStack(spacing: 4) {
-                if !partOfSpeech.isEmpty {
-                    Text(displayedPartOfSpeech(for: partOfSpeech))
+                if !group.partOfSpeech.isEmpty {
+                    Text(displayedPartOfSpeech(for: group.partOfSpeech))
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
                         .background(
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(posColor(for: partOfSpeech))
-                                .shadow(color: posColor(for: partOfSpeech).opacity(0.3), radius: 2, x: 0, y: 1)
+                                .fill(posColor(for: group.partOfSpeech))
+                                .shadow(color: posColor(for: group.partOfSpeech).opacity(0.3), radius: 2, x: 0, y: 1)
                         )
                 }
 
-                if let field, !field.isEmpty {
+                if let field = group.field, !field.isEmpty {
                     Text(displayedField(for: field))
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
@@ -903,11 +932,60 @@ struct OverlayView: View {
                         )
                 }
             }
+            .padding(.top, 1)
 
-            Text(translations.joined(separator: "；"))
-                .font(.system(size: 14, weight: .regular, design: .rounded))
-                .foregroundStyle(.primary)
-                .lineLimit(3)
+            VStack(alignment: .leading, spacing: 6) {
+                if !group.translations.isEmpty {
+                    Text(group.translations.joined(separator: "；"))
+                        .font(.system(size: 14, weight: .regular, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !group.meanings.isEmpty {
+                    Text(group.meanings.joined(separator: "\n"))
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !group.examples.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(group.examples.prefix(2)), id: \.self) { example in
+                            HStack(alignment: .top, spacing: 6) {
+                                Text("•")
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.secondary)
+
+                                Text(example)
+                                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func synonymsRow(_ synonyms: [String]) -> some View {
+        let displayedSynonyms = Array(synonyms.prefix(8))
+        if !displayedSynonyms.isEmpty {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "link")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+
+                Text(displayedSynonyms.joined(separator: " · "))
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 2)
         }
     }
 
@@ -939,28 +1017,60 @@ struct OverlayView: View {
         }
     }
 
-    private func groupedTranslations(from definitions: [DictionaryEntry.Definition]) -> [(String, String?, [String])] {
+    private func groupedDefinitionContent(
+        from definitions: [DictionaryEntry.Definition],
+        includeSupplementaryDetails: Bool
+    ) -> [DefinitionDisplayGroup] {
         var order: [(String, String?)] = []
-        var grouped: [String: [String]] = [:]
+        var grouped: [String: DefinitionAccumulator] = [:]
 
         for definition in definitions {
-            guard let translation = definition.translation?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !translation.isEmpty else { continue }
             let key = "\(definition.partOfSpeech)|\(definition.field ?? "")"
             if grouped[key] == nil {
                 order.append((definition.partOfSpeech, definition.field))
-                grouped[key] = []
+                grouped[key] = DefinitionAccumulator()
             }
-            if grouped[key]?.contains(translation) == false {
-                grouped[key]?.append(translation)
+
+            let translation = normalizedDictionaryText(definition.translation)
+
+            if let translation {
+                grouped[key]?.translations.appendIfMissing(translation)
+            }
+
+            if includeSupplementaryDetails {
+                let meaning = normalizedDictionaryText(definition.meaning)
+                let examples = definition.examples.compactMap(normalizedDictionaryText)
+
+                if let meaning,
+                   meaning.caseInsensitiveCompare(translation ?? "") != .orderedSame {
+                    grouped[key]?.meanings.appendIfMissing(meaning)
+                }
+                for example in examples {
+                    grouped[key]?.examples.appendIfMissing(example)
+                }
             }
         }
 
         return order.compactMap { pos, field in
             let key = "\(pos)|\(field ?? "")"
-            guard let translations = grouped[key], !translations.isEmpty else { return nil }
-            return (pos, field, translations)
+            guard let content = grouped[key],
+                  !content.translations.isEmpty || !content.meanings.isEmpty || !content.examples.isEmpty else {
+                return nil
+            }
+            return DefinitionDisplayGroup(
+                partOfSpeech: pos,
+                field: field,
+                translations: content.translations,
+                meanings: content.meanings,
+                examples: content.examples
+            )
         }
+    }
+
+    private func normalizedDictionaryText(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func posColor(for pos: String) -> Color {
@@ -1021,6 +1131,20 @@ struct OverlayView: View {
         }
     }
 
+    private struct DefinitionDisplayGroup {
+        let partOfSpeech: String
+        let field: String?
+        let translations: [String]
+        let meanings: [String]
+        let examples: [String]
+    }
+
+    private struct DefinitionAccumulator {
+        var translations: [String] = []
+        var meanings: [String] = []
+        var examples: [String] = []
+    }
+
     // MARK: - Error View
 
     @ViewBuilder
@@ -1067,6 +1191,14 @@ struct LoadingDotsView: View {
         }
         .onAppear {
             animating = true
+        }
+    }
+}
+
+private extension Array where Element == String {
+    mutating func appendIfMissing(_ value: String) {
+        if contains(value) == false {
+            append(value)
         }
     }
 }

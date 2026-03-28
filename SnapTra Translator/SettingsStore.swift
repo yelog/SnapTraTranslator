@@ -309,14 +309,13 @@ final class SettingsStore: ObservableObject {
     }
 
     static func defaultDictionarySources(ecdictInstalled: Bool) -> [DictionarySource] {
-        [
-            makeDictionarySource(type: .ecdict, isEnabled: ecdictInstalled),
-            makeDictionarySource(type: .system, isEnabled: true),
-        ]
+        defaultDictionarySourceDefinitions(ecdictInstalled: ecdictInstalled).map { definition in
+            makeDictionarySource(type: definition.type, isEnabled: definition.isEnabled)
+        }
     }
 
     static func migrateDictionarySources(_ sources: [DictionarySource]) -> [DictionarySource] {
-        sources.map {
+        var migrated = sources.map {
             DictionarySource(
                 id: $0.id,
                 name: $0.type.displayName,
@@ -324,10 +323,35 @@ final class SettingsStore: ObservableObject {
                 isEnabled: $0.isEnabled
             )
         }
+
+        let existingTypes = Set(migrated.map(\.type))
+        for definition in defaultDictionarySourceDefinitions(ecdictInstalled: isECDICTInstalled)
+            where !existingTypes.contains(definition.type) {
+            migrated.append(
+                makeDictionarySource(
+                    type: definition.type,
+                    isEnabled: definition.isEnabled
+                )
+            )
+        }
+
+        return migrated
     }
 
     private static func defaultDictionarySources() -> [DictionarySource] {
         defaultDictionarySources(ecdictInstalled: isECDICTInstalled)
+    }
+
+    private static func defaultDictionarySourceDefinitions(
+        ecdictInstalled: Bool
+    ) -> [(type: DictionarySource.SourceType, isEnabled: Bool)] {
+        [
+            (.ecdict, ecdictInstalled),
+            (.system, true),
+            (.youdao, false),
+            (.google, false),
+            (.freeDictionaryAPI, false),
+        ]
     }
 
     private static func makeDictionarySource(
