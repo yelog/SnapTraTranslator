@@ -144,6 +144,9 @@ enum AppSettingKey {
     static let debugShowChannelSelector = "debugShowChannelSelector"
     static let showMenuBarIcon = "showMenuBarIcon"
     static let showDockIcon = "showDockIcon"
+    static let learningMaxRecords = "learningMaxRecords"
+    static let learningCleanupDays = "learningCleanupDays"
+    static let learningAutoCleanup = "learningAutoCleanup"
 }
 
 enum EnglishAccent: String, CaseIterable, Identifiable {

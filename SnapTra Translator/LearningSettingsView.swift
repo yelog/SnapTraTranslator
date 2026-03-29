@@ -8,6 +8,8 @@ struct LearningSettingsView: View {
     @State private var searchText = ""
     @State private var filterMode: FilterMode = .all
     @State private var showingClearConfirmation = false
+    @State private var showingCleanupConfirmation = false
+    @State private var cleanupResultMessage: String?
 
     enum FilterMode: String, CaseIterable {
         case all = "All"
@@ -30,11 +32,101 @@ struct LearningSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             headerSection
+            cleanupSettingsSection
             statisticsCards
             searchAndFilterBar
             wordListView
         }
         .padding()
+        .onAppear {
+            Task {
+                await learningService.refreshWords()
+            }
+        }
+    }
+
+    private var cleanupSettingsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(L("Auto Cleanup"))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 16) {
+                Toggle(L("Enable"), isOn: $model.settings.learningAutoCleanup)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(L("Max Records:"))
+                            .font(.caption)
+                        TextField("", value: $model.settings.learningMaxRecords, formatter: NumberFormatter())
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 60)
+                            .controlSize(.small)
+                    }
+
+                    HStack(spacing: 8) {
+                        Text(L("Cleanup Days:"))
+                            .font(.caption)
+                        TextField("", value: $model.settings.learningCleanupDays, formatter: NumberFormatter())
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 60)
+                            .controlSize(.small)
+                    }
+                }
+
+                Spacer()
+
+                Button {
+                    showingCleanupConfirmation = true
+                } label: {
+                    Text(L("Cleanup Now"))
+                        .font(.caption)
+                }
+                .controlSize(.small)
+                .confirmationDialog(
+                    L("Cleanup Old Records?"),
+                    isPresented: $showingCleanupConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button(L("Cleanup"), role: .destructive) {
+                        Task {
+                            let deleted = await learningService.cleanupOldRecords(
+                                maxRecords: model.settings.learningMaxRecords,
+                                cleanupDays: model.settings.learningCleanupDays
+                            )
+                            if deleted > 0 {
+                                cleanupResultMessage = L("Deleted \(deleted) records")
+                            }
+                        }
+                    }
+                    Button(L("Cancel"), role: .cancel) {}
+                } message: {
+                    Text(L("This will delete mastered words older than \(model.settings.learningCleanupDays) days and remove excess records beyond \(model.settings.learningMaxRecords)."))
+                }
+            }
+
+            if let message = cleanupResultMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            cleanupResultMessage = nil
+                        }
+                    }
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(.quaternary, lineWidth: 0.5)
+        )
     }
 
     private var headerSection: some View {

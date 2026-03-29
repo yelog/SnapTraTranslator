@@ -150,6 +150,16 @@ final class SettingsStore: ObservableObject {
     }
     #endif
 
+    @Published var learningMaxRecords: Int {
+        didSet { defaults.set(learningMaxRecords, forKey: AppSettingKey.learningMaxRecords) }
+    }
+    @Published var learningCleanupDays: Int {
+        didSet { defaults.set(learningCleanupDays, forKey: AppSettingKey.learningCleanupDays) }
+    }
+    @Published var learningAutoCleanup: Bool {
+        didSet { defaults.set(learningAutoCleanup, forKey: AppSettingKey.learningAutoCleanup) }
+    }
+
     private let defaults: UserDefaults
     private static let dictionarySourcesKey = "dictionarySources"
     private static let sentenceTranslationSourcesKey = "sentenceTranslationSources"
@@ -249,6 +259,16 @@ final class SettingsStore: ObservableObject {
         let debugShowChannelSelectorValue = defaults.object(forKey: AppSettingKey.debugShowChannelSelector) as? Bool
         debugShowChannelSelector = debugShowChannelSelectorValue ?? false
         #endif
+
+        // Load learning cleanup settings
+        let learningMaxRecordsValue = defaults.object(forKey: AppSettingKey.learningMaxRecords) as? Int
+        learningMaxRecords = learningMaxRecordsValue ?? 5000
+
+        let learningCleanupDaysValue = defaults.object(forKey: AppSettingKey.learningCleanupDays) as? Int
+        learningCleanupDays = learningCleanupDaysValue ?? 90
+
+        let learningAutoCleanupValue = defaults.object(forKey: AppSettingKey.learningAutoCleanup) as? Bool
+        learningAutoCleanup = learningAutoCleanupValue ?? true
         
         // Persist all settings to UserDefaults since didSet is NOT called during init
         persistAllSettings()
@@ -278,6 +298,9 @@ final class SettingsStore: ObservableObject {
         #if DEBUG
         defaults.set(debugShowChannelSelector, forKey: AppSettingKey.debugShowChannelSelector)
         #endif
+        defaults.set(learningMaxRecords, forKey: AppSettingKey.learningMaxRecords)
+        defaults.set(learningCleanupDays, forKey: AppSettingKey.learningCleanupDays)
+        defaults.set(learningAutoCleanup, forKey: AppSettingKey.learningAutoCleanup)
         saveDictionarySources()
         saveSentenceTranslationSources()
     }

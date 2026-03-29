@@ -16,9 +16,6 @@ final class LearningService: ObservableObject {
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
-        Task {
-            await refreshWords()
-        }
     }
 
     func refreshWords() async {
@@ -53,7 +50,6 @@ final class LearningService: ObservableObject {
             }
 
             try modelContext.save()
-            await refreshWords()
         } catch {
             print("Failed to record word lookup: \(error)")
         }
@@ -113,6 +109,73 @@ final class LearningService: ObservableObject {
         guard !query.isEmpty else { return allWords }
 
         let normalizedQuery = query.lowercased()
-        return allWords.filter { $0.word.contains(normalizedQuery) }
+        do {
+            let descriptor = FetchDescriptor<WordRecord>(
+                predicate: #Predicate { $0.word.contains(normalizedQuery) },
+                sortBy: [SortDescriptor(\.lookupCount, order: .reverse)]
+            )
+            return try modelContext.fetch(descriptor)
+        } catch {
+            print("Failed to search words: \(error)")
+            return allWords.filter { $0.word.contains(normalizedQuery) }
+        }
+    }
+
+    func cleanupOldRecords(maxRecords: Int, cleanupDays: Int) async -> Int {
+        let cutoffDate = Calendar.current.date(byAdding: .day, value: -cleanupDays, to: Date()) ?? Date()
+        var deletedCount = 0
+
+        do {
+            let masteredOldDescriptor = FetchDescriptor<WordRecord>(
+                predicate: #Predicate { record in
+                    record.isMastered
+                        && (record.lastReviewDate == nil || record.lastReviewDate! < cutoffDate)
+                        && record.lastLookupDate < cutoffDate
+                }
+            )
+            let masteredOldRecords = try modelContext.fetch(masteredOldDescriptor)
+            for record in masteredOldRecords {
+                modelContext.delete(record)
+                deletedCount += 1
+            }
+
+            try modelContext.save()
+
+            let countDescriptor = FetchDescriptor<WordRecord>()
+            let totalCount = try modelContext.fetchCount(countDescriptor)
+
+            if totalCount > maxRecords {
+                let excessCount = totalCount - maxRecords
+                var oldestDescriptor = FetchDescriptor<WordRecord>(
+                    sortBy: [
+                        SortDescriptor(\.lookupCount, order: .forward),
+                        SortDescriptor(\.lastLookupDate, order: .forward)
+                    ]
+                )
+                oldestDescriptor.fetchLimit = excessCount
+                let oldestRecords = try modelContext.fetch(oldestDescriptor)
+                for record in oldestRecords {
+                    modelContext.delete(record)
+                    deletedCount += 1
+                }
+                try modelContext.save()
+            }
+
+            await refreshWords()
+        } catch {
+            print("Failed to cleanup old records: \(error)")
+        }
+
+        return deletedCount
+    }
+
+    func fetchTotalCount() async -> Int {
+        do {
+            let descriptor = FetchDescriptor<WordRecord>()
+            return try modelContext.fetchCount(descriptor)
+        } catch {
+            print("Failed to fetch count: \(error)")
+            return 0
+        }
     }
 }

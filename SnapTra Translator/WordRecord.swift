@@ -7,6 +7,7 @@ final class WordRecord {
     var lookupCount: Int
     var firstLookupDate: Date
     var lastLookupDate: Date
+    var lastReviewDate: Date?
     var nextReviewDate: Date?
     var isMastered: Bool
     var reviewStage: Int
@@ -16,6 +17,7 @@ final class WordRecord {
         self.lookupCount = 1
         self.firstLookupDate = Date()
         self.lastLookupDate = Date()
+        self.lastReviewDate = nil
         self.nextReviewDate = Calendar.current.date(byAdding: .day, value: 1, to: Date())
         self.isMastered = false
         self.reviewStage = 0
@@ -32,6 +34,7 @@ final class WordRecord {
     }
 
     func advanceReviewStage() {
+        lastReviewDate = Date()
         guard reviewStage < EbbinghausInterval.stages.count - 1 else {
             isMastered = true
             nextReviewDate = nil
@@ -50,6 +53,7 @@ final class WordRecord {
     func resetReview() {
         reviewStage = 0
         isMastered = false
+        lastReviewDate = nil
         nextReviewDate = Calendar.current.date(byAdding: .day, value: 1, to: Date())
     }
 }
