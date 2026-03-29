@@ -97,13 +97,13 @@ struct LearningSettingsView: View {
                                 cleanupDays: model.settings.learningCleanupDays
                             )
                             if deleted > 0 {
-                                cleanupResultMessage = L("Deleted \(deleted) records")
+                                cleanupResultMessage = L("Deleted %lld records", deleted)
                             }
                         }
                     }
                     Button(L("Cancel"), role: .cancel) {}
                 } message: {
-                    Text(L("This will delete mastered words older than \(model.settings.learningCleanupDays) days and remove excess records beyond \(model.settings.learningMaxRecords)."))
+                    Text(L("This will delete mastered words older than %lld days and remove excess records beyond %lld.", model.settings.learningCleanupDays, model.settings.learningMaxRecords))
                 }
             }
 
