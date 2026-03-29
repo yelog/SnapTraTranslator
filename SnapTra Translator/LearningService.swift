@@ -126,17 +126,15 @@ final class LearningService: ObservableObject {
         var deletedCount = 0
 
         do {
-            let masteredOldDescriptor = FetchDescriptor<WordRecord>(
-                predicate: #Predicate { record in
-                    record.isMastered
-                        && (record.lastReviewDate == nil || record.lastReviewDate! < cutoffDate)
-                        && record.lastLookupDate < cutoffDate
-                }
+            let masteredDescriptor = FetchDescriptor<WordRecord>(
+                predicate: #Predicate { $0.isMastered && $0.lastLookupDate < cutoffDate }
             )
-            let masteredOldRecords = try modelContext.fetch(masteredOldDescriptor)
-            for record in masteredOldRecords {
-                modelContext.delete(record)
-                deletedCount += 1
+            let masteredRecords = try modelContext.fetch(masteredDescriptor)
+            for record in masteredRecords {
+                if record.lastReviewDate == nil || record.lastReviewDate! < cutoffDate {
+                    modelContext.delete(record)
+                    deletedCount += 1
+                }
             }
 
             try modelContext.save()
