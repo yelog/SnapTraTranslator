@@ -624,13 +624,39 @@ final class AppModel: ObservableObject {
     }
 
     private func resolveSinglePressLookupIntent(mouseLocation: CGPoint) -> SinglePressLookupIntent {
-        let selectionSnapshot = selectedTextService.currentSelectionSnapshot()
-        return SinglePressLookupRouter.resolve(
+        debugSelectedTextRoute(
+            """
+            start mouse=\(describe(point: mouseLocation)) \
+            selectedTextEnabled=\(settings.selectedTextTranslationEnabled) \
+            accessibility=\(permissions.status.accessibility) \
+            likelySandboxed=\(isLikelySandboxedRuntime()) \
+            bundlePath=\(Bundle.main.bundlePath) \
+            home=\(NSHomeDirectory()) \
+            tmp=\(FileManager.default.temporaryDirectory.path)
+            """
+        )
+        let selectionSnapshot = selectedTextService.currentSelectionSnapshot(mouseLocation: mouseLocation)
+        if let selectionSnapshot {
+            debugSelectedTextRoute(
+                "snapshot text=\"\(truncate(selectionSnapshot.text))\" bounds=\(describe(rect: selectionSnapshot.bounds)) sourceApp=\(selectionSnapshot.sourceAppIdentifier ?? "nil")"
+            )
+        } else {
+            debugSelectedTextRoute("snapshot=nil")
+        }
+
+        let intent = SinglePressLookupRouter.resolve(
             mouseLocation: mouseLocation,
             isSelectedTextTranslationEnabled: settings.selectedTextTranslationEnabled,
             hasAccessibilityPermission: permissions.status.accessibility,
             selectionSnapshot: selectionSnapshot
         )
+        switch intent {
+        case .selectedTextSentence:
+            debugSelectedTextRoute("decision=selectedTextSentence")
+        case .ocrWord:
+            debugSelectedTextRoute("decision=ocrWord")
+        }
+        return intent
     }
 
     private func performSelectedTextSentenceLookup(
@@ -1806,5 +1832,32 @@ final class AppModel: ObservableObject {
         guard event.keyCode == 53 else { return false }
         dismissOverlay()
         return true
+    }
+
+    private func debugSelectedTextRoute(_ message: String) {
+#if DEBUG
+        print("[SelectedTextRoute] \(message)")
+#endif
+    }
+
+    private func isLikelySandboxedRuntime() -> Bool {
+        NSHomeDirectory().contains("/Library/Containers/")
+    }
+
+    private func describe(point: CGPoint) -> String {
+        "(\(format(point.x)), \(format(point.y)))"
+    }
+
+    private func describe(rect: CGRect) -> String {
+        "x=\(format(rect.origin.x)) y=\(format(rect.origin.y)) w=\(format(rect.width)) h=\(format(rect.height))"
+    }
+
+    private func format(_ value: CGFloat) -> String {
+        String(format: "%.1f", value)
+    }
+
+    private func truncate(_ text: String, limit: Int = 120) -> String {
+        guard text.count > limit else { return text }
+        return String(text.prefix(limit)) + "..."
     }
 }

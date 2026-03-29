@@ -249,6 +249,37 @@ final class SettingsStore: ObservableObject {
         let debugShowChannelSelectorValue = defaults.object(forKey: AppSettingKey.debugShowChannelSelector) as? Bool
         debugShowChannelSelector = debugShowChannelSelectorValue ?? false
         #endif
+        
+        // Persist all settings to UserDefaults since didSet is NOT called during init
+        persistAllSettings()
+    }
+    
+    private func persistAllSettings() {
+        defaults.set(playWordPronunciation, forKey: AppSettingKey.playWordPronunciation)
+        defaults.set(playSentencePronunciation, forKey: AppSettingKey.playSentencePronunciation)
+        defaults.set(copyWord, forKey: AppSettingKey.copyWord)
+        defaults.set(copySentence, forKey: AppSettingKey.copySentence)
+        defaults.set(launchAtLogin, forKey: AppSettingKey.launchAtLogin)
+        defaults.set(showMenuBarIcon, forKey: AppSettingKey.showMenuBarIcon)
+        defaults.set(showDockIcon, forKey: AppSettingKey.showDockIcon)
+        defaults.set(singleKey.rawValue, forKey: AppSettingKey.singleKey)
+        defaults.set(sourceLanguage, forKey: AppSettingKey.sourceLanguage)
+        defaults.set(targetLanguage, forKey: AppSettingKey.targetLanguage)
+        defaults.set(debugShowOcrRegion, forKey: AppSettingKey.debugShowOcrRegion)
+        defaults.set(continuousTranslation, forKey: AppSettingKey.continuousTranslation)
+        defaults.set(wordTTSProvider.rawValue, forKey: AppSettingKey.wordTTSProvider)
+        defaults.set(sentenceTTSProvider.rawValue, forKey: AppSettingKey.sentenceTTSProvider)
+        defaults.set(appLanguage.rawValue, forKey: AppSettingKey.appLanguage)
+        defaults.set(englishAccent.rawValue, forKey: AppSettingKey.englishAccent)
+        defaults.set(ocrSentenceTranslationEnabled, forKey: AppSettingKey.ocrSentenceTranslationEnabled)
+        defaults.set(selectedTextTranslationEnabled, forKey: AppSettingKey.selectedTextTranslationEnabled)
+        defaults.set(autoCheckUpdates, forKey: AppSettingKey.autoCheckUpdates)
+        defaults.set(updateChannel.rawValue, forKey: AppSettingKey.updateChannel)
+        #if DEBUG
+        defaults.set(debugShowChannelSelector, forKey: AppSettingKey.debugShowChannelSelector)
+        #endif
+        saveDictionarySources()
+        saveSentenceTranslationSources()
     }
 
     private static func loadOrMigrateDictionarySources(defaults: UserDefaults) -> [DictionarySource] {
