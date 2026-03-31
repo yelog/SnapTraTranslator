@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 private final class OverlayPanel: NSPanel {
@@ -84,9 +85,17 @@ final class DebugOverlayWindowController: NSWindowController {
     }
 }
 
+// MARK: - Paragraph Highlight View Model
+
+@MainActor
+final class ParagraphHighlightViewModel: ObservableObject {
+    @Published var isActive = false
+}
+
 // MARK: - Paragraph Highlight View
 
 private struct ParagraphHighlightView: View {
+    @ObservedObject var model: ParagraphHighlightViewModel
     private let accentColor = Color(red: 0.18, green: 0.88, blue: 0.42)
     private let lineWidth: CGFloat = 2.5
     /// Half-width of the soft gradient halo on each side of the beam core
@@ -109,12 +118,14 @@ private struct ParagraphHighlightView: View {
                 Rectangle()
                     .fill(accentColor.opacity(0.05))
 
-                // Layer 2 — scan beam via TimelineView so Canvas re-renders every frame
-                TimelineView(.animation) { timeline in
-                    Canvas { ctx, canvasSize in
-                        let elapsed = timeline.date.timeIntervalSince(startDate)
-                        let centerX = beamCenterX(elapsed: elapsed, width: canvasSize.width)
-                        drawBeam(ctx: ctx, canvasSize: canvasSize, centerX: centerX)
+                // Layer 2 — scan beam via TimelineView, only when active
+                if model.isActive {
+                    TimelineView(.animation) { timeline in
+                        Canvas { ctx, canvasSize in
+                            let elapsed = timeline.date.timeIntervalSince(startDate)
+                            let centerX = beamCenterX(elapsed: elapsed, width: canvasSize.width)
+                            drawBeam(ctx: ctx, canvasSize: canvasSize, centerX: centerX)
+                        }
                     }
                 }
 
@@ -131,6 +142,11 @@ private struct ParagraphHighlightView: View {
                 startDate = .now
                 withAnimation(.easeOut(duration: 0.25)) {
                     appeared = true
+                }
+            }
+            .onChange(of: model.isActive) { _, isActive in
+                if isActive {
+                    startDate = .now
                 }
             }
         }
@@ -222,10 +238,11 @@ private struct ParagraphHighlightView: View {
 }
 
 final class ParagraphHighlightWindowController: NSWindowController {
+    private let model = ParagraphHighlightViewModel()
     private let hostingView: NSHostingView<ParagraphHighlightView>
 
     override init(window: NSWindow?) {
-        hostingView = NSHostingView(rootView: ParagraphHighlightView())
+        hostingView = NSHostingView(rootView: ParagraphHighlightView(model: model))
         let panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -259,12 +276,14 @@ final class ParagraphHighlightWindowController: NSWindowController {
             return
         }
 
+        model.isActive = true
         guard let window else { return }
         window.setFrame(rect, display: true)
         window.orderFrontRegardless()
     }
 
     func hide() {
+        model.isActive = false
         window?.orderOut(nil)
     }
 }
