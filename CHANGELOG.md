@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.7-beta.1] - 2026-03-31
+
+### Added
+- add selected text translation flow
+- add configurable third-party sources
+
+### Changed
+- increase general tab content height from 580 to 650
+- stop TimelineView animation when highlight window hidden
+- add localizations for auto cleanup feature
+- optimize storage and add auto cleanup
+- add third-party dictionaries design
+- add System tab label translations
+
+### Fixed
+- improve selected text translation accuracy and readability
+- avoid unsupported predicate forced unwrap
+- improve selected text accessibility lookup
+
 ## [1.3.7-beta.0] - 2026-03-25
 
 ### Added
