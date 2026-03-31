@@ -24,7 +24,7 @@ enum SettingsWindowLayout {
     static let defaultContentWidth: CGFloat = 400
     static let aboutContentWidth: CGFloat = 370
     static let dictionaryContentWidth: CGFloat = 650
-    static let generalContentHeight: CGFloat = 580
+    static let generalContentHeight: CGFloat = 650
     static let dictionaryContentHeight: CGFloat = 550
     static let systemContentHeight: CGFloat = 260
     static let aboutContentHeight: CGFloat = 520
