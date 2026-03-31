@@ -15,15 +15,10 @@ enum SinglePressLookupRouter {
     ) -> SinglePressLookupIntent {
         guard isSelectedTextTranslationEnabled,
               hasAccessibilityPermission,
-              let selectionSnapshot,
-              isPointer(mouseLocation, inside: selectionSnapshot.bounds) else {
+              let selectionSnapshot else {
             return .ocrWord
         }
 
         return .selectedTextSentence(selectionSnapshot)
-    }
-
-    static func isPointer(_ point: CGPoint, inside bounds: CGRect) -> Bool {
-        bounds.insetBy(dx: -2, dy: -2).contains(point)
     }
 }

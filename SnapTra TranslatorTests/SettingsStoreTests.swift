@@ -141,7 +141,25 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
         XCTAssertEqual(intent, .selectedTextSentence(snapshot))
     }
 
-    func testOutsideSelectionFallsBackToOcrWord() {
+    func testSnapshotWithoutBoundsStillRoutesToSelectedTextTranslation() {
+        let snapshot = SelectedTextSnapshot(
+            text: "Hello world",
+            selectedRange: NSRange(location: 0, length: 11),
+            bounds: nil,
+            sourceAppIdentifier: "com.apple.TextEdit"
+        )
+
+        let intent = SinglePressLookupRouter.resolve(
+            mouseLocation: CGPoint(x: 260, y: 200),
+            isSelectedTextTranslationEnabled: true,
+            hasAccessibilityPermission: true,
+            selectionSnapshot: snapshot
+        )
+
+        XCTAssertEqual(intent, .selectedTextSentence(snapshot))
+    }
+
+    func testMouseOutsideBoundsStillRoutesToSelectedTextTranslation() {
         let snapshot = SelectedTextSnapshot(
             text: "Hello world",
             selectedRange: NSRange(location: 0, length: 11),
@@ -156,7 +174,7 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
             selectionSnapshot: snapshot
         )
 
-        XCTAssertEqual(intent, .ocrWord)
+        XCTAssertEqual(intent, .selectedTextSentence(snapshot))
     }
 
     func testMissingAccessibilityFallsBackToOcrWord() {

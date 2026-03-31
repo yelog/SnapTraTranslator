@@ -230,12 +230,16 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func paragraphResultView(content: ParagraphOverlayContent) -> some View {
-        let optimalFontSize = ParagraphFontSizing.optimalFontSize(
-            preferredFontSize: content.bodyFontSize,
-            originalText: content.originalText,
-            containerWidth: overlayWidth,
-            horizontalPadding: paragraphTextHorizontalPadding
-        )
+        let optimalFontSize: CGFloat = if content.useFixedFontSize {
+            content.bodyFontSize
+        } else {
+            ParagraphFontSizing.optimalFontSize(
+                preferredFontSize: content.bodyFontSize,
+                originalText: content.originalText,
+                containerWidth: overlayWidth,
+                horizontalPadding: paragraphTextHorizontalPadding
+            )
+        }
 
         VStack(alignment: .leading, spacing: 0) {
             paragraphTopBar()

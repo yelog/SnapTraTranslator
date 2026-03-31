@@ -5,7 +5,7 @@ import Foundation
 struct SelectedTextSnapshot: Equatable {
     let text: String
     let selectedRange: NSRange
-    let bounds: CGRect
+    let bounds: CGRect?
     let sourceAppIdentifier: String?
 }
 
@@ -46,7 +46,7 @@ final class SelectedTextService {
                 debugContext: context
             ) {
                 debugLog(
-                    "\(context) success text=\"\(truncate(snapshot.text))\" bounds=\(describe(rect: snapshot.bounds))"
+                    "\(context) success text=\"\(truncate(snapshot.text))\" bounds=\(snapshot.bounds.map { describe(rect: $0) } ?? "nil")"
                 )
                 return snapshot
             }
@@ -148,53 +148,37 @@ final class SelectedTextService {
 
         debugLog("\(debugContext) resolved text=\"\(truncate(normalizedText))\"")
 
+        let selectedRange = rangeResult?.range ?? NSRange(location: NSNotFound, length: normalizedText.utf16.count)
+
+        // Try to obtain bounds via AXBoundsForRange first, then AXBoundsForTextMarkerRange.
+        var resolvedBounds: CGRect?
+
         if let rangeResult,
-           let bounds = bounds(for: rangeResult.axValue, in: element, debugContext: debugContext),
-           let snapshot = makeSnapshot(
-                text: normalizedText,
-                selectedRange: rangeResult.range,
-                bounds: bounds,
-                sourceAppIdentifier: sourceAppIdentifier
-           ) {
-            debugLog(
-                "\(debugContext) using range bounds raw=\(describe(rect: bounds)) normalized=\(describe(rect: snapshot.bounds))"
-            )
-            return snapshot
+           let rawBounds = bounds(for: rangeResult.axValue, in: element, debugContext: debugContext) {
+            let normalized = normalizedScreenRect(for: rawBounds)
+            if normalized.width > 0, normalized.height > 0 {
+                resolvedBounds = normalized
+                debugLog("\(debugContext) using range bounds raw=\(describe(rect: rawBounds)) normalized=\(describe(rect: normalized))")
+            }
         }
 
-        if let markerRange,
-           let bounds = bounds(forTextMarkerRange: markerRange, in: element, debugContext: debugContext),
-           let snapshot = makeSnapshot(
-                text: normalizedText,
-                selectedRange: rangeResult?.range ?? NSRange(location: NSNotFound, length: normalizedText.utf16.count),
-                bounds: bounds,
-                sourceAppIdentifier: sourceAppIdentifier
-           ) {
-            debugLog(
-                "\(debugContext) using marker bounds raw=\(describe(rect: bounds)) normalized=\(describe(rect: snapshot.bounds))"
-            )
-            return snapshot
+        if resolvedBounds == nil, let markerRange,
+           let rawBounds = bounds(forTextMarkerRange: markerRange, in: element, debugContext: debugContext) {
+            let normalized = normalizedScreenRect(for: rawBounds)
+            if normalized.width > 0, normalized.height > 0 {
+                resolvedBounds = normalized
+                debugLog("\(debugContext) using marker bounds raw=\(describe(rect: rawBounds)) normalized=\(describe(rect: normalized))")
+            }
         }
 
-        debugLog("\(debugContext) missing usable bounds")
-        return nil
-    }
-
-    private func makeSnapshot(
-        text: String,
-        selectedRange: NSRange,
-        bounds: CGRect,
-        sourceAppIdentifier: String?
-    ) -> SelectedTextSnapshot? {
-        let normalizedBounds = normalizedScreenRect(for: bounds)
-        guard normalizedBounds.width > 0, normalizedBounds.height > 0 else {
-            return nil
+        if resolvedBounds == nil {
+            debugLog("\(debugContext) no usable bounds, creating snapshot without bounds")
         }
 
         return SelectedTextSnapshot(
-            text: text,
+            text: normalizedText,
             selectedRange: selectedRange,
-            bounds: normalizedBounds,
+            bounds: resolvedBounds,
             sourceAppIdentifier: sourceAppIdentifier
         )
     }

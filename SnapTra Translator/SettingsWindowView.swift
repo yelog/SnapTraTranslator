@@ -347,7 +347,6 @@ struct GeneralSettingsView: View {
                     GeneralPermissionRow(
                         icon: "rectangle.dashed.badge.record",
                         title: L("Screen Recording"),
-                        subtitle: L("Used for OCR word lookup and double-tap OCR sentence translation"),
                         isGranted: model.permissions.status.screenRecording,
                         action: { model.permissions.requestAndOpenScreenRecording() }
                     )
@@ -359,7 +358,6 @@ struct GeneralSettingsView: View {
                     GeneralPermissionRow(
                         icon: "figure.wave",
                         title: L("Accessibility"),
-                        subtitle: L("Used for reading selected text and translating sentences"),
                         isGranted: model.permissions.status.accessibility,
                         action: { model.permissions.requestAndOpenAccessibility() }
                     )
@@ -515,7 +513,6 @@ struct GeneralSettingsView: View {
 
                     ToggleRow(
                         title: L("Double-tap OCR Sentence Translation"),
-                        subtitle: L("Double-click %@ to translate the paragraph under cursor", model.settings.hotkeyDisplayText),
                         isOn: $model.settings.ocrSentenceTranslationEnabled
                     )
 
@@ -525,7 +522,6 @@ struct GeneralSettingsView: View {
 
                     ToggleRow(
                         title: L("Translate Selected Text"),
-                        subtitle: L("Hold %@ to translate selected text when the pointer is inside the selection", model.settings.hotkeyDisplayText),
                         isOn: $model.settings.selectedTextTranslationEnabled
                     )
 
@@ -617,7 +613,7 @@ struct GeneralSettingsView: View {
 struct GeneralPermissionRow: View {
     let icon: String
     let title: String
-    let subtitle: String
+    var subtitle: String? = nil
     let isGranted: Bool
     let action: () -> Void
 
@@ -633,9 +629,11 @@ struct GeneralPermissionRow: View {
                     Text(title)
                         .font(.system(size: 13, weight: .regular))
                         .foregroundStyle(.primary)
-                    Text(subtitle)
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(.tertiary)
+                    if let subtitle = subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(.tertiary)
+                    }
                 }
 
                 Spacer()
@@ -668,7 +666,7 @@ struct GeneralPermissionRow: View {
 
 struct ToggleRow: View {
     let title: String
-    let subtitle: String
+    var subtitle: String? = nil
     @Binding var isOn: Bool
 
     var body: some View {
@@ -677,9 +675,11 @@ struct ToggleRow: View {
                 Text(title)
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(.primary)
-                Text(subtitle)
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(.tertiary)
+                if let subtitle = subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(.tertiary)
+                }
             }
             Spacer()
             Toggle("", isOn: $isOn)

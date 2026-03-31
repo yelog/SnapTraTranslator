@@ -86,17 +86,20 @@ struct ParagraphOverlayContent: Equatable {
     var translationState: ParagraphOverlayTranslationState
     var serviceResults: [ServiceTranslationResult]
     var bodyFontSize: CGFloat
+    var useFixedFontSize: Bool
 
     init(
         originalText: String? = nil,
         translationState: ParagraphOverlayTranslationState,
         serviceResults: [ServiceTranslationResult] = [],
-        bodyFontSize: CGFloat = 13
+        bodyFontSize: CGFloat = 13,
+        useFixedFontSize: Bool = false
     ) {
         self.originalText = originalText
         self.translationState = translationState
         self.serviceResults = serviceResults
         self.bodyFontSize = bodyFontSize
+        self.useFixedFontSize = useFixedFontSize
     }
 }
 
@@ -638,7 +641,7 @@ final class AppModel: ObservableObject {
         let selectionSnapshot = selectedTextService.currentSelectionSnapshot(mouseLocation: mouseLocation)
         if let selectionSnapshot {
             debugSelectedTextRoute(
-                "snapshot text=\"\(truncate(selectionSnapshot.text))\" bounds=\(describe(rect: selectionSnapshot.bounds)) sourceApp=\(selectionSnapshot.sourceAppIdentifier ?? "nil")"
+                "snapshot text=\"\(truncate(selectionSnapshot.text))\" bounds=\(selectionSnapshot.bounds.map { describe(rect: $0) } ?? "nil") sourceApp=\(selectionSnapshot.sourceAppIdentifier ?? "nil")"
             )
         } else {
             debugSelectedTextRoute("snapshot=nil")
@@ -697,7 +700,8 @@ final class AppModel: ObservableObject {
             serviceResults: enabledServices.map { source in
                 ServiceTranslationResult(sourceType: source.type, state: .loading)
             },
-            bodyFontSize: 14
+            bodyFontSize: 14,
+            useFixedFontSize: true
         )
         updateOverlay(state: .paragraphResult(initialContent), anchor: mouseLocation)
 
