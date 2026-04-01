@@ -55,6 +55,10 @@ struct OverlayView: View {
         }
     }
 
+    private var showsParagraphOverlayPinButton: Bool {
+        isParagraphOverlayMode && !model.isParagraphOverlayPinned
+    }
+
     private var isVisible: Bool {
         if case .idle = model.overlayState { return false }
         return true
@@ -247,18 +251,22 @@ struct OverlayView: View {
             paragraphBodyContainer {
                 if let originalText = content.originalText,
                    !originalText.isEmpty {
-                    // Original text section (no card, no title)
                     VStack(alignment: .leading, spacing: 0) {
-                        paragraphTextContent(
-                            text: originalText,
-                            font: .systemFont(ofSize: optimalFontSize, weight: .medium),
-                            textColor: .labelColor,
-                            preferredLineHeight: optimalFontSize * 1.5
-                        )
-                        .padding(.horizontal, paragraphTextHorizontalPadding)
-                        .padding(.top, 2)
-                        .padding(.bottom, 14)
+                        HStack(alignment: .top, spacing: 8) {
+                            paragraphTextContent(
+                                text: originalText,
+                                font: .systemFont(ofSize: optimalFontSize, weight: .medium),
+                                textColor: .labelColor,
+                                preferredLineHeight: optimalFontSize * 1.5
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            CopyButton(text: originalText)
+                        }
                     }
+                    .padding(.horizontal, paragraphTextHorizontalPadding)
+                    .padding(.top, 2)
+                    .padding(.bottom, 14)
 
                     // Divider after original text
                     Divider()
@@ -283,9 +291,13 @@ struct OverlayView: View {
 
                     case .ready(let translatedText):
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(paragraphTranslationSectionTitle)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                            HStack(alignment: .center, spacing: 8) {
+                                Text(paragraphTranslationSectionTitle)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+
+                                CopyButton(text: translatedText)
+                            }
 
                             paragraphTextContent(
                                 text: translatedText,
@@ -350,9 +362,13 @@ struct OverlayView: View {
 
         case .ready(let translatedText):
             VStack(alignment: .leading, spacing: 8) {
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                HStack(alignment: .center, spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+
+                    CopyButton(text: translatedText)
+                }
 
                 paragraphTextContent(
                     text: translatedText,
@@ -489,23 +505,45 @@ struct OverlayView: View {
             Spacer()
 
             if showsParagraphOverlayControls {
-                Button {
-                    model.dismissOverlay()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 18, height: 18)
-                        .background(
-                            Circle()
-                                .fill(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.045))
-                        )
-                        .overlay(
-                            Circle()
-                                .stroke(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.06), lineWidth: 0.5)
-                        )
+                if showsParagraphOverlayPinButton {
+                    Button {
+                        model.toggleParagraphOverlayPin()
+                    } label: {
+                        Image(systemName: "pin")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18, height: 18)
+                            .background(
+                                Circle()
+                                    .fill(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.045))
+                            )
+                            .overlay(
+                                Circle()
+                                    .stroke(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.06), lineWidth: 0.5)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help(L("Pin"))
+                } else {
+                    Button {
+                        model.dismissOverlay()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18, height: 18)
+                            .background(
+                                Circle()
+                                    .fill(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.045))
+                            )
+                            .overlay(
+                                Circle()
+                                    .stroke(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.06), lineWidth: 0.5)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help(L("Close"))
                 }
-                .buttonStyle(.plain)
             }
         }
         .frame(height: 18)
