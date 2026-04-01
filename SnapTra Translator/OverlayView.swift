@@ -246,29 +246,27 @@ struct OverlayView: View {
         }
 
         VStack(alignment: .leading, spacing: 0) {
-            paragraphTopBar()
+            if let originalText = content.originalText,
+               !originalText.isEmpty {
+                paragraphOriginalTopBar(copyText: originalText)
+            } else {
+                paragraphTopBar()
+            }
 
             paragraphBodyContainer {
                 if let originalText = content.originalText,
                    !originalText.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(alignment: .center, spacing: 8) {
-                            Text(paragraphOriginalSectionTitle)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
-
-                            CopyButton(text: originalText)
-                        }
-
+                    VStack(alignment: .leading, spacing: 0) {
                         paragraphTextContent(
                             text: originalText,
                             font: .systemFont(ofSize: optimalFontSize, weight: .medium),
                             textColor: .labelColor,
                             preferredLineHeight: optimalFontSize * 1.5
                         )
+                        .padding(.top, 4)
                     }
                     .padding(.horizontal, paragraphTextHorizontalPadding)
-                    .padding(.vertical, 14)
+                    .padding(.bottom, 14)
 
                     // Divider after original text
                     Divider()
@@ -506,47 +504,7 @@ struct OverlayView: View {
         HStack(spacing: 0) {
             Spacer()
 
-            if showsParagraphOverlayControls {
-                if showsParagraphOverlayPinButton {
-                    Button {
-                        model.toggleParagraphOverlayPin()
-                    } label: {
-                        Image(systemName: "pin")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 18, height: 18)
-                            .background(
-                                Circle()
-                                    .fill(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.045))
-                            )
-                            .overlay(
-                                Circle()
-                                    .stroke(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.06), lineWidth: 0.5)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .help(L("Pin"))
-                } else {
-                    Button {
-                        model.dismissOverlay()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 18, height: 18)
-                            .background(
-                                Circle()
-                                    .fill(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.045))
-                            )
-                            .overlay(
-                                Circle()
-                                    .stroke(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.06), lineWidth: 0.5)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .help(L("Close"))
-                }
-            }
+            paragraphOverlayControlButton()
         }
         .frame(height: 18)
         .contentShape(Rectangle())
@@ -559,56 +517,79 @@ struct OverlayView: View {
         .padding(.bottom, 6)
     }
 
+    @ViewBuilder
+    private func paragraphOriginalTopBar(copyText: String) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            Text(paragraphOriginalSectionTitle)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            CopyButton(text: copyText)
+
+            Spacer(minLength: 12)
+
+            paragraphOverlayControlButton()
+        }
+        .frame(height: 18)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            updateParagraphHeaderHover(hovering)
+        }
+        .simultaneousGesture(paragraphHeaderDragGesture)
+        .padding(.leading, paragraphTextHorizontalPadding)
+        .padding(.trailing, 14)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+    }
+
+    @ViewBuilder
+    private func paragraphOverlayControlButton() -> some View {
+        if showsParagraphOverlayControls {
+            if showsParagraphOverlayPinButton {
+                paragraphOverlayControlButton(
+                    systemImage: "pin",
+                    helpText: L("Pin"),
+                    action: { model.toggleParagraphOverlayPin() }
+                )
+            } else {
+                paragraphOverlayControlButton(
+                    systemImage: "xmark",
+                    helpText: L("Close"),
+                    action: { model.dismissOverlay() }
+                )
+            }
+        }
+    }
+
+    private func paragraphOverlayControlButton(
+        systemImage: String,
+        helpText: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 18)
+                .background(
+                    Circle()
+                        .fill(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.045))
+                )
+                .overlay(
+                    Circle()
+                        .stroke(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.06), lineWidth: 0.5)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(helpText)
+    }
+
     private var paragraphOriginalSectionTitle: String {
         L("Original")
     }
 
     private var paragraphTranslationSectionTitle: String {
         SentenceTranslationSource.SourceType.native.displayName
-    }
-
-    private func paragraphLanguageSectionTitle(for languageIdentifier: String) -> String {
-        paragraphLanguageDisplayName(for: languageIdentifier)
-    }
-
-    private func paragraphLanguageDisplayName(for identifier: String) -> String {
-        let normalizedIdentifier = paragraphNormalizedLanguageIdentifier(for: identifier)
-        let locale = paragraphDisplayLocale
-
-        if let localizedName = locale.localizedString(forIdentifier: normalizedIdentifier) {
-            return localizedName
-        }
-
-        if let languageCode = Locale(identifier: normalizedIdentifier).language.languageCode?.identifier,
-           let localizedName = locale.localizedString(forLanguageCode: languageCode) {
-            return localizedName
-        }
-
-        return normalizedIdentifier
-    }
-
-    private var paragraphDisplayLocale: Locale {
-        if let localeIdentifier = model.settings.appLanguage.localeIdentifier {
-            return Locale(identifier: localeIdentifier)
-        }
-
-        if let preferredLanguage = Locale.preferredLanguages.first {
-            return Locale(identifier: preferredLanguage)
-        }
-
-        return .current
-    }
-
-    private func paragraphNormalizedLanguageIdentifier(for identifier: String) -> String {
-        if identifier.hasPrefix("zh-Hans") {
-            return "zh-Hans"
-        }
-
-        if identifier.hasPrefix("zh-Hant") {
-            return "zh-Hant"
-        }
-
-        return identifier
     }
 
     private var paragraphHeaderDragGesture: some Gesture {
