@@ -385,6 +385,14 @@ final class OverlayWindowController: NSWindowController {
     private let paragraphFrameAnimationDuration: TimeInterval = 0.18
     private let paragraphFrameAnimationStepNanoseconds: UInt64 = 16_666_667
 
+    var isManualParagraphPositioningActive: Bool {
+        dragStartOrigin != nil
+    }
+
+    var hasManualParagraphPosition: Bool {
+        manualOrigin != nil
+    }
+
     init(model: AppModel) {
         self.model = model
         let initialRootView = AnyView(OverlayView().environmentObject(model))
@@ -411,6 +419,9 @@ final class OverlayWindowController: NSWindowController {
     /// 设置窗口是否接受鼠标事件
     func setInteractive(_ interactive: Bool) {
         window?.ignoresMouseEvents = !interactive
+        if interactive {
+            window?.makeKey()
+        }
     }
 
     @available(*, unavailable)
@@ -488,6 +499,13 @@ final class OverlayWindowController: NSWindowController {
             maxHeight: finalMaxHeight,
             scrollingEnabled: requiresScrolling
         )
+
+        if hasManualParagraphPosition {
+            let targetFrame = measuredFrame(for: CGPoint(x: sentenceRect.midX, y: sentenceRect.midY))
+            applyFrameIfNeeded(targetFrame)
+            return
+        }
+
         let displayedContentSize = currentRenderedParagraphOverlaySize()
         let contentSize = CGSize(
             width: max(measuredContentSize.width, displayedContentSize.width),
