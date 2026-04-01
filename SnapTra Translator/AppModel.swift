@@ -197,6 +197,7 @@ final class AppModel: ObservableObject {
     var overlayAnchor: CGPoint = .zero
     var activeParagraphRect: CGRect? = nil
     @Published var overlayPreferredWidth: CGFloat? = nil
+    @Published var isParagraphOverlayPinned: Bool = false
 
     @Published var settings: SettingsStore
     let permissions: PermissionManager
@@ -329,7 +330,10 @@ final class AppModel: ObservableObject {
         debugOverlayWindowController.hide()
         paragraphHighlightWindowController.hide()
 
-        // 松开快捷键时隐藏气泡
+        if isParagraphOverlayPinned {
+            return
+        }
+
         cancelActiveLookupWork()
         hideOverlay()
     }
@@ -363,6 +367,10 @@ final class AppModel: ObservableObject {
         stopParagraphEscapeMonitoring()
         cancelActiveLookupWork()
         hideOverlay()
+    }
+
+    func toggleParagraphOverlayPin() {
+        isParagraphOverlayPinned.toggle()
     }
 
     func beginParagraphOverlayDrag() {
@@ -1726,6 +1734,7 @@ final class AppModel: ObservableObject {
 
     private func hideOverlay() {
         activeLookupMode = .word
+        isParagraphOverlayPinned = false
         stopParagraphEscapeMonitoring()
         cancelPendingOverlayLayoutRefresh()
         speechService.stopSpeaking()
