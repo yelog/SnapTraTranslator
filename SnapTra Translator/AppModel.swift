@@ -303,6 +303,9 @@ final class AppModel: ObservableObject {
         hotkeyManager.onDoubleTap = { [weak self] in
             self?.handleHotkeyDoubleTap()
         }
+        hotkeyManager.onPersistentRelease = { [weak self] in
+            self?.handlePersistentSentenceOverlayRelease()
+        }
         resolvedPermissions.refreshStatus()
         Task {
             await checkLanguageAvailability(notifyUser: false)
@@ -312,6 +315,7 @@ final class AppModel: ObservableObject {
     func handleHotkeyTrigger() {
         isHotkeyActive = true
         activeLookupMode = .word
+        isParagraphOverlayPinned = false
         stopParagraphEscapeMonitoring()
         paragraphHighlightWindowController.hide()
         let mouseLocation = NSEvent.mouseLocation
@@ -323,19 +327,39 @@ final class AppModel: ObservableObject {
     }
 
     func handleHotkeyRelease() {
+        let shouldKeepSentenceOverlayVisible = isParagraphOverlayPinned && isParagraphOverlayPresented
+
         isHotkeyActive = false
-        activeLookupMode = .word
-        stopParagraphEscapeMonitoring()
         stopMouseTracking()
         debugOverlayWindowController.hide()
         paragraphHighlightWindowController.hide()
 
-        if isParagraphOverlayPinned {
+        if shouldKeepSentenceOverlayVisible {
+            overlayWindowController.setInteractive(true)
+            syncParagraphEscapeMonitoring()
             return
         }
 
+        activeLookupMode = .word
         cancelActiveLookupWork()
         hideOverlay()
+    }
+
+    func handlePersistentSentenceOverlayRelease() {
+        isHotkeyActive = false
+        stopMouseTracking()
+        debugOverlayWindowController.hide()
+        paragraphHighlightWindowController.hide()
+
+        guard isParagraphOverlayPresented else {
+            activeLookupMode = .word
+            stopParagraphEscapeMonitoring()
+            return
+        }
+
+        isParagraphOverlayPinned = true
+        overlayWindowController.setInteractive(true)
+        syncParagraphEscapeMonitoring()
     }
 
     func handleHotkeyDoubleTap() {
@@ -371,20 +395,25 @@ final class AppModel: ObservableObject {
 
     func toggleParagraphOverlayPin() {
         isParagraphOverlayPinned.toggle()
+        if isParagraphOverlayPinned {
+            overlayWindowController.setInteractive(true)
+        }
     }
 
     func beginParagraphOverlayDrag() {
-        guard isParagraphOverlayPresented else { return }
+        guard isParagraphOverlayPresented, isParagraphOverlayPinned else { return }
         overlayWindowController.beginManualPositioning()
     }
 
     func updateParagraphOverlayDrag(translation: CGSize) {
-        guard isParagraphOverlayPresented else { return }
+        guard isParagraphOverlayPresented, isParagraphOverlayPinned else { return }
         overlayWindowController.moveBy(translation: translation)
     }
 
     func endParagraphOverlayDrag() {
+        guard isParagraphOverlayPresented, isParagraphOverlayPinned else { return }
         overlayWindowController.endManualPositioning()
+        refreshParagraphOverlayLayoutImmediately()
     }
     
     private func startMouseTracking() {
@@ -1176,7 +1205,7 @@ final class AppModel: ObservableObject {
     }
 
     func updateOverlay(state: OverlayState, anchor: CGPoint? = nil) {
-        guard isHotkeyActive || activeLookupMode == .ocrSentence || !settings.continuousTranslation else { return }
+        guard isHotkeyActive || isParagraphOverlayPresented || !settings.continuousTranslation else { return }
 
         if let anchor {
             setOverlayAnchor(anchor)
@@ -1194,7 +1223,7 @@ final class AppModel: ObservableObject {
             if overlayWindowController.isVisible {
                 refreshParagraphOverlayLayoutImmediately()
             } else {
-                overlayWindowController.show(at: overlayAnchor, makeKey: activeLookupMode == .ocrSentence)
+                overlayWindowController.show(at: overlayAnchor, makeKey: isParagraphOverlayPresented)
             }
             overlayWindowController.setInteractive(true)
         case .result:
@@ -1204,7 +1233,7 @@ final class AppModel: ObservableObject {
             if overlayWindowController.isVisible {
                 scheduleOverlayLayoutRefresh()
             } else {
-                overlayWindowController.show(at: overlayAnchor, makeKey: activeLookupMode == .ocrSentence)
+                overlayWindowController.show(at: overlayAnchor, makeKey: isParagraphOverlayPresented)
             }
             if activeLookupMode == .ocrSentence || !settings.continuousTranslation {
                 overlayWindowController.setInteractive(true)
@@ -1216,7 +1245,7 @@ final class AppModel: ObservableObject {
             if overlayWindowController.isVisible {
                 scheduleOverlayLayoutRefresh()
             } else {
-                overlayWindowController.show(at: overlayAnchor, makeKey: activeLookupMode == .ocrSentence)
+                overlayWindowController.show(at: overlayAnchor, makeKey: isParagraphOverlayPresented)
             }
             if activeLookupMode == .ocrSentence {
                 overlayWindowController.setInteractive(true)
@@ -1287,7 +1316,7 @@ final class AppModel: ObservableObject {
 
     private func handleScreenConfigurationChange() {
         captureService.invalidateCache()
-        guard isHotkeyActive || activeLookupMode == .ocrSentence else { return }
+        guard isHotkeyActive || isParagraphOverlayPresented else { return }
         cancelActiveLookupWork()
         hideOverlay()
         debugOverlayWindowController.hide()
@@ -1763,12 +1792,7 @@ final class AppModel: ObservableObject {
                 self?.overlayLayoutRefreshWorkItem = nil
                 guard let self else { return }
                 guard self.overlayWindowController.isVisible else { return }
-                // 若句子矩形已确定，保持对齐到句子位置；否则用鼠标锚点刷新
-                if let sentenceRect = self.activeParagraphRect {
-                    self.overlayWindowController.alignToSentenceRect(sentenceRect, animated: false)
-                } else {
-                    self.overlayWindowController.refreshLayoutIfNeeded(at: self.overlayAnchor)
-                }
+                self.refreshParagraphOverlayLayout(animated: false)
             }
         }
 
@@ -1788,17 +1812,34 @@ final class AppModel: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             guard self.overlayWindowController.isVisible else { return }
+            self.refreshParagraphOverlayLayout(animated: true)
+        }
+    }
 
-            if let sentenceRect = self.activeParagraphRect {
-                self.overlayWindowController.alignToSentenceRect(sentenceRect, animated: true)
-            } else {
-                self.overlayWindowController.refreshLayoutIfNeeded(at: self.overlayAnchor)
-            }
+    private func refreshParagraphOverlayLayout(animated: Bool) {
+        if overlayWindowController.isManualParagraphPositioningActive {
+            return
+        }
+
+        if overlayWindowController.hasManualParagraphPosition {
+            overlayWindowController.refreshLayoutIfNeeded(at: overlayAnchor)
+            return
+        }
+
+        if let sentenceRect = activeParagraphRect {
+            overlayWindowController.alignToSentenceRect(sentenceRect, animated: animated)
+        } else {
+            overlayWindowController.refreshLayoutIfNeeded(at: overlayAnchor)
         }
     }
 
     private var isParagraphOverlayPresented: Bool {
-        activeLookupMode == .ocrSentence && overlayState != .idle
+        switch overlayState {
+        case .paragraphLoading, .paragraphResult:
+            return true
+        default:
+            return false
+        }
     }
 
     private func syncParagraphEscapeMonitoring() {

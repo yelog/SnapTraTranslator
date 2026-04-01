@@ -11,6 +11,7 @@ enum HotkeyReleaseResolution: Equatable {
     case none
     case immediate
     case delayed(TimeInterval)
+    case persistent
 }
 
 struct HotkeyGestureStateMachine {
@@ -80,11 +81,11 @@ struct HotkeyGestureStateMachine {
 
             // 检测双击后的按住时间
             // 如果按住超过阈值，返回 .immediate 让用户可以松开关闭面板
-            // 如果快速释放，返回 .none 保持面板一直显示
+            // 如果快速释放，返回 .persistent 保持面板一直显示并切换为常驻态
             if pressDuration > doubleTapHoldThreshold {
                 return .immediate  // 触发 onRelease，支持松开关闭
             } else {
-                return .none  // 不触发 onRelease，面板一直显示
+                return .persistent
             }
         }
 
@@ -118,6 +119,7 @@ final class HotkeyManager {
     var onTrigger: (() -> Void)?
     var onRelease: (() -> Void)?
     var onDoubleTap: (() -> Void)?
+    var onPersistentRelease: (() -> Void)?
 
     private var globalMonitor: Any?
     private var localMonitor: Any?
@@ -214,6 +216,8 @@ final class HotkeyManager {
             scheduleReleaseCallback(after: releaseConfirmationDelay, targetFlag: targetFlag)
         case .delayed(let interval):
             scheduleReleaseCallback(after: interval, targetFlag: targetFlag, consumesTapWindow: true)
+        case .persistent:
+            onPersistentRelease?()
         }
     }
 

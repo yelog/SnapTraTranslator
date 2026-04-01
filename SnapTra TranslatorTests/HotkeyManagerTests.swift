@@ -42,7 +42,7 @@ final class HotkeyManagerTests: XCTestCase {
         XCTAssertEqual(events, [.release, .trigger])
     }
 
-    func testDoubleTapSecondReleaseIsImmediate() {
+    func testDoubleTapSecondQuickReleaseBecomesPersistent() {
         var stateMachine = HotkeyGestureStateMachine()
         let start = Date()
 
@@ -51,6 +51,18 @@ final class HotkeyManagerTests: XCTestCase {
         _ = stateMachine.handlePress(now: start.addingTimeInterval(0.16))
         let resolution = stateMachine.handleRelease(now: start.addingTimeInterval(0.24))
 
-        XCTAssertEqual(resolution, .none)
+        XCTAssertEqual(resolution, .persistent)
+    }
+
+    func testDoubleTapSecondLongHoldStillReleasesNormally() {
+        var stateMachine = HotkeyGestureStateMachine()
+        let start = Date()
+
+        _ = stateMachine.handlePress(now: start)
+        _ = stateMachine.handleRelease(now: start.addingTimeInterval(0.08))
+        _ = stateMachine.handlePress(now: start.addingTimeInterval(0.16))
+        let resolution = stateMachine.handleRelease(now: start.addingTimeInterval(1.30))
+
+        XCTAssertEqual(resolution, .immediate)
     }
 }
