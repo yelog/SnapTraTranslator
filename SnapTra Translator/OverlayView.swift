@@ -251,22 +251,24 @@ struct OverlayView: View {
             paragraphBodyContainer {
                 if let originalText = content.originalText,
                    !originalText.isEmpty {
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack(alignment: .top, spacing: 8) {
-                            paragraphTextContent(
-                                text: originalText,
-                                font: .systemFont(ofSize: optimalFontSize, weight: .medium),
-                                textColor: .labelColor,
-                                preferredLineHeight: optimalFontSize * 1.5
-                            )
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .center, spacing: 8) {
+                            Text(paragraphOriginalSectionTitle)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
 
                             CopyButton(text: originalText)
                         }
+
+                        paragraphTextContent(
+                            text: originalText,
+                            font: .systemFont(ofSize: optimalFontSize, weight: .medium),
+                            textColor: .labelColor,
+                            preferredLineHeight: optimalFontSize * 1.5
+                        )
                     }
                     .padding(.horizontal, paragraphTextHorizontalPadding)
-                    .padding(.top, 2)
-                    .padding(.bottom, 14)
+                    .padding(.vertical, 14)
 
                     // Divider after original text
                     Divider()
@@ -558,7 +560,7 @@ struct OverlayView: View {
     }
 
     private var paragraphOriginalSectionTitle: String {
-        paragraphLanguageSectionTitle(for: "en")
+        L("Original")
     }
 
     private var paragraphTranslationSectionTitle: String {
