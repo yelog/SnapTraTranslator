@@ -572,6 +572,9 @@ final class OverlayWindowController: NSWindowController {
     }
 
     func endManualPositioning() {
+        if let window, window.isVisible {
+            manualOrigin = window.frame.origin
+        }
         dragStartOrigin = nil
     }
 
