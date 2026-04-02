@@ -59,6 +59,10 @@ struct OverlayView: View {
         isParagraphOverlayMode && !model.isParagraphOverlayPinned
     }
 
+    private var canDragPinnedParagraphOverlay: Bool {
+        isParagraphOverlayMode && model.isParagraphOverlayPinned
+    }
+
     private var isVisible: Bool {
         if case .idle = model.overlayState { return false }
         return true
@@ -264,6 +268,9 @@ struct OverlayView: View {
                             preferredLineHeight: optimalFontSize * 1.5
                         )
                         .padding(.top, 4)
+                        .overlay {
+                            paragraphOriginalTextDragOverlay
+                        }
                     }
                     .padding(.horizontal, paragraphTextHorizontalPadding)
                     .padding(.bottom, 14)
@@ -500,18 +507,20 @@ struct OverlayView: View {
     }
 
     @ViewBuilder
+    private var paragraphOriginalTextDragOverlay: some View {
+        if canDragPinnedParagraphOverlay {
+            paragraphPinnedDragHandle
+        }
+    }
+
+    @ViewBuilder
     private func paragraphTopBar() -> some View {
         HStack(spacing: 0) {
-            Spacer()
+            paragraphHeaderDragArea()
 
             paragraphOverlayControlButton()
         }
         .frame(height: 18)
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            updateParagraphHeaderHover(hovering)
-        }
-        .simultaneousGesture(paragraphHeaderDragGesture)
         .padding(.horizontal, 14)
         .padding(.top, 10)
         .padding(.bottom, 6)
@@ -520,26 +529,48 @@ struct OverlayView: View {
     @ViewBuilder
     private func paragraphOriginalTopBar(copyText: String) -> some View {
         HStack(alignment: .center, spacing: 8) {
-            Text(paragraphOriginalSectionTitle)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+            paragraphHeaderDragArea(title: paragraphOriginalSectionTitle)
 
             CopyButton(text: copyText)
-
-            Spacer(minLength: 12)
 
             paragraphOverlayControlButton()
         }
         .frame(height: 18)
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            updateParagraphHeaderHover(hovering)
-        }
-        .simultaneousGesture(paragraphHeaderDragGesture)
         .padding(.leading, paragraphTextHorizontalPadding)
         .padding(.trailing, 14)
         .padding(.top, 10)
         .padding(.bottom, 6)
+    }
+
+    @ViewBuilder
+    private func paragraphHeaderDragArea(title: String? = nil) -> some View {
+        ZStack(alignment: .leading) {
+            if canDragPinnedParagraphOverlay {
+                paragraphPinnedDragHandle
+            } else {
+                Color.clear
+            }
+
+            if let title, !title.isEmpty {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .allowsHitTesting(canDragPinnedParagraphOverlay)
+    }
+
+    @ViewBuilder
+    private var paragraphPinnedDragHandle: some View {
+        if canDragPinnedParagraphOverlay {
+            ParagraphOverlayDragHandle(
+                isEnabled: canDragPinnedParagraphOverlay,
+                onDragBegin: { model.beginParagraphOverlayDrag() },
+                onDragEnd: { model.endParagraphOverlayDrag() }
+            )
+        }
     }
 
     @ViewBuilder
@@ -595,7 +626,7 @@ struct OverlayView: View {
     private var paragraphHeaderDragGesture: some Gesture {
         DragGesture(minimumDistance: 1, coordinateSpace: .global)
             .onChanged { value in
-                guard isParagraphOverlayMode else { return }
+                guard canDragPinnedParagraphOverlay else { return }
 
                 if !isParagraphHeaderDragging {
                     isParagraphHeaderDragging = true
@@ -614,7 +645,7 @@ struct OverlayView: View {
     }
 
     private func updateParagraphHeaderHover(_ hovering: Bool) {
-        guard isParagraphOverlayMode else {
+        guard canDragPinnedParagraphOverlay else {
             resetParagraphHeaderInteractionState()
             return
         }
@@ -624,7 +655,7 @@ struct OverlayView: View {
     }
 
     private func refreshParagraphHeaderCursor() {
-        guard isParagraphOverlayMode else {
+        guard canDragPinnedParagraphOverlay else {
             NSCursor.arrow.set()
             return
         }
@@ -1396,6 +1427,95 @@ private struct SelectableTextView: NSViewRepresentable {
         }
 
         return nsView.measuredSize(forWidth: width)
+    }
+}
+
+private struct ParagraphOverlayDragHandle: NSViewRepresentable {
+    let isEnabled: Bool
+    let onDragBegin: () -> Void
+    let onDragEnd: () -> Void
+
+    func makeNSView(context: Context) -> ParagraphOverlayDragHandleView {
+        let view = ParagraphOverlayDragHandleView(frame: .zero)
+        view.update(
+            isEnabled: isEnabled,
+            onDragBegin: onDragBegin,
+            onDragEnd: onDragEnd
+        )
+        return view
+    }
+
+    func updateNSView(_ nsView: ParagraphOverlayDragHandleView, context: Context) {
+        nsView.update(
+            isEnabled: isEnabled,
+            onDragBegin: onDragBegin,
+            onDragEnd: onDragEnd
+        )
+    }
+}
+
+private final class ParagraphOverlayDragHandleView: NSView {
+    private var isEnabled = false
+    private var onDragBegin: (() -> Void)?
+    private var onDragEnd: (() -> Void)?
+
+    override var isOpaque: Bool { false }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard isEnabled else { return nil }
+        return bounds.contains(point) ? self : nil
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard isEnabled else { return }
+        addCursorRect(bounds, cursor: .openHand)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabled, let window else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        onDragBegin?()
+        NSCursor.closedHand.push()
+        defer {
+            NSCursor.pop()
+            onDragEnd?()
+        }
+
+        window.performDrag(with: event)
+    }
+
+    func update(
+        isEnabled: Bool,
+        onDragBegin: @escaping () -> Void,
+        onDragEnd: @escaping () -> Void
+    ) {
+        let enabledChanged = self.isEnabled != isEnabled
+        self.isEnabled = isEnabled
+        self.onDragBegin = onDragBegin
+        self.onDragEnd = onDragEnd
+
+        if enabledChanged {
+            discardCursorRects()
+        }
     }
 }
 
