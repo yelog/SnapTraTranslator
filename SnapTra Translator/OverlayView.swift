@@ -529,9 +529,14 @@ struct OverlayView: View {
     @ViewBuilder
     private func paragraphOriginalTopBar(copyText: String) -> some View {
         HStack(alignment: .center, spacing: 8) {
-            paragraphHeaderDragArea(title: paragraphOriginalSectionTitle)
+            paragraphHeaderDragArea(
+                title: paragraphOriginalSectionTitle,
+                fillsWidth: false
+            )
 
             CopyButton(text: copyText)
+
+            paragraphHeaderDragArea()
 
             paragraphOverlayControlButton()
         }
@@ -543,7 +548,10 @@ struct OverlayView: View {
     }
 
     @ViewBuilder
-    private func paragraphHeaderDragArea(title: String? = nil) -> some View {
+    private func paragraphHeaderDragArea(
+        title: String? = nil,
+        fillsWidth: Bool = true
+    ) -> some View {
         ZStack(alignment: .leading) {
             if canDragPinnedParagraphOverlay {
                 paragraphPinnedDragHandle
@@ -558,7 +566,12 @@ struct OverlayView: View {
                     .allowsHitTesting(false)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .frame(
+            maxWidth: fillsWidth ? .infinity : nil,
+            maxHeight: .infinity,
+            alignment: .leading
+        )
+        .fixedSize(horizontal: !fillsWidth, vertical: false)
         .allowsHitTesting(canDragPinnedParagraphOverlay)
     }
 
