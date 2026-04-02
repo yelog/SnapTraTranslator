@@ -268,9 +268,6 @@ struct OverlayView: View {
                             preferredLineHeight: optimalFontSize * 1.5
                         )
                         .padding(.top, 4)
-                        .overlay {
-                            paragraphOriginalTextDragOverlay
-                        }
                     }
                     .padding(.horizontal, paragraphTextHorizontalPadding)
                     .padding(.bottom, 14)
@@ -503,13 +500,6 @@ struct OverlayView: View {
                 .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    @ViewBuilder
-    private var paragraphOriginalTextDragOverlay: some View {
-        if canDragPinnedParagraphOverlay {
-            paragraphPinnedDragHandle
         }
     }
 
