@@ -123,6 +123,8 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           DMG_PATH="dist/SnapTra-Translator-${TAG#v}.dmg"
           VERSION="${TAG#v}"
+          APPCAST_WORKTREE="$RUNNER_TEMP/appcast-main"
+          CHANGELOG_PATH="$GITHUB_WORKSPACE/CHANGELOG.md"
           source scripts/build/sparkle-release-utils.sh
 
           FILE_SIZE=$(stat -f%z "$DMG_PATH")
@@ -130,11 +132,17 @@ jobs:
           SPARKLE_VERSION="$(compute_sparkle_version "$VERSION")"
           APPCAST_FILES="$(appcast_file_for_version "$VERSION")"
 
+          git fetch origin main
+          rm -rf "$APPCAST_WORKTREE"
+          # Update appcast from the latest main checkout so a tag build never overwrites newer feed entries.
+          git worktree add --detach "$APPCAST_WORKTREE" origin/main
+
           echo "Updating appcast files for version $VERSION (sparkle:version=$SPARKLE_VERSION)"
           echo "Appcast files: $APPCAST_FILES"
 
-          for APPCAST_FILE in $APPCAST_FILES; do
-            echo "Processing $APPCAST_FILE"
+          for APPCAST_FILE_REL in $APPCAST_FILES; do
+            APPCAST_FILE="$APPCAST_WORKTREE/$APPCAST_FILE_REL"
+            echo "Processing $APPCAST_FILE_REL"
 
           python3 << PYTHON_SCRIPT
           import xml.etree.ElementTree as ET
@@ -192,7 +200,7 @@ jobs:
 
               def parse_changelog(version):
                   try:
-                      with open('CHANGELOG.md', 'r', encoding='utf-8') as f:
+                      with open('$CHANGELOG_PATH', 'r', encoding='utf-8') as f:
                           content = f.read()
                   except Exception:
                       return None
@@ -262,7 +270,7 @@ jobs:
                   insert_index = 4
 
               channel.insert(insert_index, item)
-              print(f"Added new version $VERSION to $APPCAST_FILE")
+              print(f"Added new version $VERSION to $APPCAST_FILE_REL")
 
           tree.write('$APPCAST_FILE', encoding='UTF-8', xml_declaration=True)
 
@@ -284,28 +292,23 @@ jobs:
           with open('$APPCAST_FILE', 'w') as f:
               f.write(content)
 
-          print(f"Successfully added version $VERSION to $APPCAST_FILE")
+          print(f"Successfully added version $VERSION to $APPCAST_FILE_REL")
           PYTHON_SCRIPT
           done
 
           echo "appcast_files=$APPCAST_FILES" >> "$GITHUB_OUTPUT"
+          echo "appcast_worktree=$APPCAST_WORKTREE" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push appcast changes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          APPCAST_WORKTREE="${{ steps.update_appcast.outputs.appcast_worktree }}"
+          cd "$APPCAST_WORKTREE"
+
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-
-          git stash push -m "appcast update"
-
-          git fetch origin main
-          git checkout -B main origin/main
-
-          if ! git stash pop; then
-            git checkout --theirs docs/appcast-beta.xml docs/appcast.xml || true
-          fi
 
           git add docs/appcast-beta.xml docs/appcast.xml
 
@@ -313,8 +316,16 @@ jobs:
             echo "No changes to commit (appcast already up to date)"
           else
             git commit -m "chore(appcast): add ${{ steps.update_appcast.outputs.version }} release entry [skip ci]"
-            git push origin main
+            git push origin HEAD:main
             echo "Appcast updated and pushed to main"
+          fi
+
+      - name: Cleanup appcast worktree
+        if: always()
+        run: |
+          APPCAST_WORKTREE="${{ steps.update_appcast.outputs.appcast_worktree }}"
+          if [ -n "$APPCAST_WORKTREE" ] && [ -d "$APPCAST_WORKTREE" ]; then
+            git worktree remove --force "$APPCAST_WORKTREE" || rm -rf "$APPCAST_WORKTREE"
           fi
 
       - name: Extract changelog for release notes
@@ -365,6 +376,7 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           DMG_PATH="dist/SnapTra-Translator-${TAG#v}.dmg"
           SHA_PATH="${DMG_PATH}.sha256"
+          SIGNATURE_PATH="${DMG_PATH}.sparkle-signature"
 
           PRERELEASE_FLAG=""
           if [ "${{ steps.release_type.outputs.is_prerelease }}" == "true" ]; then
@@ -373,7 +385,7 @@ jobs:
 
           if gh release view "$TAG" &>/dev/null; then
             echo "Release $TAG already exists, uploading assets..."
-            gh release upload "$TAG" "$DMG_PATH" "$SHA_PATH" --clobber
+            gh release upload "$TAG" "$DMG_PATH" "$SHA_PATH" "$SIGNATURE_PATH" --clobber
           elif [ -s /tmp/release_notes.md ]; then
             echo "Using changelog from CHANGELOG.md"
             gh release create "$TAG" \
@@ -381,7 +393,8 @@ jobs:
               --notes-file /tmp/release_notes.md \
               $PRERELEASE_FLAG \
               "$DMG_PATH" \
-              "$SHA_PATH"
+              "$SHA_PATH" \
+              "$SIGNATURE_PATH"
           else
             echo "Using auto-generated notes"
             gh release create "$TAG" \
@@ -389,5 +402,6 @@ jobs:
               --generate-notes \
               $PRERELEASE_FLAG \
               "$DMG_PATH" \
-              "$SHA_PATH"
+              "$SHA_PATH" \
+              "$SIGNATURE_PATH"
           fi
