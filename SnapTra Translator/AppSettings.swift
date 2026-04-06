@@ -131,6 +131,7 @@ enum AppSettingKey {
     static let debugShowOcrRegion = "debugShowOcrRegion"
     static let continuousTranslation = "continuousTranslation"
     static let lastScreenRecordingStatus = "lastScreenRecordingStatus"
+    static let hasCompletedInitialSetup = "hasCompletedInitialSetup"
     static let ttsProvider = "ttsProvider"
     static let wordTTSProvider = "wordTTSProvider"
     static let sentenceTTSProvider = "sentenceTTSProvider"

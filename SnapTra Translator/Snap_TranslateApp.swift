@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var isManualWindowOpen = false
     private var shouldShowWindowAfterPermissionGrant = false
     private var hasCompletedInitialLanguageAvailabilityCheck = false
+    private var hasCompletedInitialSetup = false
 
     override init() {
         do {
@@ -163,6 +164,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // Initialize Sparkle auto-updater
         UpdateChecker.shared.initialize()
         UpdateChecker.shared.startAutoCheckIfNeeded()
+
+        // Load initial setup state from UserDefaults
+        hasCompletedInitialSetup = UserDefaults.standard.bool(forKey: AppSettingKey.hasCompletedInitialSetup)
 
         Task {
             await refreshAndUpdateVisibility()
@@ -529,6 +533,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     @MainActor
     private func updateVisibilityFromCurrentState() async {
+        if hasCompletedInitialSetup {
+            return
+        }
+
         var needsSettings = !model.permissions.status.screenRecording
 
         if #available(macOS 15.0, *) {
@@ -566,6 +574,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         settingsWindow?.orderOut(nil)
         if !model.settings.showDockIcon {
             NSApp.setActivationPolicy(.accessory)
+        }
+        
+        if !hasCompletedInitialSetup && model.permissions.status.screenRecording {
+            hasCompletedInitialSetup = true
+            UserDefaults.standard.set(true, forKey: AppSettingKey.hasCompletedInitialSetup)
         }
     }
 
