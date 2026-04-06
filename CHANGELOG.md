@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.7-beta.3] - 2026-04-06
+
+### Added
+- add pin and copy buttons for paragraph overlay
+- add selected text translation flow
+- add configurable third-party sources
+- add Copy to Clipboard option for word and sentence translation
+- add Show Dock Icon toggle in System tab
+- add localization support for Learning module
+- add word learning module with spaced repetition
+
+### Changed
+- increase general tab content height from 580 to 650
+- stop TimelineView animation when highlight window hidden
+- add localizations for auto cleanup feature
+- optimize storage and add auto cleanup
+- add third-party dictionaries design
+- add System tab label translations
+- remove Spanish language support
+- add System tab and move launch/menu bar/language settings
+- remove fixed width from filter picker for compact layout
+
+### Fixed
+- prevent settings window from showing on restart
+- restore beta appcast publishing
+- restore paragraph original selection
+- align original copy button
+- improve paragraph panel dragging
+- correct sentence panel pin and escape states
+- inline paragraph original header
+- add title for original text in paragraph overlay
+- improve selected text translation accuracy and readability
+- avoid unsupported predicate forced unwrap
+- improve selected text accessibility lookup
+- persist showDockIcon setting across app restarts
+- hide Dock icon immediately when toggle is turned off
+- move Learning tab below pronunciation options
+
 ## [1.3.7-beta.2] - 2026-04-02
 
 ### Added
