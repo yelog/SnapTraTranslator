@@ -403,8 +403,8 @@ final class SettingsStore: ObservableObject {
         ecdictInstalled: Bool
     ) -> [(type: DictionarySource.SourceType, isEnabled: Bool)] {
         [
-            (.ecdict, ecdictInstalled),
             (.system, true),
+            (.ecdict, ecdictInstalled),
             (.youdao, false),
             (.google, false),
             (.freeDictionaryAPI, false),
