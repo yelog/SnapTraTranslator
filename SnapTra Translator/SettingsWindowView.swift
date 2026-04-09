@@ -293,11 +293,18 @@ struct GeneralSettingsView: View {
     @State private var appeared = false
     var hidesScrollIndicator: Bool = false
 
+    private var supportsSelectedTextTranslation: Bool {
+        DistributionChannel.supportsSelectedTextTranslation
+    }
+
     private var hasAnyTranslationCapability: Bool {
         model.permissions.status.screenRecording
             || (
+                supportsSelectedTextTranslation
+                    && (
                 model.settings.selectedTextTranslationEnabled
                     && model.permissions.status.accessibility
+                    )
             )
     }
 
@@ -351,16 +358,18 @@ struct GeneralSettingsView: View {
                         action: { model.permissions.requestAndOpenScreenRecording() }
                     )
 
-                    Divider()
-                        .padding(.horizontal, 14)
-                        .opacity(0.5)
+                    if supportsSelectedTextTranslation {
+                        Divider()
+                            .padding(.horizontal, 14)
+                            .opacity(0.5)
 
-                    GeneralPermissionRow(
-                        icon: "figure.wave",
-                        title: L("Accessibility"),
-                        isGranted: model.permissions.status.accessibility,
-                        action: { model.permissions.requestAndOpenAccessibility() }
-                    )
+                        GeneralPermissionRow(
+                            icon: "figure.wave",
+                            title: L("Accessibility"),
+                            isGranted: model.permissions.status.accessibility,
+                            action: { model.permissions.requestAndOpenAccessibility() }
+                        )
+                    }
                 }
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -516,14 +525,16 @@ struct GeneralSettingsView: View {
                         isOn: $model.settings.ocrSentenceTranslationEnabled
                     )
 
-                    Divider()
-                        .padding(.horizontal, 14)
-                        .opacity(0.5)
+                    if supportsSelectedTextTranslation {
+                        Divider()
+                            .padding(.horizontal, 14)
+                            .opacity(0.5)
 
-                    ToggleRow(
-                        title: L("Translate Selected Text"),
-                        isOn: $model.settings.selectedTextTranslationEnabled
-                    )
+                        ToggleRow(
+                            title: L("Translate Selected Text"),
+                            isOn: $model.settings.selectedTextTranslationEnabled
+                        )
+                    }
 
                     Divider()
                         .padding(.horizontal, 14)

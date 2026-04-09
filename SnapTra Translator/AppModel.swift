@@ -248,6 +248,10 @@ final class AppModel: ObservableObject {
         3_000_000_000,
     ]
 
+    private var supportsSelectedTextTranslation: Bool {
+        DistributionChannel.supportsSelectedTextTranslation
+    }
+
     @MainActor
     init(settings: SettingsStore? = nil, permissions: PermissionManager? = nil, modelContext: ModelContext) {
         let resolvedSettings = settings ?? SettingsStore()
@@ -667,6 +671,7 @@ final class AppModel: ObservableObject {
         debugSelectedTextRoute(
             """
             start mouse=\(describe(point: mouseLocation)) \
+            selectedTextSupported=\(supportsSelectedTextTranslation) \
             selectedTextEnabled=\(settings.selectedTextTranslationEnabled) \
             accessibility=\(permissions.status.accessibility) \
             likelySandboxed=\(isLikelySandboxedRuntime()) \
@@ -675,6 +680,22 @@ final class AppModel: ObservableObject {
             tmp=\(FileManager.default.temporaryDirectory.path)
             """
         )
+
+        guard supportsSelectedTextTranslation else {
+            debugSelectedTextRoute("decision=ocrWord reason=unsupportedChannel")
+            return .ocrWord
+        }
+
+        guard settings.selectedTextTranslationEnabled else {
+            debugSelectedTextRoute("decision=ocrWord reason=featureDisabled")
+            return .ocrWord
+        }
+
+        guard permissions.status.accessibility else {
+            debugSelectedTextRoute("decision=ocrWord reason=missingAccessibility")
+            return .ocrWord
+        }
+
         let selectionSnapshot = selectedTextService.currentSelectionSnapshot(mouseLocation: mouseLocation)
         if let selectionSnapshot {
             debugSelectedTextRoute(
@@ -686,8 +707,9 @@ final class AppModel: ObservableObject {
 
         let intent = SinglePressLookupRouter.resolve(
             mouseLocation: mouseLocation,
-            isSelectedTextTranslationEnabled: settings.selectedTextTranslationEnabled,
-            hasAccessibilityPermission: permissions.status.accessibility,
+            isSelectedTextTranslationSupported: supportsSelectedTextTranslation,
+            isSelectedTextTranslationEnabled: true,
+            hasAccessibilityPermission: true,
             selectionSnapshot: selectionSnapshot
         )
         switch intent {

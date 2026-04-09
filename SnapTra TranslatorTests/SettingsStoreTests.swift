@@ -133,6 +133,7 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
 
         let intent = SinglePressLookupRouter.resolve(
             mouseLocation: CGPoint(x: 140, y: 110),
+            isSelectedTextTranslationSupported: true,
             isSelectedTextTranslationEnabled: true,
             hasAccessibilityPermission: true,
             selectionSnapshot: snapshot
@@ -151,6 +152,7 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
 
         let intent = SinglePressLookupRouter.resolve(
             mouseLocation: CGPoint(x: 260, y: 200),
+            isSelectedTextTranslationSupported: true,
             isSelectedTextTranslationEnabled: true,
             hasAccessibilityPermission: true,
             selectionSnapshot: snapshot
@@ -169,6 +171,7 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
 
         let intent = SinglePressLookupRouter.resolve(
             mouseLocation: CGPoint(x: 260, y: 200),
+            isSelectedTextTranslationSupported: true,
             isSelectedTextTranslationEnabled: true,
             hasAccessibilityPermission: true,
             selectionSnapshot: snapshot
@@ -187,6 +190,7 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
 
         let intent = SinglePressLookupRouter.resolve(
             mouseLocation: CGPoint(x: 140, y: 110),
+            isSelectedTextTranslationSupported: true,
             isSelectedTextTranslationEnabled: true,
             hasAccessibilityPermission: false,
             selectionSnapshot: snapshot
@@ -205,7 +209,27 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
 
         let intent = SinglePressLookupRouter.resolve(
             mouseLocation: CGPoint(x: 140, y: 110),
+            isSelectedTextTranslationSupported: true,
             isSelectedTextTranslationEnabled: false,
+            hasAccessibilityPermission: true,
+            selectionSnapshot: snapshot
+        )
+
+        XCTAssertEqual(intent, .ocrWord)
+    }
+
+    func testUnsupportedSelectedTextCapabilityFallsBackToOcrWord() {
+        let snapshot = SelectedTextSnapshot(
+            text: "Hello world",
+            selectedRange: NSRange(location: 0, length: 11),
+            bounds: CGRect(x: 100, y: 100, width: 120, height: 24),
+            sourceAppIdentifier: "com.apple.TextEdit"
+        )
+
+        let intent = SinglePressLookupRouter.resolve(
+            mouseLocation: CGPoint(x: 140, y: 110),
+            isSelectedTextTranslationSupported: false,
+            isSelectedTextTranslationEnabled: true,
             hasAccessibilityPermission: true,
             selectionSnapshot: snapshot
         )

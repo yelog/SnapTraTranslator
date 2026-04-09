@@ -9,11 +9,13 @@ enum SinglePressLookupIntent: Equatable {
 enum SinglePressLookupRouter {
     static func resolve(
         mouseLocation: CGPoint,
+        isSelectedTextTranslationSupported: Bool,
         isSelectedTextTranslationEnabled: Bool,
         hasAccessibilityPermission: Bool,
         selectionSnapshot: SelectedTextSnapshot?
     ) -> SinglePressLookupIntent {
-        guard isSelectedTextTranslationEnabled,
+        guard isSelectedTextTranslationSupported,
+              isSelectedTextTranslationEnabled,
               hasAccessibilityPermission,
               let selectionSnapshot else {
             return .ocrWord

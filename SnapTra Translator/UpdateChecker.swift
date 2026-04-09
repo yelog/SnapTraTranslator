@@ -17,6 +17,19 @@ enum DistributionChannel {
         return .appStore
     }
 
+    var supportsSelectedTextTranslation: Bool {
+        switch self {
+        case .github:
+            return true
+        case .appStore:
+            return false
+        }
+    }
+
+    static var supportsSelectedTextTranslation: Bool {
+        current.supportsSelectedTextTranslation
+    }
+
     static var isGitHubRelease: Bool {
         current == .github
     }
