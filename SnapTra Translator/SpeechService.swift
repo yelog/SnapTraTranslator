@@ -239,13 +239,6 @@ final class YoudaoTTSService {
     private let baseURL = "https://dict.youdao.com/dictvoice"
     private let logger = Logger(subsystem: "com.yelog.SnapTra-Translator", category: "YoudaoTTS")
     
-    private let uncachedSession: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        config.urlCache = nil
-        return URLSession(configuration: config)
-    }()
-    
     func fetchAudio(
         text: String,
         language: String?,
@@ -263,7 +256,7 @@ final class YoudaoTTSService {
         
         logger.info("📡 Requesting Youdao TTS: \(url.absoluteString)")
         
-        let session = disableCache ? uncachedSession : URLSession.shared
+        let session = disableCache ? SharedURLSession.uncached : URLSession.shared
         let (data, response) = try await session.data(from: url)
         
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -318,13 +311,6 @@ final class BaiduTTSService {
     private let baseURL = "https://fanyi.baidu.com/gettts"
     private let logger = Logger(subsystem: "com.yelog.SnapTra-Translator", category: "BaiduTTS")
     
-    private let uncachedSession: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        config.urlCache = nil
-        return URLSession(configuration: config)
-    }()
-    
     func fetchAudio(
         text: String,
         language: String?,
@@ -351,7 +337,7 @@ final class BaiduTTSService {
         
         logger.info("📡 Requesting Baidu TTS: \(url.absoluteString)")
         
-        let session = disableCache ? uncachedSession : URLSession.shared
+        let session = disableCache ? SharedURLSession.uncached : URLSession.shared
         let (data, response) = try await session.data(from: url)
         
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -628,13 +614,6 @@ final class BingTTSService {
 
 final class GoogleTTSService {
     private let logger = Logger(subsystem: "com.yelog.SnapTra-Translator", category: "GoogleTTS")
-    
-    private let uncachedSession: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        config.urlCache = nil
-        return URLSession(configuration: config)
-    }()
 
     func fetchAudio(
         text: String,
@@ -663,7 +642,7 @@ final class GoogleTTSService {
         )
         request.setValue("https://translate.google.com/", forHTTPHeaderField: "Referer")
 
-        let session = disableCache ? uncachedSession : URLSession.shared
+        let session = disableCache ? SharedURLSession.uncached : URLSession.shared
         let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {

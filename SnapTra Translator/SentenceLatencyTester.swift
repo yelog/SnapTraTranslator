@@ -28,7 +28,7 @@ final class SentenceLatencyTester: ObservableObject {
 
     init(service: SentenceTranslationService? = nil, session: URLSession? = nil) {
         self.service = service ?? SentenceTranslationService()
-        self.session = session ?? SentenceLatencyTester.makeSession()
+        self.session = session ?? SharedURLSession.ephemeral
     }
 
     /// Test all third-party sentence translation sources.
@@ -97,13 +97,6 @@ final class SentenceLatencyTester: ObservableObject {
         } catch {
             return .failed(error.localizedDescription)
         }
-    }
-
-    private static func makeSession() -> URLSession {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 10
-        configuration.timeoutIntervalForResource = 15
-        return URLSession(configuration: configuration)
     }
 
     private struct TimeoutError: Error {}

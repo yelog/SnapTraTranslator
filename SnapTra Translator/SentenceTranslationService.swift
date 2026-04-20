@@ -16,7 +16,7 @@ final class SentenceTranslationService {
     private let session: URLSession
     private let logger = Logger(subsystem: "com.yelog.SnapTra-Translator", category: "SentenceTranslation")
 
-    init(session: URLSession = SentenceTranslationService.makeSession()) {
+    init(session: URLSession = SharedURLSession.ephemeral) {
         self.session = session
     }
 
@@ -434,14 +434,6 @@ final class SentenceTranslationService {
             guard let range = Range(match.range(at: index), in: text) else { return nil }
             return String(text[range])
         }
-    }
-
-    private static func makeSession() -> URLSession {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 60
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: configuration)
     }
 
     private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"

@@ -235,6 +235,7 @@ final class AppModel: ObservableObject {
     private var debounceWorkItem: DispatchWorkItem?
     private var overlayLayoutRefreshWorkItem: DispatchWorkItem?
     private var lastOcrPosition: CGPoint?
+    private var translationServiceInitialized = false
     private let debounceInterval: TimeInterval = 0.1
     private let overlayLayoutRefreshInterval: TimeInterval = 0.04
     private let positionThreshold: CGFloat = 10.0
@@ -317,6 +318,9 @@ final class AppModel: ObservableObject {
     }
 
     func handleHotkeyTrigger() {
+        if #available(macOS 15.0, *) {
+            ensureTranslationService()
+        }
         isHotkeyActive = true
         activeLookupMode = .word
         isParagraphOverlayPinned = false
@@ -1789,6 +1793,7 @@ final class AppModel: ObservableObject {
         stopParagraphEscapeMonitoring()
         cancelPendingOverlayLayoutRefresh()
         speechService.stopSpeaking()
+        cachedLanguageStatuses.removeAll(keepingCapacity: false)
         if overlayState != .idle {
             overlayState = .idle
         }
@@ -1797,6 +1802,54 @@ final class AppModel: ObservableObject {
         paragraphHighlightWindowController.hide()
         overlayWindowController.setInteractive(false)
         overlayWindowController.hide()
+    }
+
+    @available(macOS 15.0, *)
+    private func ensureTranslationService() {
+        guard !translationServiceInitialized else { return }
+        translationServiceInitialized = true
+        createTranslationServiceWindowIfNeeded()
+        warmupTranslationService()
+    }
+
+    @available(macOS 15.0, *)
+    private func createTranslationServiceWindowIfNeeded() {
+        guard TranslationServiceWindowHolder.shared.window == nil else { return }
+
+        let translationView = TranslationBridgeView(bridge: translationBridge)
+        let hostingView = NSHostingView(rootView: translationView)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 1, height: 1)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.isReleasedWhenClosed = false
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.setIsVisible(false)
+
+        TranslationServiceWindowHolder.shared.window = window
+    }
+
+    @available(macOS 15.0, *)
+    private func warmupTranslationService() {
+        Task { @MainActor in
+            let sourceLanguage = Locale.Language(identifier: settings.sourceLanguage)
+            let targetLanguage = Locale.Language(identifier: settings.targetLanguage)
+
+            _ = try? await translationBridge.translate(
+                text: "hello",
+                source: sourceLanguage,
+                target: targetLanguage,
+                timeout: 10.0
+            )
+        }
     }
 
     private func setOverlayAnchor(_ anchor: CGPoint) {

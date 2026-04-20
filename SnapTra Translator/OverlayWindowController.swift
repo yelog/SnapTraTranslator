@@ -42,10 +42,10 @@ struct DebugOCRBorderView: View {
 // MARK: - Debug Overlay Window Controller
 
 final class DebugOverlayWindowController: NSWindowController {
-    private var hostingView: NSHostingView<DebugOCRBorderView>
+    private var hostingView: NSHostingView<AnyView>
 
     override init(window: NSWindow?) {
-        hostingView = NSHostingView(rootView: DebugOCRBorderView(wordBoxes: []))
+        hostingView = NSHostingView(rootView: AnyView(EmptyView()))
         let panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -75,12 +75,13 @@ final class DebugOverlayWindowController: NSWindowController {
 
     func show(at rect: CGRect, wordBoxes: [CGRect] = []) {
         guard let window else { return }
-        hostingView.rootView = DebugOCRBorderView(wordBoxes: wordBoxes)
+        hostingView.rootView = AnyView(DebugOCRBorderView(wordBoxes: wordBoxes))
         window.setFrame(rect, display: true)
         window.orderFrontRegardless()
     }
 
     func hide() {
+        hostingView.rootView = AnyView(EmptyView())
         window?.orderOut(nil)
     }
 }
@@ -239,10 +240,10 @@ private struct ParagraphHighlightView: View {
 
 final class ParagraphHighlightWindowController: NSWindowController {
     private let model = ParagraphHighlightViewModel()
-    private let hostingView: NSHostingView<ParagraphHighlightView>
+    private let hostingView: NSHostingView<AnyView>
 
     override init(window: NSWindow?) {
-        hostingView = NSHostingView(rootView: ParagraphHighlightView(model: model))
+        hostingView = NSHostingView(rootView: AnyView(EmptyView()))
         let panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -276,6 +277,7 @@ final class ParagraphHighlightWindowController: NSWindowController {
             return
         }
 
+        hostingView.rootView = AnyView(ParagraphHighlightView(model: model))
         model.isActive = true
         guard let window else { return }
         window.setFrame(rect, display: true)
@@ -284,6 +286,7 @@ final class ParagraphHighlightWindowController: NSWindowController {
 
     func hide() {
         model.isActive = false
+        hostingView.rootView = AnyView(EmptyView())
         window?.orderOut(nil)
     }
 }
@@ -372,7 +375,7 @@ enum ParagraphOverlayLayout {
 final class OverlayWindowController: NSWindowController {
     private let model: AppModel
     private let hostingView: NSHostingView<AnyView>
-    private let measurementHostingView: NSHostingView<AnyView>
+    private var measurementHostingView: NSHostingView<AnyView>?
     private var lastAnchor: CGPoint?
     private var manualOrigin: CGPoint?
     private var dragStartOrigin: CGPoint?
@@ -397,7 +400,6 @@ final class OverlayWindowController: NSWindowController {
         self.model = model
         let initialRootView = AnyView(OverlayView().environmentObject(model))
         hostingView = NSHostingView(rootView: initialRootView)
-        measurementHostingView = NSHostingView(rootView: initialRootView)
         let panel = OverlayPanel(
             contentRect: CGRect(x: 0, y: 0, width: 380, height: 200),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -436,6 +438,14 @@ final class OverlayWindowController: NSWindowController {
     func show(at anchor: CGPoint, makeKey: Bool = false) {
         guard let window else { return }
         lastAnchor = anchor
+
+        if !window.isVisible {
+            hostingView.rootView = overlayRootView(
+                paragraphOverlayMaxHeight: currentParagraphOverlayMaxHeight,
+                paragraphOverlayScrollingEnabled: currentParagraphOverlayScrollingEnabled
+            )
+        }
+
         let targetFrame = measuredFrame(for: anchor)
 
         if !window.isVisible {
@@ -598,7 +608,10 @@ final class OverlayWindowController: NSWindowController {
         manualOrigin = nil
         dragStartOrigin = nil
         cancelParagraphFrameAnimation()
-        applyParagraphOverlayLayout(maxHeight: nil, scrollingEnabled: false)
+        currentParagraphOverlayMaxHeight = nil
+        currentParagraphOverlayScrollingEnabled = false
+        hostingView.rootView = AnyView(EmptyView().environmentObject(model))
+        measurementHostingView = nil
         window?.orderOut(nil)
     }
 
@@ -632,13 +645,18 @@ final class OverlayWindowController: NSWindowController {
         maxHeight: CGFloat?,
         scrollingEnabled: Bool
     ) -> CGSize {
-        measurementHostingView.rootView = overlayRootView(
+        let rootView = overlayRootView(
             paragraphOverlayMaxHeight: maxHeight,
             paragraphOverlayScrollingEnabled: scrollingEnabled
         )
-        measurementHostingView.invalidateIntrinsicContentSize()
-        measurementHostingView.layoutSubtreeIfNeeded()
-        return measurementHostingView.fittingSize
+        if measurementHostingView == nil {
+            measurementHostingView = NSHostingView(rootView: rootView)
+        } else {
+            measurementHostingView?.rootView = rootView
+        }
+        measurementHostingView?.invalidateIntrinsicContentSize()
+        measurementHostingView?.layoutSubtreeIfNeeded()
+        return measurementHostingView?.fittingSize ?? .zero
     }
 
     private func applyParagraphOverlayLayout(

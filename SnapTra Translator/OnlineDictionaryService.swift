@@ -3,7 +3,7 @@ import Foundation
 final class OnlineDictionaryService {
     private let session: URLSession
 
-    init(session: URLSession = OnlineDictionaryService.makeSession()) {
+    init(session: URLSession = SharedURLSession.ephemeral) {
         self.session = session
     }
 
@@ -307,13 +307,6 @@ final class OnlineDictionaryService {
             synonyms: [],
             isPretranslated: true
         )
-    }
-
-    nonisolated private static func makeSession() -> URLSession {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 8
-        configuration.timeoutIntervalForResource = 12
-        return URLSession(configuration: configuration)
     }
 
     nonisolated private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
