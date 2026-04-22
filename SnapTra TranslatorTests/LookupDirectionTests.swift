@@ -66,11 +66,53 @@ final class OCRTokenClassifierTests: XCTestCase {
 
         let result = LookupLanguagePairResolver.resolve(
             configuredPair: pair,
-            observedText: "hello你好",
+            observedText: "ab你好",
             bidirectionalEnabled: true
         )
 
         XCTAssertEqual(result, pair)
+    }
+
+    func testBidirectionalResolverReversesDirectionForChineseDominantMixedText() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
+
+        let result = LookupLanguagePairResolver.resolve(
+            configuredPair: pair,
+            observedText: "虽然我也承认 Kimi 2.6 不错，但这句主要是中文。",
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertEqual(
+            result,
+            LookupLanguagePair.fixed(sourceIdentifier: "zh-Hans", targetIdentifier: "en")
+        )
+    }
+
+    func testBidirectionalResolverKeepsForwardDirectionForEnglishDominantMixedText() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
+
+        let result = LookupLanguagePairResolver.resolve(
+            configuredPair: pair,
+            observedText: "This feature supports 中文 labels in the sidebar",
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertEqual(result, pair)
+    }
+
+    func testBidirectionalResolverIgnoresMentionAndURLNoise() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
+
+        let result = LookupLanguagePairResolver.resolve(
+            configuredPair: pair,
+            observedText: "@sailfishcc1 这是中文 https://example.com/post/123",
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertEqual(
+            result,
+            LookupLanguagePair.fixed(sourceIdentifier: "zh-Hans", targetIdentifier: "en")
+        )
     }
 
     func testBidirectionalResolverFallsBackForUnsupportedPair() {

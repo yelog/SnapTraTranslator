@@ -82,6 +82,14 @@ enum OCRTokenClassifier {
 }
 
 enum LookupLanguagePairResolver {
+    private static let englishLetterSet = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    private static let dominantScriptThreshold = 0.65
+    private static let ignoredObservedTextPatterns: [NSRegularExpression] = [
+        unsafeRegex(#"https?://\S+|www\.\S+"#),
+        unsafeRegex(#"@[A-Za-z0-9_]+"#),
+        unsafeRegex(#"\b\d+(?:[._:/-]\d+)*\b"#),
+    ]
+
     static func resolve(
         configuredPair: LookupLanguagePair,
         observedText: String,
@@ -99,8 +107,7 @@ enum LookupLanguagePairResolver {
             return configuredPair
         }
 
-        let script = OCRTokenClassifier.classify(observedText)
-        guard let observedFamily = languageFamily(for: script) else {
+        guard let observedFamily = observedLanguageFamily(for: observedText) else {
             return configuredPair
         }
 
@@ -149,6 +156,64 @@ enum LookupLanguagePairResolver {
             return .chinese
         case .mixed, .unknown:
             return nil
+        }
+    }
+
+    private static func observedLanguageFamily(for observedText: String) -> LanguageFamily? {
+        let filteredText = filteredObservedText(from: observedText)
+        let script = OCRTokenClassifier.classify(filteredText)
+
+        if let family = languageFamily(for: script) {
+            return family
+        }
+
+        guard script == .mixed else {
+            return nil
+        }
+
+        var chineseCount = 0
+        var englishCount = 0
+
+        for scalar in filteredText.unicodeScalars {
+            if scalar.properties.isIdeographic {
+                chineseCount += 1
+            } else if englishLetterSet.contains(scalar) {
+                englishCount += 1
+            }
+        }
+
+        guard chineseCount > 0, englishCount > 0 else {
+            return nil
+        }
+
+        let dominantCount = max(chineseCount, englishCount)
+        let totalCount = chineseCount + englishCount
+        let dominantShare = Double(dominantCount) / Double(totalCount)
+
+        guard dominantShare >= dominantScriptThreshold else {
+            return nil
+        }
+
+        return chineseCount > englishCount ? .chinese : .english
+    }
+
+    private static func filteredObservedText(from observedText: String) -> String {
+        ignoredObservedTextPatterns.reduce(observedText) { partialResult, regex in
+            let range = NSRange(partialResult.startIndex..<partialResult.endIndex, in: partialResult)
+            return regex.stringByReplacingMatches(
+                in: partialResult,
+                options: [],
+                range: range,
+                withTemplate: " "
+            )
+        }
+    }
+
+    private static func unsafeRegex(_ pattern: String) -> NSRegularExpression {
+        do {
+            return try NSRegularExpression(pattern: pattern)
+        } catch {
+            preconditionFailure(error.localizedDescription)
         }
     }
 }
