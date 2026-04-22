@@ -35,6 +35,7 @@ final class SettingsStoreMigrationTests: XCTestCase {
         AppSettingKey.singleKey,
         AppSettingKey.sourceLanguage,
         AppSettingKey.targetLanguage,
+        AppSettingKey.bidirectionalTranslationEnabled,
         AppSettingKey.debugShowOcrRegion,
         AppSettingKey.continuousTranslation,
         AppSettingKey.wordTTSProvider,
@@ -52,7 +53,9 @@ final class SettingsStoreMigrationTests: XCTestCase {
     ]
 
     private func makeDefaults(testName: String = #function) -> UserDefaults {
-        let defaults = UserDefaults.standard
+        let suiteName = "SettingsStoreMigrationTests.\(testName)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
         reset(defaults)
         return defaults
     }
@@ -73,7 +76,7 @@ final class SettingsStoreMigrationTests: XCTestCase {
 
         XCTAssertEqual(
             sources.map(\.type),
-            [.ecdict, .system, .youdao, .google, .freeDictionaryAPI]
+            [.system, .ecdict, .youdao, .google, .freeDictionaryAPI]
         )
         XCTAssertTrue(sources.contains { $0.type == .system && $0.isEnabled })
         XCTAssertFalse(sources.contains { $0.type == .youdao && $0.isEnabled })
@@ -118,6 +121,22 @@ final class SettingsStoreMigrationTests: XCTestCase {
         let settings = SettingsStore.loadSentenceTranslationSettings(defaults: defaults)
 
         XCTAssertTrue(settings.selectedTextTranslationEnabled)
+    }
+
+    func testBidirectionalTranslationDefaultsToDisabled() {
+        let defaults = makeDefaults()
+
+        let isEnabled = SettingsStore.loadBidirectionalTranslationEnabled(defaults: defaults)
+
+        XCTAssertFalse(isEnabled)
+    }
+
+    func testLoadsPersistedBidirectionalTranslationSetting() {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: AppSettingKey.bidirectionalTranslationEnabled)
+
+        let isEnabled = SettingsStore.loadBidirectionalTranslationEnabled(defaults: defaults)
+        XCTAssertTrue(isEnabled)
     }
 }
 
@@ -239,6 +258,41 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
 }
 
 final class OnlineDictionaryServiceTests: XCTestCase {
+    func testGoogleResponseErrorDetectsBlockedHtmlPage() {
+        let html = #"""
+        <html>
+        <body>
+        Our systems have detected unusual traffic from your computer network.
+        Please try your request again later.
+        </body>
+        </html>
+        """#
+
+        let error = OnlineDictionaryService.googleResponseError(
+            data: Data(html.utf8),
+            mimeType: "text/html"
+        )
+
+        XCTAssertEqual(error, .blockedByGoogle)
+    }
+
+    func testGoogleResponseErrorIgnoresJsonPayload() {
+        let data = Data(
+            #"""
+            {
+              "sentences": [{ "trans": "host" }]
+            }
+            """#.utf8
+        )
+
+        let error = OnlineDictionaryService.googleResponseError(
+            data: data,
+            mimeType: "application/json"
+        )
+
+        XCTAssertNil(error)
+    }
+
     func testGoogleResponseParsesGroupedDefinitions() {
         let data = Data(
             #"""
@@ -365,5 +419,105 @@ final class OnlineDictionaryServiceTests: XCTestCase {
         XCTAssertEqual(entry?.definitions.count, 1)
         XCTAssertEqual(entry?.definitions.first?.partOfSpeech, "n")
         XCTAssertEqual(entry?.definitions.first?.translation, "(Even)（美、挪）埃旺（人名）")
+    }
+}
+
+final class DictionaryLookupSupportTests: XCTestCase {
+    func testSystemDictionarySupportsChineseToEnglishReverseLookup() {
+        XCTAssertTrue(
+            DictionarySource.SourceType.system.supportsLookup(
+                sourceIdentifier: "zh-Hans",
+                targetIdentifier: "en"
+            )
+        )
+    }
+
+    func testGoogleSupportsChineseToEnglishReverseLookup() {
+        XCTAssertTrue(
+            DictionarySource.SourceType.google.supportsLookup(
+                sourceIdentifier: "zh-Hans",
+                targetIdentifier: "en"
+            )
+        )
+    }
+
+    func testEnglishOnlySourcesDoNotSupportChineseToEnglishReverseLookup() {
+        XCTAssertFalse(
+            DictionarySource.SourceType.ecdict.supportsLookup(
+                sourceIdentifier: "zh-Hans",
+                targetIdentifier: "en"
+            )
+        )
+        XCTAssertFalse(
+            DictionarySource.SourceType.freeDictionaryAPI.supportsLookup(
+                sourceIdentifier: "zh-Hans",
+                targetIdentifier: "en"
+            )
+        )
+        XCTAssertFalse(
+            DictionarySource.SourceType.youdao.supportsLookup(
+                sourceIdentifier: "zh-Hans",
+                targetIdentifier: "en"
+            )
+        )
+    }
+}
+
+final class DictionaryServiceSystemParserTests: XCTestCase {
+    func testChineseHeadwordUsesGeneralSystemDictionaryParserDuringReverseLookup() {
+        let html = #"""
+        <span class="posg">名词</span>
+        ① experience 体验
+        """#
+
+        let entry = DictionaryService.parseSystemDictionaryHTML(
+            html,
+            word: "体验",
+            sourceLanguage: "zh-Hans",
+            targetLanguage: "en"
+        )
+
+        XCTAssertEqual(entry.definitions.count, 1)
+        XCTAssertEqual(entry.definitions.first?.partOfSpeech, "n.")
+        XCTAssertEqual(entry.definitions.first?.meaning, "experience")
+        XCTAssertEqual(entry.definitions.first?.translation, "体验")
+    }
+}
+
+final class DictionaryDefinitionTranslationDecisionTests: XCTestCase {
+    func testEnglishFastPathAllowsEnglishSourceDefinitions() {
+        let definition = DictionaryEntry.Definition(
+            partOfSpeech: "v.",
+            field: nil,
+            meaning: "to deploy software to a target environment",
+            translation: nil,
+            examples: []
+        )
+
+        let translation = AppModel.englishFastPathTranslation(
+            for: definition,
+            sourceLanguage: Locale.Language(identifier: "en"),
+            targetLanguage: Locale.Language(identifier: "en")
+        )
+
+        XCTAssertEqual(translation, "to deploy software to a target environment")
+    }
+
+    func testEnglishFastPathRejectsChineseSourceDefinitionsContainingPinyin() {
+        let definition = DictionaryEntry.Definition(
+            partOfSpeech: "v.",
+            field: nil,
+            meaning: "配置 peizhi 动配备并设置",
+            translation: nil,
+            examples: []
+        )
+
+        let translation = AppModel.englishFastPathTranslation(
+            for: definition,
+            sourceLanguage: Locale.Language(identifier: "zh-Hans"),
+            targetLanguage: Locale.Language(identifier: "en")
+        )
+
+        XCTAssertNil(translation)
     }
 }

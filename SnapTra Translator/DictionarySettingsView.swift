@@ -173,6 +173,45 @@ struct DictionarySource: Identifiable, Codable, Equatable {
 }
 
 extension DictionarySource.SourceType {
+    nonisolated func supportsLookup(sourceIdentifier: String, targetIdentifier: String) -> Bool {
+        switch self {
+        case .system:
+            return true
+        case .ecdict, .freeDictionaryAPI:
+            return sourceIdentifier.hasPrefix("en")
+        case .youdao:
+            return sourceIdentifier.hasPrefix("en") && targetIdentifier.hasPrefix("zh")
+        case .google:
+            return Self.googleDictionaryLanguageCode(for: sourceIdentifier) != nil
+                && Self.googleDictionaryLanguageCode(for: targetIdentifier) != nil
+        }
+    }
+
+    private nonisolated static func googleDictionaryLanguageCode(for identifier: String) -> String? {
+        if identifier.hasPrefix("zh-Hans") || identifier == "zh" {
+            return "zh-CN"
+        }
+        if identifier.hasPrefix("zh-Hant") {
+            return "zh-TW"
+        }
+
+        switch Locale(identifier: identifier).language.languageCode?.identifier ?? identifier {
+        case "en": return "en"
+        case "ja": return "ja"
+        case "ko": return "ko"
+        case "fr": return "fr"
+        case "de": return "de"
+        case "es": return "es"
+        case "it": return "it"
+        case "pt": return "pt"
+        case "ru": return "ru"
+        case "ar": return "ar"
+        case "th": return "th"
+        case "vi": return "vi"
+        default: return nil
+        }
+    }
+
     var displayName: String {
         switch self {
         case .ecdict:
@@ -909,6 +948,7 @@ struct ScrollViewScrollerConfigurator: NSViewRepresentable {
             scrollView.reflectScrolledClipView(scrollView.contentView)
         }
     }
+
 }
 
 extension NSView {

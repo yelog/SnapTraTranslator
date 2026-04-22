@@ -92,6 +92,9 @@ final class SettingsStore: ObservableObject {
     @Published var targetLanguage: String {
         didSet { defaults.set(targetLanguage, forKey: AppSettingKey.targetLanguage) }
     }
+    @Published var bidirectionalTranslationEnabled: Bool {
+        didSet { defaults.set(bidirectionalTranslationEnabled, forKey: AppSettingKey.bidirectionalTranslationEnabled) }
+    }
     @Published var debugShowOcrRegion: Bool {
         didSet { defaults.set(debugShowOcrRegion, forKey: AppSettingKey.debugShowOcrRegion) }
     }
@@ -204,6 +207,7 @@ final class SettingsStore: ObservableObject {
         sourceLanguage = defaults.string(forKey: AppSettingKey.sourceLanguage) ?? "en"
         let defaultTarget = Self.defaultTargetLanguage()
         targetLanguage = defaults.string(forKey: AppSettingKey.targetLanguage) ?? defaultTarget
+        bidirectionalTranslationEnabled = Self.loadBidirectionalTranslationEnabled(defaults: defaults)
         debugShowOcrRegion = debugShowOcrRegionValue ?? false
         continuousTranslation = continuousTranslationValue ?? true
 
@@ -285,6 +289,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(singleKey.rawValue, forKey: AppSettingKey.singleKey)
         defaults.set(sourceLanguage, forKey: AppSettingKey.sourceLanguage)
         defaults.set(targetLanguage, forKey: AppSettingKey.targetLanguage)
+        defaults.set(bidirectionalTranslationEnabled, forKey: AppSettingKey.bidirectionalTranslationEnabled)
         defaults.set(debugShowOcrRegion, forKey: AppSettingKey.debugShowOcrRegion)
         defaults.set(continuousTranslation, forKey: AppSettingKey.continuousTranslation)
         defaults.set(wordTTSProvider.rawValue, forKey: AppSettingKey.wordTTSProvider)
@@ -438,6 +443,10 @@ final class SettingsStore: ObservableObject {
             ocrSentenceTranslationEnabled: resolvedOcrSentenceTranslationEnabled,
             selectedTextTranslationEnabled: selectedTextTranslationEnabled
         )
+    }
+
+    static func loadBidirectionalTranslationEnabled(defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: AppSettingKey.bidirectionalTranslationEnabled) as? Bool ?? false
     }
 
     private static func makeDictionarySource(

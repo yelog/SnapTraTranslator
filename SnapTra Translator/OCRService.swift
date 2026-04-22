@@ -1,5 +1,6 @@
 import CoreText
 import Foundation
+import NaturalLanguage
 import Vision
 
 struct RecognizedWord: Equatable {
@@ -21,7 +22,7 @@ struct RecognizedParagraph: Equatable {
 final class OCRService {
     func recognizeWords(in image: CGImage, language: String) async throws -> [RecognizedWord] {
         let observations = try await recognizeObservations(in: image, language: language)
-        return OCRService.extractWords(from: observations)
+        return OCRService.extractWords(from: observations, language: language)
     }
 
     func recognizeParagraphs(in image: CGImage, language: String) async throws -> [RecognizedParagraph] {
@@ -76,7 +77,10 @@ final class OCRService {
         }
     }
 
-    nonisolated private static func extractWords(from observations: [VNRecognizedTextObservation]) -> [RecognizedWord] {
+    nonisolated private static func extractWords(
+        from observations: [VNRecognizedTextObservation],
+        language: String?
+    ) -> [RecognizedWord] {
         #if DEBUG
         print("[OCR] ========== New OCR Result ==========")
         print("[OCR] Total observations: \(observations.count)")
@@ -89,7 +93,7 @@ final class OCRService {
             }
             let text = candidate.string
             let textBoundingBox = observation.boundingBox
-            let refinedRanges = refinedTokenRanges(in: text[...])
+            let refinedRanges = tokenRanges(in: text, language: language)
 
             #if DEBUG
             print("[OCR] Observation \(obsIndex): '\(text)', tokenized into \(refinedRanges.count) parts")
@@ -287,7 +291,131 @@ final class OCRService {
     nonisolated private static let tokenCharacterSet = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
     nonisolated private static let letterSet = CharacterSet.letters
 
-    nonisolated private static func refinedTokenRanges(in token: Substring) -> [Range<String.Index>] {
+    nonisolated static func tokenTexts(in text: String, language: String? = nil) -> [String] {
+        tokenRanges(in: text, language: language).map { String(text[$0]) }
+    }
+
+    nonisolated private static func tokenRanges(
+        in text: String,
+        language: String? = nil
+    ) -> [Range<String.Index>] {
+        guard !text.isEmpty else { return [] }
+
+        let fullRange = text.startIndex..<text.endIndex
+        let tokenizerRanges = tokenizerWordRanges(in: text, language: language)
+
+        guard !tokenizerRanges.isEmpty else {
+            return scriptAwareTokenRanges(in: text, range: fullRange)
+        }
+
+        return tokenizerRanges.flatMap { scriptAwareTokenRanges(in: text, range: $0) }
+    }
+
+    nonisolated private static func tokenizerWordRanges(
+        in text: String,
+        language: String?
+    ) -> [Range<String.Index>] {
+        let tokenizer = NLTokenizer(unit: .word)
+        tokenizer.string = text
+
+        if let tokenizerLanguage = tokenizerLanguage(for: language) {
+            tokenizer.setLanguage(tokenizerLanguage)
+        }
+
+        var ranges: [Range<String.Index>] = []
+        tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+            ranges.append(range)
+            return true
+        }
+        return ranges
+    }
+
+    nonisolated private static func tokenizerLanguage(for identifier: String?) -> NLLanguage? {
+        guard let identifier, !identifier.isEmpty else {
+            return nil
+        }
+
+        let normalizedIdentifier = identifier.replacingOccurrences(of: "_", with: "-")
+        let baseIdentifier = normalizedIdentifier.split(separator: "-").first.map(String.init)
+        let candidates: [String?] = [normalizedIdentifier, baseIdentifier]
+
+        for candidate in candidates {
+            guard let candidate, !candidate.isEmpty else { continue }
+            return NLLanguage(rawValue: candidate)
+        }
+
+        return nil
+    }
+
+    nonisolated private enum TokenKind {
+        case latin
+        case han
+        case otherLetter
+    }
+
+    nonisolated private static func scriptAwareTokenRanges(
+        in text: String,
+        range: Range<String.Index>
+    ) -> [Range<String.Index>] {
+        var ranges: [Range<String.Index>] = []
+        var tokenStart: String.Index?
+        var currentKind: TokenKind?
+
+        func appendCurrentToken(endingAt end: String.Index) {
+            guard let start = tokenStart, start < end, let kind = currentKind else { return }
+            let tokenRange = start..<end
+            switch kind {
+            case .latin:
+                ranges.append(contentsOf: refinedLatinTokenRanges(in: text[tokenRange]))
+            case .han, .otherLetter:
+                ranges.append(tokenRange)
+            }
+        }
+
+        var index = range.lowerBound
+        while index < range.upperBound {
+            let character = text[index]
+            let kind = tokenKind(for: character)
+
+            if let kind {
+                if tokenStart == nil {
+                    tokenStart = index
+                    currentKind = kind
+                } else if currentKind != kind {
+                    appendCurrentToken(endingAt: index)
+                    tokenStart = index
+                    currentKind = kind
+                }
+            } else {
+                appendCurrentToken(endingAt: index)
+                tokenStart = nil
+                currentKind = nil
+            }
+
+            index = text.index(after: index)
+        }
+
+        appendCurrentToken(endingAt: range.upperBound)
+        return ranges
+    }
+
+    nonisolated private static func tokenKind(for character: Character) -> TokenKind? {
+        if character.unicodeScalars.contains(where: { $0.properties.isIdeographic }) {
+            return .han
+        }
+
+        if isTokenCharacter(character) {
+            return .latin
+        }
+
+        if character.unicodeScalars.contains(where: { letterSet.contains($0) }) {
+            return .otherLetter
+        }
+
+        return nil
+    }
+
+    nonisolated private static func refinedLatinTokenRanges(in token: Substring) -> [Range<String.Index>] {
         var ranges: [Range<String.Index>] = []
         let indices = Array(token.indices)
         var tokenStart: String.Index?
@@ -428,7 +556,7 @@ final class OCRService {
     }
 
     nonisolated private static func containsLetter(in token: Substring) -> Bool {
-        token.unicodeScalars.contains { letterSet.contains($0) }
+        token.unicodeScalars.contains { letterSet.contains($0) || $0.properties.isIdeographic }
     }
 
     nonisolated private static func mergeHorizontallyAdjacentLineFragments(

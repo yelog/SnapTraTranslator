@@ -20,6 +20,8 @@ final class DictionaryService {
             if let entry = Self.lookupFromLocalSource(
                 source,
                 word: normalized,
+                sourceLanguage: nil,
+                targetLanguage: nil,
                 preferEnglish: preferEnglish,
                 offlineService: offlineService
             ) {
@@ -44,19 +46,21 @@ final class DictionaryService {
         sourceLanguage: String,
         targetLanguage: String,
         preferEnglish: Bool = false
-    ) async -> DictionaryEntry? {
+    ) async throws -> DictionaryEntry? {
         guard source.isEnabled, let normalized = normalizeWord(word) else { return nil }
 
         if let localEntry = Self.lookupFromLocalSource(
             source,
             word: normalized,
+            sourceLanguage: sourceLanguage,
+            targetLanguage: targetLanguage,
             preferEnglish: preferEnglish,
             offlineService: offlineService
         ) {
             return localEntry
         }
 
-        return await onlineService.lookup(
+        return try await onlineService.lookup(
             normalized,
             source: source.type,
             sourceLanguage: sourceLanguage,
@@ -75,7 +79,7 @@ final class DictionaryService {
 
         var entries: [DictionaryEntry] = []
         for source in sources where source.isEnabled {
-            if let entry = await lookupSingle(
+            if let entry = try? await lookupSingle(
                 normalized,
                 source: source,
                 sourceLanguage: sourceLanguage,
@@ -98,7 +102,12 @@ final class DictionaryService {
         }
 
         // Fall back to macOS system dictionary
-        return Self.lookupFromSystemDictionary(word: normalized, preferEnglish: preferEnglish)
+        return Self.lookupFromSystemDictionary(
+            word: normalized,
+            sourceLanguage: nil,
+            targetLanguage: preferEnglish ? "en" : nil,
+            preferEnglish: preferEnglish
+        )
     }
 
     // MARK: - Private
@@ -106,11 +115,16 @@ final class DictionaryService {
     private static func lookupFromLocalSource(
         _ source: DictionarySource,
         word: String,
+        sourceLanguage: String?,
+        targetLanguage: String?,
         preferEnglish: Bool,
         offlineService: OfflineDictionaryService
     ) -> DictionaryEntry? {
         switch source.type {
         case .ecdict:
+            guard sourceLanguage.map(isEnglishLanguageIdentifier) ?? true else {
+                return nil
+            }
             guard let entry = offlineService.lookup(word) else { return nil }
             return DictionaryEntry(
                 word: entry.word,
@@ -120,13 +134,23 @@ final class DictionaryService {
                 synonyms: entry.synonyms
             )
         case .system:
-            return lookupFromSystemDictionary(word: word, preferEnglish: preferEnglish)
+            return lookupFromSystemDictionary(
+                word: word,
+                sourceLanguage: sourceLanguage,
+                targetLanguage: targetLanguage,
+                preferEnglish: preferEnglish
+            )
         case .youdao, .google, .freeDictionaryAPI:
             return nil
         }
     }
 
-    private static func lookupFromSystemDictionary(word: String, preferEnglish: Bool) -> DictionaryEntry? {
+    private static func lookupFromSystemDictionary(
+        word: String,
+        sourceLanguage: String?,
+        targetLanguage: String?,
+        preferEnglish: Bool
+    ) -> DictionaryEntry? {
         let range = CFRange(location: 0, length: word.utf16.count)
         guard let definition = DCSCopyTextDefinition(nil, word as CFString, range) else {
             return nil
@@ -138,10 +162,58 @@ final class DictionaryService {
         print("[DictionaryService] System dictionary result for '\(word)' (\(html.count) chars):\n\(html.prefix(2000))")
         #endif
 
-        if preferEnglish {
+        return parseSystemDictionaryHTML(
+            html,
+            word: word,
+            sourceLanguage: sourceLanguage,
+            targetLanguage: targetLanguage,
+            preferEnglish: preferEnglish
+        )
+    }
+
+    nonisolated static func parseSystemDictionaryHTML(
+        _ html: String,
+        word: String,
+        sourceLanguage: String?,
+        targetLanguage: String?,
+        preferEnglish: Bool = false
+    ) -> DictionaryEntry {
+        if shouldUseEnglishSystemDictionaryParser(
+            word: word,
+            sourceLanguage: sourceLanguage,
+            targetLanguage: targetLanguage,
+            preferEnglish: preferEnglish
+        ) {
             return parseEnglishHTML(html, word: word)
         }
         return parseHTML(html, word: word)
+    }
+
+    private nonisolated static func shouldUseEnglishSystemDictionaryParser(
+        word: String,
+        sourceLanguage: String?,
+        targetLanguage: String?,
+        preferEnglish: Bool
+    ) -> Bool {
+        let inferredSourceIsEnglish = word.range(of: "[A-Za-z]{2,}", options: .regularExpression) != nil
+
+        if let sourceLanguage, !sourceLanguage.isEmpty {
+            guard isEnglishLanguageIdentifier(sourceLanguage) else {
+                return false
+            }
+
+            if let targetLanguage, !targetLanguage.isEmpty {
+                return isEnglishLanguageIdentifier(targetLanguage)
+            }
+
+            return preferEnglish
+        }
+
+        return inferredSourceIsEnglish && preferEnglish
+    }
+
+    private nonisolated static func isEnglishLanguageIdentifier(_ identifier: String) -> Bool {
+        identifier.hasPrefix("en")
     }
 
     // MARK: - Private

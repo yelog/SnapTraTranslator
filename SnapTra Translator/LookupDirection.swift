@@ -34,6 +34,13 @@ struct LookupLanguagePair: Equatable {
             targetIdentifier: targetIdentifier
         )
     }
+
+    func reversed() -> LookupLanguagePair {
+        LookupLanguagePair(
+            sourceIdentifier: targetIdentifier,
+            targetIdentifier: sourceIdentifier
+        )
+    }
 }
 
 enum OCRTokenScript: Equatable {
@@ -71,5 +78,77 @@ enum OCRTokenClassifier {
         }
 
         return .unknown
+    }
+}
+
+enum LookupLanguagePairResolver {
+    static func resolve(
+        configuredPair: LookupLanguagePair,
+        observedText: String,
+        bidirectionalEnabled: Bool
+    ) -> LookupLanguagePair {
+        guard bidirectionalEnabled else {
+            return configuredPair
+        }
+
+        let sourceFamily = languageFamily(for: configuredPair.sourceIdentifier)
+        let targetFamily = languageFamily(for: configuredPair.targetIdentifier)
+        guard sourceFamily != .unknown,
+              targetFamily != .unknown,
+              sourceFamily != targetFamily else {
+            return configuredPair
+        }
+
+        let script = OCRTokenClassifier.classify(observedText)
+        guard let observedFamily = languageFamily(for: script) else {
+            return configuredPair
+        }
+
+        if observedFamily == sourceFamily {
+            return configuredPair
+        }
+
+        if observedFamily == targetFamily {
+            return configuredPair.reversed()
+        }
+
+        return configuredPair
+    }
+
+    static func supportsBidirectionalDetection(for pair: LookupLanguagePair) -> Bool {
+        let sourceFamily = languageFamily(for: pair.sourceIdentifier)
+        let targetFamily = languageFamily(for: pair.targetIdentifier)
+
+        return (sourceFamily == .english && targetFamily == .chinese)
+            || (sourceFamily == .chinese && targetFamily == .english)
+    }
+
+    private enum LanguageFamily {
+        case english
+        case chinese
+        case unknown
+    }
+
+    private static func languageFamily(for identifier: String) -> LanguageFamily {
+        if identifier.hasPrefix("en") {
+            return .english
+        }
+
+        if identifier.hasPrefix("zh") {
+            return .chinese
+        }
+
+        return .unknown
+    }
+
+    private static func languageFamily(for script: OCRTokenScript) -> LanguageFamily? {
+        switch script {
+        case .english:
+            return .english
+        case .chinese:
+            return .chinese
+        case .mixed, .unknown:
+            return nil
+        }
     }
 }

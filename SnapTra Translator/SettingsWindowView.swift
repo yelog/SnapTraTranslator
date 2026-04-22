@@ -323,12 +323,7 @@ struct GeneralSettingsView: View {
 
     @available(macOS 15.0, *)
     private var requiredLanguagePairs: [LookupLanguagePair] {
-        [
-            .fixed(
-                sourceIdentifier: model.settings.sourceLanguage,
-                targetIdentifier: model.settings.targetLanguage
-            )
-        ]
+        model.requiredLanguagePairsForCurrentSettings()
     }
 
     @available(macOS 15.0, *)
@@ -398,6 +393,21 @@ struct GeneralSettingsView: View {
                             targetLanguage: $model.settings.targetLanguage,
                             sourceLanguage: $model.settings.sourceLanguage
                         )
+
+                        Divider()
+                            .padding(.horizontal, 14)
+                            .opacity(0.5)
+
+                        ToggleRow(
+                            title: L("Bidirectional Translation"),
+                            subtitle: L("Automatically reverse direction when text matches the target language"),
+                            isOn: $model.settings.bidirectionalTranslationEnabled
+                        )
+                        .onChange(of: model.settings.bidirectionalTranslationEnabled) { _, _ in
+                            Task { @MainActor in
+                                await refreshLanguageStatuses()
+                            }
+                        }
 
                         Divider()
                             .padding(.horizontal, 14)
@@ -711,6 +721,7 @@ struct GeneralTranslationLanguageRow: View {
     @State private var showingUnavailableAlert = false
     @State private var unavailableAlertTitle = ""
     @State private var missingLanguagesMessage = ""
+    @State private var unavailablePair: LookupLanguagePair?
 
     private let commonLanguages: [(id: String, name: String)] = [
         ("zh-Hans", "简体中文"),
@@ -726,42 +737,59 @@ struct GeneralTranslationLanguageRow: View {
         ("ru", "Русский"),
         ("ar", "العربية"),
         ("th", "ไทย"),
-        ("vi", "Tiếng Việt")
+        ("vi", "Tiếng Việt"),
     ]
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text(L("Translate to"))
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(.primary)
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Text(L("Translate from"))
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.primary)
 
-            Spacer()
+                Spacer()
 
-            statusIcon
-
-            Picker("", selection: $targetLanguage) {
-                ForEach(commonLanguages, id: \.id) { lang in
-                    Text(verbatim: lang.name).tag(lang.id)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .tint(.accentColor)
-            .onChange(of: targetLanguage) { _, newValue in
-                Task { @MainActor in
-                    let status = await model.refreshLanguageAvailabilityStatus(
-                        from: sourceLanguage,
-                        to: newValue,
-                        showLoading: true
-                    )
-                    if status != .installed {
-                        presentLanguageAvailabilityAlert(for: newValue)
+                Picker("", selection: $sourceLanguage) {
+                    ForEach(commonLanguages, id: \.id) { lang in
+                        Text(verbatim: lang.name).tag(lang.id)
                     }
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .tint(.accentColor)
+            }
+
+            HStack(spacing: 12) {
+                Text(L("Translate to"))
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                statusIcon
+
+                Picker("", selection: $targetLanguage) {
+                    ForEach(commonLanguages, id: \.id) { lang in
+                        Text(verbatim: lang.name).tag(lang.id)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .tint(.accentColor)
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .onChange(of: sourceLanguage) { _, _ in
+            Task { @MainActor in
+                await refreshRequiredLanguageStatuses(showLoading: true)
+            }
+        }
+        .onChange(of: targetLanguage) { _, _ in
+            Task { @MainActor in
+                await refreshRequiredLanguageStatuses(showLoading: true)
+            }
+        }
         .alert(unavailableAlertTitle, isPresented: $showingUnavailableAlert) {
             if shouldOfferTranslationSettingsLink {
                 Button(L("Open Settings")) {
@@ -774,42 +802,54 @@ struct GeneralTranslationLanguageRow: View {
         }
         .onAppear {
             Task { @MainActor in
-                _ = await model.refreshLanguageAvailabilityStatus(
-                    from: sourceLanguage,
-                    to: targetLanguage
-                )
+                await refreshRequiredLanguageStatuses()
             }
+        }
+    }
+
+    private var requiredLanguagePairs: [LookupLanguagePair] {
+        model.requiredLanguagePairsForCurrentSettings()
+    }
+
+    private var allRequiredLanguagePacksInstalled: Bool {
+        requiredLanguagePairs.allSatisfy { pair in
+            if pair.isSameLanguage {
+                return true
+            }
+            return getLanguagePackStatus(for: pair) == .installed
+        }
+    }
+
+    private var firstUnavailableLanguagePair: LookupLanguagePair? {
+        requiredLanguagePairs.first { pair in
+            guard !pair.isSameLanguage else {
+                return false
+            }
+            guard let status = getLanguagePackStatus(for: pair) else {
+                return false
+            }
+            return status != .installed
         }
     }
 
     @ViewBuilder
     private var statusIcon: some View {
         let isChecking = model.languagePackManager?.isChecking ?? false
-        let isSameLanguage = sourceLanguage == targetLanguage ||
-            (sourceLanguage.hasPrefix("en") && targetLanguage.hasPrefix("en")) ||
-            (sourceLanguage.hasPrefix("zh") && targetLanguage.hasPrefix("zh"))
-        let status = getLanguagePackStatus(targetLanguage)
 
         if isChecking {
             ProgressView()
                 .controlSize(.small)
                 .scaleEffect(0.7)
-        } else if isSameLanguage {
+        } else if allRequiredLanguagePacksInstalled {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.green)
-                .help(L("Same language - no translation needed"))
-        } else if let status = status {
+                .help(L("Language pack installed"))
+        } else if let pair = firstUnavailableLanguagePair,
+                  let status = getLanguagePackStatus(for: pair) {
             Button {
                 Task { @MainActor in
-                    let newStatus = await model.refreshLanguageAvailabilityStatus(
-                        from: sourceLanguage,
-                        to: targetLanguage,
-                        showLoading: true
-                    )
-                    if newStatus != .installed {
-                        presentLanguageAvailabilityAlert(for: targetLanguage)
-                    }
+                    await refreshRequiredLanguageStatuses(showLoading: true)
                 }
             } label: {
                 Image(systemName: status == .installed ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -821,9 +861,33 @@ struct GeneralTranslationLanguageRow: View {
         }
     }
 
-    private func getLanguagePackStatus(_ language: String) -> LanguageAvailability.Status? {
-        guard sourceLanguage != language else { return nil }
-        return model.languagePackManager?.getStatus(from: sourceLanguage, to: language)
+    private func refreshRequiredLanguageStatuses(showLoading: Bool = false) async {
+        var firstUnavailablePair: LookupLanguagePair?
+
+        for pair in requiredLanguagePairs where !pair.isSameLanguage {
+            let status = await model.refreshLanguageAvailabilityStatus(
+                from: pair.sourceIdentifier,
+                to: pair.targetIdentifier,
+                showLoading: showLoading
+            )
+            if status != .installed && firstUnavailablePair == nil {
+                firstUnavailablePair = pair
+            }
+        }
+
+        if showLoading, let firstUnavailablePair {
+            presentLanguageAvailabilityAlert(for: firstUnavailablePair)
+        } else if firstUnavailablePair == nil {
+            unavailablePair = nil
+        }
+    }
+
+    private func getLanguagePackStatus(for pair: LookupLanguagePair) -> LanguageAvailability.Status? {
+        guard !pair.isSameLanguage else { return .installed }
+        return model.languagePackManager?.getStatus(
+            from: pair.sourceIdentifier,
+            to: pair.targetIdentifier
+        )
     }
 
     private func languageName(for id: String) -> String {
@@ -844,17 +908,21 @@ struct GeneralTranslationLanguageRow: View {
     }
 
     private var shouldOfferTranslationSettingsLink: Bool {
-        guard let status = getLanguagePackStatus(targetLanguage) else { return false }
+        guard let unavailablePair,
+              let status = getLanguagePackStatus(for: unavailablePair) else {
+            return false
+        }
         return status == .supported
     }
 
-    private func presentLanguageAvailabilityAlert(for language: String) {
-        guard let status = getLanguagePackStatus(language) else { return }
+    private func presentLanguageAvailabilityAlert(for pair: LookupLanguagePair) {
+        guard let status = getLanguagePackStatus(for: pair) else { return }
 
         unavailableAlertTitle = L("Language Pack Required")
         if status != .installed {
-            let sourceName = languageName(for: sourceLanguage)
-            let targetName = languageName(for: language)
+            unavailablePair = pair
+            let sourceName = languageName(for: pair.sourceIdentifier)
+            let targetName = languageName(for: pair.targetIdentifier)
 
             switch status {
             case .installed:

@@ -128,6 +128,7 @@ enum AppSettingKey {
     static let singleKey = "singleKey"
     static let sourceLanguage = "sourceLanguage"
     static let targetLanguage = "targetLanguage"
+    static let bidirectionalTranslationEnabled = "bidirectionalTranslationEnabled"
     static let debugShowOcrRegion = "debugShowOcrRegion"
     static let continuousTranslation = "continuousTranslation"
     static let lastScreenRecordingStatus = "lastScreenRecordingStatus"

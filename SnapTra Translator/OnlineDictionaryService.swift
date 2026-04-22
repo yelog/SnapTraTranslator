@@ -12,7 +12,7 @@ final class OnlineDictionaryService {
         source: DictionarySource.SourceType,
         sourceLanguage: String,
         targetLanguage: String
-    ) async -> DictionaryEntry? {
+    ) async throws -> DictionaryEntry? {
         switch source {
         case .youdao:
             guard Self.isEnglishLanguage(sourceLanguage), Self.isChineseLanguage(targetLanguage) else {
@@ -20,10 +20,11 @@ final class OnlineDictionaryService {
             }
             return await lookupYoudao(word)
         case .google:
-            guard Self.isEnglishLanguage(sourceLanguage) else {
+            guard Self.googleLanguageCode(for: sourceLanguage) != nil,
+                  Self.googleLanguageCode(for: targetLanguage) != nil else {
                 return nil
             }
-            return await lookupGoogle(word, sourceLanguage: sourceLanguage, targetLanguage: targetLanguage)
+            return try await lookupGoogle(word, sourceLanguage: sourceLanguage, targetLanguage: targetLanguage)
         case .freeDictionaryAPI:
             guard Self.isEnglishLanguage(sourceLanguage) else {
                 return nil
@@ -50,7 +51,7 @@ final class OnlineDictionaryService {
         request.setValue("https://m.youdao.com/", forHTTPHeaderField: "Referer")
 
         do {
-            let data = try await performRequest(request)
+            let (data, _) = try await performRequest(request)
             guard let html = String(data: data, encoding: .utf8) else {
                 return nil
             }
@@ -64,15 +65,16 @@ final class OnlineDictionaryService {
         _ word: String,
         sourceLanguage: String,
         targetLanguage: String
-    ) async -> DictionaryEntry? {
-        guard let target = Self.googleLanguageCode(for: targetLanguage) else {
+    ) async throws -> DictionaryEntry? {
+        guard let source = Self.googleLanguageCode(for: sourceLanguage),
+              let target = Self.googleLanguageCode(for: targetLanguage) else {
             return nil
         }
 
         var components = URLComponents(string: "https://translate.google.com/translate_a/single")
         components?.queryItems = [
             .init(name: "client", value: "gtx"),
-            .init(name: "sl", value: Self.googleLanguageCode(for: sourceLanguage) ?? "auto"),
+            .init(name: "sl", value: source),
             .init(name: "tl", value: target),
             .init(name: "dt", value: "t"),
             .init(name: "dt", value: "bd"),
@@ -92,10 +94,15 @@ final class OnlineDictionaryService {
         request.setValue("https://translate.google.com/", forHTTPHeaderField: "Referer")
 
         do {
-            let data = try await performRequest(request)
+            let (data, response) = try await performRequest(request)
+            if let responseError = Self.googleResponseError(data: data, mimeType: response.mimeType) {
+                throw responseError
+            }
             return Self.parseGoogleResponse(data, word: word)
+        } catch let error as OnlineDictionaryError {
+            throw error
         } catch {
-            return nil
+            throw OnlineDictionaryError.unavailable
         }
     }
 
@@ -109,21 +116,37 @@ final class OnlineDictionaryService {
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
 
         do {
-            let data = try await performRequest(request)
+            let (data, _) = try await performRequest(request)
             return Self.parseFreeDictionaryResponse(data, word: word)
         } catch {
             return nil
         }
     }
 
-    private func performRequest(_ request: URLRequest) async throws -> Data {
+    private func performRequest(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               (200..<300).contains(httpResponse.statusCode),
               !data.isEmpty else {
             throw OnlineDictionaryError.invalidResponse
         }
-        return data
+        return (data, httpResponse)
+    }
+
+    nonisolated static func googleResponseError(data: Data, mimeType: String?) -> OnlineDictionaryError? {
+        let loweredMimeType = mimeType?.lowercased() ?? ""
+        let text = String(data: data.prefix(8192), encoding: .utf8) ?? ""
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if looksLikeGoogleBlockPage(trimmedText) {
+            return .blockedByGoogle
+        }
+
+        if loweredMimeType.contains("html") || trimmedText.hasPrefix("<") {
+            return .invalidResponse
+        }
+
+        return nil
     }
 
     nonisolated static func parseGoogleResponse(_ data: Data, word: String) -> DictionaryEntry? {
@@ -376,6 +399,14 @@ final class OnlineDictionaryService {
         identifier.hasPrefix("zh")
     }
 
+    nonisolated private static func looksLikeGoogleBlockPage(_ text: String) -> Bool {
+        let lowercased = text.lowercased()
+        return lowercased.contains("our systems have detected unusual traffic")
+            || lowercased.contains("violation of the terms of service")
+            || lowercased.contains("automated requests")
+            || lowercased.contains("try your request again later")
+    }
+
     nonisolated private static func googleLanguageCode(for identifier: String) -> String? {
         if identifier.hasPrefix("zh-Hans") || identifier == "zh" {
             return "zh-CN"
@@ -477,8 +508,21 @@ final class OnlineDictionaryService {
     }
 }
 
-private enum OnlineDictionaryError: Error {
+enum OnlineDictionaryError: LocalizedError, Equatable {
     case invalidResponse
+    case blockedByGoogle
+    case unavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidResponse:
+            return "Google dictionary returned an unexpected response"
+        case .blockedByGoogle:
+            return "Google temporarily blocked automated requests"
+        case .unavailable:
+            return "Google dictionary temporarily unavailable"
+        }
+    }
 }
 
 private struct GoogleDictionaryResponse: Decodable {

@@ -2,6 +2,30 @@ import XCTest
 @testable import SnapTra_Translator
 
 final class OCRParagraphGroupingTests: XCTestCase {
+    func testTokenTextsExtractsEnglishAndChineseTokensForChineseSourceLanguage() {
+        let tokens = OCRService.tokenTexts(in: "HelloWorld 你好", language: "zh-Hans")
+
+        XCTAssertEqual(tokens, ["Hello", "World", "你好"])
+    }
+
+    func testTokenTextsUsesChineseWordBoundariesForChineseSentence() {
+        let sentence = "为什么很多人不相信农村老年人要养老金只有200块"
+        let tokens = OCRService.tokenTexts(in: sentence, language: "zh-Hans")
+
+        XCTAssertFalse(tokens.contains(sentence))
+        XCTAssertTrue(tokens.contains("为什么"))
+        XCTAssertTrue(tokens.contains("农村"))
+        XCTAssertTrue(tokens.contains("老年人"))
+        XCTAssertTrue(tokens.contains("养老金"))
+    }
+
+    func testTokenTextsKeepsNonLatinLetterTokensForFixedLanguageLookups() {
+        let tokens = OCRService.tokenTexts(in: "東京 test")
+
+        XCTAssertTrue(tokens.contains("東京"))
+        XCTAssertTrue(tokens.contains("test"))
+    }
+
     func testGroupsAlignedEnglishLinesIntoSingleParagraph() {
         let lines = [
             RecognizedTextLine(

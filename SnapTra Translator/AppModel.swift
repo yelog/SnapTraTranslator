@@ -585,9 +585,10 @@ final class AppModel: ObservableObject {
             }
             guard activeLookupID == lookupID else { return }
 
-            let languagePair = resolveLookupLanguagePair()
+            let languagePair = resolveLookupLanguagePair(for: selected.text)
             let sourceLanguage = languagePair.sourceLanguage
             let targetLanguage = languagePair.targetLanguage
+            let supportedDictionarySources = dictionarySources(for: languagePair)
 
             if settings.playWordPronunciation {
                 let languageCode = sourceLanguage.languageCode?.identifier
@@ -608,7 +609,7 @@ final class AppModel: ObservableObject {
 
             let initialContent = makeInitialOverlayContent(
                 word: selected.text,
-                sources: settings.dictionarySources,
+                sources: supportedDictionarySources,
                 primaryTranslationState: languagePair.isSameLanguage
                     ? .ready(selected.text, isFallback: false)
                     : .loading
@@ -619,7 +620,6 @@ final class AppModel: ObservableObject {
                 await learningService.recordLookup(word: selected.text)
             }
 
-            let enabledSources = settings.dictionarySources.filter(\.isEnabled)
             await withTaskGroup(of: Void.self) { group in
                 if !languagePair.isSameLanguage {
                     if #available(macOS 15.0, *) {
@@ -642,7 +642,7 @@ final class AppModel: ObservableObject {
                     }
                 }
 
-                for source in enabledSources {
+                for source in supportedDictionarySources {
                     group.addTask { [weak self, dictionaryService, translationBridge] in
                         guard let self else { return }
                         let result = await Self.lookupDictionarySection(
@@ -734,7 +734,7 @@ final class AppModel: ObservableObject {
         overlayPreferredWidth = nil
         paragraphHighlightWindowController.hide()
 
-        let languagePair = resolveParagraphLanguagePair()
+        let languagePair = resolveParagraphLanguagePair(for: snapshot.text)
         let sourceLanguage = languagePair.sourceLanguage
         let targetLanguage = languagePair.targetLanguage
 
@@ -847,7 +847,7 @@ final class AppModel: ObservableObject {
                 activeParagraphRect = paragraphRect
                 overlayPreferredWidth = max(320, paragraphRect.width)
 
-                let languagePair = resolveParagraphLanguagePair()
+                let languagePair = resolveParagraphLanguagePair(for: paragraph.text)
                 let sourceLanguage = languagePair.sourceLanguage
 
                 if settings.playSentencePronunciation {
@@ -1310,11 +1310,12 @@ final class AppModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        Publishers.CombineLatest(
+        Publishers.CombineLatest3(
             settings.$sourceLanguage,
-            settings.$targetLanguage
+            settings.$targetLanguage,
+            settings.$bidirectionalTranslationEnabled
         )
-        .sink { [weak self] _, _ in
+        .sink { [weak self] _, _, _ in
             self?.handleTranslationSettingsChanged()
         }
         .store(in: &cancellables)
@@ -1400,27 +1401,47 @@ final class AppModel: ObservableObject {
         )
     }
 
-    private func resolveLookupLanguagePair() -> LookupLanguagePair {
-        .fixed(
+    private func configuredLanguagePair() -> LookupLanguagePair {
+        LookupLanguagePair.fixed(
             sourceIdentifier: settings.sourceLanguage,
             targetIdentifier: settings.targetLanguage
         )
     }
 
-    private func resolveParagraphLanguagePair() -> LookupLanguagePair {
-        .fixed(
-            sourceIdentifier: settings.sourceLanguage,
-            targetIdentifier: settings.targetLanguage
+    private func resolveLookupLanguagePair(for observedText: String) -> LookupLanguagePair {
+        LookupLanguagePairResolver.resolve(
+            configuredPair: configuredLanguagePair(),
+            observedText: observedText,
+            bidirectionalEnabled: settings.bidirectionalTranslationEnabled
         )
     }
 
-    private func requiredLanguagePairsForCurrentSettings() -> [LookupLanguagePair] {
-        [
-            .fixed(
-                sourceIdentifier: settings.sourceLanguage,
-                targetIdentifier: settings.targetLanguage
+    private func resolveParagraphLanguagePair(for text: String) -> LookupLanguagePair {
+        resolveLookupLanguagePair(for: text)
+    }
+
+    private func dictionarySources(for pair: LookupLanguagePair) -> [DictionarySource] {
+        settings.dictionarySources.filter { source in
+            source.isEnabled && source.type.supportsLookup(
+                sourceIdentifier: pair.sourceIdentifier,
+                targetIdentifier: pair.targetIdentifier
             )
-        ]
+        }
+    }
+
+    func requiredLanguagePairsForCurrentSettings() -> [LookupLanguagePair] {
+        let pair = configuredLanguagePair()
+        var pairs = [pair]
+
+        if settings.bidirectionalTranslationEnabled,
+           LookupLanguagePairResolver.supportsBidirectionalDetection(for: pair) {
+            pairs.append(pair.reversed())
+        }
+
+        var seenKeys = Set<String>()
+        return pairs.filter { pair in
+            seenKeys.insert(pair.key).inserted
+        }
     }
 
     private func languageAvailabilityStatus(
@@ -1468,8 +1489,20 @@ final class AppModel: ObservableObject {
     func refreshLanguageAvailabilityStatusForCurrentSettings(
         retryTransientStatus: Bool = false
     ) async -> LanguageAvailability.Status {
-        let pair = resolveLookupLanguagePair()
-        var status = await refreshLanguageAvailabilityStatus(for: pair)
+        let pairs = requiredLanguagePairsForCurrentSettings()
+        var statusesByKey = await refreshedLanguageAvailabilityStatuses(
+            for: pairs,
+            retrySupportedStatuses: false
+        )
+
+        func firstUnavailableStatus() -> CachedLanguageAvailabilityStatus {
+            pairs.lazy
+                .map { statusesByKey[$0.key] ?? .unsupported }
+                .first { $0 != .installed }
+                ?? .installed
+        }
+
+        var status = firstUnavailableStatus()
 
         guard retryTransientStatus, status != .installed else {
             return status.translationStatus
@@ -1477,7 +1510,11 @@ final class AppModel: ObservableObject {
 
         for delay in startupLanguageAvailabilityRetryDelays {
             try? await Task.sleep(nanoseconds: delay)
-            status = await refreshLanguageAvailabilityStatus(for: pair)
+            statusesByKey = await refreshedLanguageAvailabilityStatuses(
+                for: pairs,
+                retrySupportedStatuses: false
+            )
+            status = firstUnavailableStatus()
             if status == .installed {
                 break
             }
@@ -1594,16 +1631,27 @@ final class AppModel: ObservableObject {
         targetLanguage: Locale.Language,
         translationBridge: TranslationBridge
     ) async -> DictionarySectionResult {
-        guard let entry = await dictionaryService.lookupSingle(
-            word,
-            source: source,
-            sourceLanguage: sourceIdentifier,
-            targetLanguage: targetIdentifier,
-            preferEnglish: preferEnglish
-        ) else {
+        let entry: DictionaryEntry
+        do {
+            guard let lookedUpEntry = try await dictionaryService.lookupSingle(
+                word,
+                source: source,
+                sourceLanguage: sourceIdentifier,
+                targetLanguage: targetIdentifier,
+                preferEnglish: preferEnglish
+            ) else {
+                return DictionarySectionResult(
+                    sourceType: source.type,
+                    state: .empty,
+                    phonetic: nil,
+                    fallbackTranslation: nil
+                )
+            }
+            entry = lookedUpEntry
+        } catch {
             return DictionarySectionResult(
                 sourceType: source.type,
-                state: .empty,
+                state: .failed(error.localizedDescription),
                 phonetic: nil,
                 fallbackTranslation: nil
             )
@@ -1693,6 +1741,7 @@ final class AppModel: ObservableObject {
     ) async -> [DictionaryEntry.Definition] {
         let targetIsChinese = targetLanguage.minimalIdentifier == "zh"
         let targetIsEnglish = targetLanguage.minimalIdentifier == "en"
+        let sourceIsEnglish = sourceLanguage.minimalIdentifier == "en"
         let isSameLanguage = sourceLanguage.minimalIdentifier == targetLanguage.minimalIdentifier
 
         return await withTaskGroup(of: (Int, DictionaryEntry.Definition?).self) { group in
@@ -1706,18 +1755,21 @@ final class AppModel: ObservableObject {
                         return (index, def)
                     }
 
-                    if targetIsEnglish {
-                        let trimmedMeaning = def.meaning.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let hasEnglishContent = trimmedMeaning.range(of: "[a-zA-Z]{3,}", options: .regularExpression) != nil
-                        if hasEnglishContent {
-                            return (index, DictionaryEntry.Definition(
-                                partOfSpeech: def.partOfSpeech,
-                                field: def.field,
-                                meaning: def.meaning,
-                                translation: trimmedMeaning,
-                                examples: def.examples
-                            ))
-                        }
+                    if let englishFastPathTranslation = englishFastPathTranslation(
+                        for: def,
+                        sourceLanguage: sourceLanguage,
+                        targetLanguage: targetLanguage
+                    ) {
+                        return (index, DictionaryEntry.Definition(
+                            partOfSpeech: def.partOfSpeech,
+                            field: def.field,
+                            meaning: def.meaning,
+                            translation: englishFastPathTranslation,
+                            examples: def.examples
+                        ))
+                    }
+
+                    if targetIsEnglish && sourceIsEnglish {
                         return (index, nil)
                     }
 
@@ -1732,7 +1784,7 @@ final class AppModel: ObservableObject {
                         translatedText = meaningTranslation
                     } else if hasDictionaryTranslation {
                         translatedText = trimmedTranslation
-                    } else if targetIsEnglish {
+                    } else if targetIsEnglish && sourceIsEnglish {
                         translatedText = def.meaning
                     } else {
                         return (index, nil)
@@ -1756,6 +1808,21 @@ final class AppModel: ObservableObject {
             }
             return results.sorted { $0.0 < $1.0 }.map { $0.1 }
         }
+    }
+
+    nonisolated static func englishFastPathTranslation(
+        for definition: DictionaryEntry.Definition,
+        sourceLanguage: Locale.Language,
+        targetLanguage: Locale.Language
+    ) -> String? {
+        guard sourceLanguage.minimalIdentifier == "en",
+              targetLanguage.minimalIdentifier == "en" else {
+            return nil
+        }
+
+        let trimmedMeaning = definition.meaning.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasEnglishContent = trimmedMeaning.range(of: "[a-zA-Z]{3,}", options: .regularExpression) != nil
+        return hasEnglishContent ? trimmedMeaning : nil
     }
 
     private func selectWord(from words: [RecognizedWord], normalizedPoint: CGPoint) -> RecognizedWord? {
