@@ -482,6 +482,25 @@ final class DictionaryServiceSystemParserTests: XCTestCase {
         XCTAssertEqual(entry.definitions.first?.meaning, "experience")
         XCTAssertEqual(entry.definitions.first?.translation, "体验")
     }
+
+    func testChineseSystemDictionaryPlainTextStripsHeadwordPinyinAndPartOfSpeech() {
+        let html = "服务器 fúwùqì 名 电子计算机网络中为用户提供服务的专用设备。可分为访问、文件、数据库、通信等不同功能的服务器。"
+
+        let entry = DictionaryService.parseSystemDictionaryHTML(
+            html,
+            word: "服务器",
+            sourceLanguage: "zh-Hans",
+            targetLanguage: "en"
+        )
+
+        XCTAssertEqual(entry.definitions.count, 1)
+        XCTAssertEqual(entry.definitions.first?.partOfSpeech, "n.")
+        XCTAssertEqual(
+            entry.definitions.first?.meaning,
+            "电子计算机网络中为用户提供服务的专用设备。可分为访问、文件、数据库、通信等不同功能的服务器。"
+        )
+        XCTAssertNil(entry.definitions.first?.translation)
+    }
 }
 
 final class DictionaryDefinitionTranslationDecisionTests: XCTestCase {

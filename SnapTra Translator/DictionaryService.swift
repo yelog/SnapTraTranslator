@@ -231,7 +231,7 @@ final class DictionaryService {
 
     private static func parseHTML(_ html: String, word: String) -> DictionaryEntry {
         let phonetic = extractPhonetic(from: html)
-        let definitions = extractDefinitions(from: html)
+        let definitions = extractDefinitions(from: html, word: word)
 
         return DictionaryEntry(
             word: word,
@@ -491,8 +491,13 @@ final class DictionaryService {
 
     // MARK: - Definition Extraction
 
-    private static func extractDefinitions(from html: String) -> [DictionaryEntry.Definition] {
+    private static func extractDefinitions(from html: String, word: String) -> [DictionaryEntry.Definition] {
         var definitions: [DictionaryEntry.Definition] = []
+
+        let chineseHeadwordDefinitions = extractChineseHeadwordDefinitions(from: html, word: word)
+        if !chineseHeadwordDefinitions.isEmpty {
+            return chineseHeadwordDefinitions
+        }
 
         // 尝试提取词性分组
         var posGroups = extractPartOfSpeechGroups(from: html)
@@ -635,19 +640,27 @@ final class DictionaryService {
         return groups
     }
 
-    private static func normalizePOS(_ pos: String) -> String {
+    private nonisolated static func normalizePOS(_ pos: String) -> String {
         let lowercased = pos.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         switch lowercased {
         case "n", "n.", "noun", "名词": return "n."
+        case "名": return "n."
         case "vt", "vt.", "transitive verb", "及物动词": return "vt."
         case "vi", "vi.", "intransitive verb", "不及物动词": return "vi."
         case "v", "v.", "verb", "动词": return "v."
+        case "动": return "v."
         case "adj", "adj.", "adjective", "形容词": return "adj."
+        case "形": return "adj."
         case "adv", "adv.", "adverb", "副词": return "adv."
+        case "副": return "adv."
         case "prep", "prep.", "preposition": return "prep."
+        case "介": return "prep."
         case "conj", "conj.", "conjunction": return "conj."
+        case "连": return "conj."
         case "pron", "pron.", "pronoun": return "pron."
+        case "代": return "pron."
         case "interj", "interj.", "interjection": return "interj."
+        case "叹": return "interj."
         default: return lowercased
         }
     }
@@ -764,6 +777,64 @@ final class DictionaryService {
             }
         }
         return meanings
+    }
+
+    private static func extractChineseHeadwordDefinitions(
+        from html: String,
+        word: String
+    ) -> [DictionaryEntry.Definition] {
+        let text = stripHTML(html)
+        guard word.range(of: "\\p{Han}", options: .regularExpression) != nil,
+              text.hasPrefix(word) else {
+            return []
+        }
+
+        var remainder = String(text.dropFirst(word.count))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        remainder = stripLeadingPinyinTokens(from: remainder)
+
+        let parsedPOS = parseLeadingChinesePartOfSpeech(from: remainder)
+        let partOfSpeech = parsedPOS.partOfSpeech.map(normalizePOS) ?? ""
+        let meaning = parsedPOS.remainder.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard meaning.count > 2,
+              meaning.range(of: "\\p{Han}", options: .regularExpression) != nil,
+              meaning.range(of: "^[A-Za-z\\u00C0-\\u024F\\u1E00-\\u1EFF]", options: .regularExpression) == nil else {
+            return []
+        }
+
+        return [
+            DictionaryEntry.Definition(
+                partOfSpeech: partOfSpeech,
+                field: nil,
+                meaning: meaning,
+                translation: nil,
+                examples: []
+            )
+        ]
+    }
+
+    private static func stripLeadingPinyinTokens(from text: String) -> String {
+        text.replacingOccurrences(
+            of: "^\\s*(?:[A-Za-z\\u00C0-\\u024F\\u1E00-\\u1EFF]+\\s*)+",
+            with: "",
+            options: .regularExpression
+        )
+    }
+
+    private static func parseLeadingChinesePartOfSpeech(
+        from text: String
+    ) -> (partOfSpeech: String?, remainder: String) {
+        let pattern = "^(名词|动词|形容词|副词|及物动词|不及物动词|名|动|形|副|介|连|代|叹)\\s+(.+)$"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
+              let match = regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)),
+              match.numberOfRanges == 3,
+              let posRange = Range(match.range(at: 1), in: text),
+              let remainderRange = Range(match.range(at: 2), in: text) else {
+            return (nil, text)
+        }
+
+        return (String(text[posRange]), String(text[remainderRange]))
     }
 
     private static func splitPlainTextSenses(_ text: String) -> [String] {
