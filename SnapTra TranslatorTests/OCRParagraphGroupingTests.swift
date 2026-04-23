@@ -26,6 +26,70 @@ final class OCRParagraphGroupingTests: XCTestCase {
         XCTAssertTrue(tokens.contains("test"))
     }
 
+    func testResolvedTokenBoundingBoxPrefersValidPreciseBox() {
+        let parentBox = CGRect(x: 0.10, y: 0.40, width: 0.60, height: 0.10)
+        let preciseBox = CGRect(x: 0.42, y: 0.41, width: 0.08, height: 0.07)
+        let fallbackBox = CGRect(x: 0.38, y: 0.40, width: 0.12, height: 0.10)
+
+        let result = OCRService.resolvedTokenBoundingBox(
+            preciseBox: preciseBox,
+            fallbackBox: fallbackBox,
+            parentBox: parentBox
+        )
+
+        XCTAssertEqual(result, preciseBox)
+    }
+
+    func testResolvedTokenBoundingBoxFallsBackWhenPreciseBoxEscapesParent() {
+        let parentBox = CGRect(x: 0.10, y: 0.40, width: 0.60, height: 0.10)
+        let preciseBox = CGRect(x: 0.76, y: 0.41, width: 0.08, height: 0.07)
+        let fallbackBox = CGRect(x: 0.52, y: 0.40, width: 0.12, height: 0.10)
+
+        let result = OCRService.resolvedTokenBoundingBox(
+            preciseBox: preciseBox,
+            fallbackBox: fallbackBox,
+            parentBox: parentBox
+        )
+
+        XCTAssertEqual(result, fallbackBox)
+    }
+
+    func testSelectWordPrefersStrictHitBeforeExpandedEarlierWord() {
+        let words = [
+            RecognizedWord(
+                text: "用不了",
+                boundingBox: CGRect(x: 0.365, y: 0.40, width: 0.15, height: 0.10)
+            ),
+            RecognizedWord(
+                text: "突然",
+                boundingBox: CGRect(x: 0.52, y: 0.40, width: 0.20, height: 0.10)
+            ),
+        ]
+
+        let selected = OCRService.selectWord(
+            from: words,
+            normalizedPoint: CGPoint(x: 0.523, y: 0.45)
+        )
+
+        XCTAssertEqual(selected?.text, "突然")
+    }
+
+    func testSelectWordFallsBackToSmallToleranceWhenCursorIsJustOutsideBox() {
+        let words = [
+            RecognizedWord(
+                text: "突然",
+                boundingBox: CGRect(x: 0.52, y: 0.40, width: 0.12, height: 0.10)
+            ),
+        ]
+
+        let selected = OCRService.selectWord(
+            from: words,
+            normalizedPoint: CGPoint(x: 0.517, y: 0.45)
+        )
+
+        XCTAssertEqual(selected?.text, "突然")
+    }
+
     func testGroupsAlignedEnglishLinesIntoSingleParagraph() {
         let lines = [
             RecognizedTextLine(
