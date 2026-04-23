@@ -92,7 +92,6 @@ final class OCRService {
                 continue
             }
             let text = candidate.string
-            let textBoundingBox = observation.boundingBox
             let refinedRanges = tokenRanges(in: text, language: language)
 
             #if DEBUG
@@ -102,26 +101,45 @@ final class OCRService {
             }
             #endif
 
-            // 始终使用字符比例计算边界框，确保稳定性
-            // Vision 的 boundingBox(for:) 对自定义分词（CamelCase）支持不稳定
-            for refinedRange in refinedRanges {
-                let substring = text[refinedRange]
-                guard containsLetter(in: substring) else {
-                    continue
-                }
-
-                guard let boundingBox = boundingBoxByCharacterRatio(textBoundingBox, text: text, for: refinedRange) else {
-                    continue
-                }
-
-                #if DEBUG
-                print("[OCR]   '\(substring)' box: x=\(String(format: "%.4f", boundingBox.minX)), w=\(String(format: "%.4f", boundingBox.width))")
-                #endif
-
-                words.append(RecognizedWord(text: String(substring), boundingBox: boundingBox))
-            }
+            words.append(contentsOf: recognizedWords(
+                from: observation,
+                candidate: candidate,
+                refinedRanges: refinedRanges
+            ))
         }
         return words
+    }
+
+    nonisolated private static func recognizedWords(
+        from observation: VNRecognizedTextObservation,
+        candidate: VNRecognizedText,
+        refinedRanges: [Range<String.Index>]
+    ) -> [RecognizedWord] {
+        let text = candidate.string
+        let textBoundingBox = observation.boundingBox
+
+        return refinedRanges.compactMap { refinedRange in
+            let substring = text[refinedRange]
+            guard containsLetter(in: substring) else {
+                return nil
+            }
+
+            let preciseBox = preciseBoundingBox(for: refinedRange, in: candidate)
+            let fallbackBox = boundingBoxByCharacterRatio(textBoundingBox, text: text, for: refinedRange)
+            guard let boundingBox = resolvedTokenBoundingBox(
+                preciseBox: preciseBox,
+                fallbackBox: fallbackBox,
+                parentBox: textBoundingBox
+            ) else {
+                return nil
+            }
+
+            #if DEBUG
+            print("[OCR]   '\(substring)' box: x=\(String(format: "%.4f", boundingBox.minX)), w=\(String(format: "%.4f", boundingBox.width))")
+            #endif
+
+            return RecognizedWord(text: String(substring), boundingBox: boundingBox)
+        }
     }
 
     nonisolated static func extractLines(from observations: [VNRecognizedTextObservation]) -> [RecognizedTextLine] {
@@ -473,6 +491,39 @@ final class OCRService {
         return CGRect(x: x, y: textBox.minY, width: width, height: textBox.height)
     }
 
+    nonisolated private static func preciseBoundingBox(
+        for range: Range<String.Index>,
+        in candidate: VNRecognizedText
+    ) -> CGRect? {
+        let preciseObservation = (try? candidate.boundingBox(for: range)) ?? nil
+        return preciseObservation?.boundingBox
+    }
+
+    nonisolated static func resolvedTokenBoundingBox(
+        preciseBox: CGRect?,
+        fallbackBox: CGRect?,
+        parentBox: CGRect
+    ) -> CGRect? {
+        if let preciseBox, isValidTokenBoundingBox(preciseBox, within: parentBox) {
+            return preciseBox
+        }
+
+        return fallbackBox
+    }
+
+    nonisolated private static func isValidTokenBoundingBox(_ box: CGRect, within parentBox: CGRect) -> Bool {
+        guard box.width > 0, box.height > 0 else {
+            return false
+        }
+
+        let containmentTolerance: CGFloat = 0.02
+        let expandedParent = parentBox.insetBy(dx: -containmentTolerance, dy: -containmentTolerance)
+        let topRight = CGPoint(x: box.maxX, y: box.maxY)
+
+        return expandedParent.contains(box.origin)
+            && expandedParent.contains(topRight)
+    }
+
     // 使用 Core Text 测量实际字符宽度来计算边界框（备用方法）
     nonisolated private static func boundingBoxBySplittingWithCoreText(_ textBox: CGRect, text: String, for range: Range<String.Index>) -> CGRect? {
         guard range.lowerBound >= text.startIndex, range.upperBound <= text.endIndex else {
@@ -763,5 +814,32 @@ final class OCRService {
 
         // Font size is typically ~0.7-0.8 of line height
         return screenHeight * 0.75
+    }
+
+    nonisolated static func selectWord(from words: [RecognizedWord], normalizedPoint: CGPoint) -> RecognizedWord? {
+        if let strictMatch = nearestWord(from: words, normalizedPoint: normalizedPoint, tolerance: 0) {
+            return strictMatch
+        }
+
+        return nearestWord(from: words, normalizedPoint: normalizedPoint, tolerance: 0.004)
+    }
+
+    nonisolated private static func nearestWord(
+        from words: [RecognizedWord],
+        normalizedPoint: CGPoint,
+        tolerance: CGFloat
+    ) -> RecognizedWord? {
+        let candidates = words.filter { word in
+            let hitBox = word.boundingBox.insetBy(dx: -tolerance, dy: -tolerance)
+            return hitBox.contains(normalizedPoint)
+        }
+
+        guard !candidates.isEmpty else { return nil }
+
+        return candidates.min { lhs, rhs in
+            let lhsDistance = hypot(lhs.boundingBox.midX - normalizedPoint.x, lhs.boundingBox.midY - normalizedPoint.y)
+            let rhsDistance = hypot(rhs.boundingBox.midX - normalizedPoint.x, rhs.boundingBox.midY - normalizedPoint.y)
+            return lhsDistance < rhsDistance
+        }
     }
 }
