@@ -26,6 +26,20 @@ final class OCRParagraphGroupingTests: XCTestCase {
         XCTAssertTrue(tokens.contains("test"))
     }
 
+    func testTokenTextsSplitsHyphenatedEnglishKeys() {
+        let tokens = OCRService.tokenTexts(in: "embedding-dimension:")
+
+        XCTAssertEqual(tokens, ["embedding", "dimension"])
+    }
+
+    func testTokenTextsSplitsCodeLikeValues() {
+        XCTAssertEqual(OCRService.tokenTexts(in: "embedding-model:"), ["embedding", "model"])
+        XCTAssertEqual(OCRService.tokenTexts(in: "embedding-url:"), ["embedding", "url"])
+        XCTAssertEqual(OCRService.tokenTexts(in: "embeddingProvider:"), ["embedding", "Provider"])
+        XCTAssertEqual(OCRService.tokenTexts(in: "qwen3-embedding:4b"), ["qwen", "embedding", "b"])
+        XCTAssertEqual(OCRService.tokenTexts(in: "http://localhost:11434"), ["http", "localhost"])
+    }
+
     func testResolvedTokenBoundingBoxPrefersValidPreciseBox() {
         let parentBox = CGRect(x: 0.10, y: 0.40, width: 0.60, height: 0.10)
         let preciseBox = CGRect(x: 0.42, y: 0.41, width: 0.08, height: 0.07)
@@ -49,6 +63,81 @@ final class OCRParagraphGroupingTests: XCTestCase {
             preciseBox: preciseBox,
             fallbackBox: fallbackBox,
             parentBox: parentBox
+        )
+
+        XCTAssertEqual(result, fallbackBox)
+    }
+
+    func testResolvedTokenBoundingBoxKeepsCompatibleSubrangePreciseBox() {
+        let parentBox = CGRect(x: 0.10, y: 0.40, width: 0.60, height: 0.10)
+        let preciseBox = CGRect(x: 0.39, y: 0.41, width: 0.20, height: 0.08)
+        let fallbackBox = CGRect(x: 0.37, y: 0.40, width: 0.24, height: 0.10)
+
+        let result = OCRService.resolvedTokenBoundingBox(
+            preciseBox: preciseBox,
+            fallbackBox: fallbackBox,
+            parentBox: parentBox,
+            isSubrange: true
+        )
+
+        XCTAssertEqual(result, preciseBox)
+    }
+
+    func testResolvedTokenBoundingBoxFallsBackWhenSubrangePreciseBoxCoversParent() {
+        let parentBox = CGRect(x: 0.10, y: 0.40, width: 0.60, height: 0.10)
+        let preciseBox = parentBox
+        let fallbackBox = CGRect(x: 0.37, y: 0.40, width: 0.24, height: 0.10)
+
+        let result = OCRService.resolvedTokenBoundingBox(
+            preciseBox: preciseBox,
+            fallbackBox: fallbackBox,
+            parentBox: parentBox,
+            isSubrange: true
+        )
+
+        XCTAssertEqual(result, fallbackBox)
+    }
+
+    func testResolvedTokenBoundingBoxFallsBackWhenSubrangePreciseBoxExtendsIntoSuffix() {
+        let parentBox = CGRect(x: 0.10, y: 0.40, width: 0.80, height: 0.10)
+        let preciseBox = CGRect(x: 0.20, y: 0.40, width: 0.32, height: 0.10)
+        let fallbackBox = CGRect(x: 0.20, y: 0.40, width: 0.20, height: 0.10)
+
+        let result = OCRService.resolvedTokenBoundingBox(
+            preciseBox: preciseBox,
+            fallbackBox: fallbackBox,
+            parentBox: parentBox,
+            isSubrange: true
+        )
+
+        XCTAssertEqual(result, fallbackBox)
+    }
+
+    func testResolvedTokenBoundingBoxFallsBackWhenSubrangePreciseBoxExtendsIntoPrefix() {
+        let parentBox = CGRect(x: 0.10, y: 0.40, width: 0.80, height: 0.10)
+        let preciseBox = CGRect(x: 0.20, y: 0.40, width: 0.32, height: 0.10)
+        let fallbackBox = CGRect(x: 0.34, y: 0.40, width: 0.10, height: 0.10)
+
+        let result = OCRService.resolvedTokenBoundingBox(
+            preciseBox: preciseBox,
+            fallbackBox: fallbackBox,
+            parentBox: parentBox,
+            isSubrange: true
+        )
+
+        XCTAssertEqual(result, fallbackBox)
+    }
+
+    func testResolvedTokenBoundingBoxFallsBackWhenSubrangePreciseBoxTargetsDifferentSegment() {
+        let parentBox = CGRect(x: 0.10, y: 0.40, width: 0.60, height: 0.10)
+        let preciseBox = CGRect(x: 0.10, y: 0.40, width: 0.27, height: 0.10)
+        let fallbackBox = CGRect(x: 0.39, y: 0.40, width: 0.27, height: 0.10)
+
+        let result = OCRService.resolvedTokenBoundingBox(
+            preciseBox: preciseBox,
+            fallbackBox: fallbackBox,
+            parentBox: parentBox,
+            isSubrange: true
         )
 
         XCTAssertEqual(result, fallbackBox)

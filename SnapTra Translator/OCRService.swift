@@ -129,7 +129,8 @@ final class OCRService {
             guard let boundingBox = resolvedTokenBoundingBox(
                 preciseBox: preciseBox,
                 fallbackBox: fallbackBox,
-                parentBox: textBoundingBox
+                parentBox: textBoundingBox,
+                isSubrange: refinedRange != text.startIndex..<text.endIndex
             ) else {
                 return nil
             }
@@ -502,9 +503,16 @@ final class OCRService {
     nonisolated static func resolvedTokenBoundingBox(
         preciseBox: CGRect?,
         fallbackBox: CGRect?,
-        parentBox: CGRect
+        parentBox: CGRect,
+        isSubrange: Bool = false
     ) -> CGRect? {
         if let preciseBox, isValidTokenBoundingBox(preciseBox, within: parentBox) {
+            if isSubrange,
+               let fallbackBox,
+               !isCompatibleSubrangeBoundingBox(preciseBox, fallbackBox: fallbackBox, parentBox: parentBox) {
+                return fallbackBox
+            }
+
             return preciseBox
         }
 
@@ -522,6 +530,32 @@ final class OCRService {
 
         return expandedParent.contains(box.origin)
             && expandedParent.contains(topRight)
+    }
+
+    nonisolated private static func isCompatibleSubrangeBoundingBox(
+        _ box: CGRect,
+        fallbackBox: CGRect,
+        parentBox: CGRect
+    ) -> Bool {
+        guard box.width > 0, fallbackBox.width > 0, parentBox.width > 0 else {
+            return false
+        }
+
+        let coversMostOfParent = box.width >= parentBox.width * 0.8
+        if coversMostOfParent && box.width > fallbackBox.width * 1.8 {
+            return false
+        }
+
+        let horizontalEdgeTolerance = max(parentBox.width * 0.01, fallbackBox.width * 0.35)
+        guard box.minX >= fallbackBox.minX - horizontalEdgeTolerance,
+              box.maxX <= fallbackBox.maxX + horizontalEdgeTolerance else {
+            return false
+        }
+
+        let horizontalOverlap = max(0, min(box.maxX, fallbackBox.maxX) - max(box.minX, fallbackBox.minX))
+        let horizontalOverlapRatio = horizontalOverlap / min(box.width, fallbackBox.width)
+
+        return horizontalOverlapRatio >= 0.35
     }
 
     // 使用 Core Text 测量实际字符宽度来计算边界框（备用方法）
