@@ -115,6 +115,21 @@ final class OCRTokenClassifierTests: XCTestCase {
         )
     }
 
+    func testBidirectionalResolverReversesDirectionForChineseSentenceWithEnglishTerms() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
+
+        let result = LookupLanguagePairResolver.resolve(
+            configuredPair: pair,
+            observedText: "还没正式开始用。 后面想尝试下 vibe coding。 好奇大家是直接使用 codex 桌面客户端还是使用 codex cli 进行编程的啊",
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertEqual(
+            result,
+            LookupLanguagePair.fixed(sourceIdentifier: "zh-Hans", targetIdentifier: "en")
+        )
+    }
+
     func testBidirectionalResolverFallsBackForUnsupportedPair() {
         let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "ja")
 

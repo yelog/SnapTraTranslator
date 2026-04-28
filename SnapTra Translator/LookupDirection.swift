@@ -83,7 +83,9 @@ enum OCRTokenClassifier {
 
 enum LookupLanguagePairResolver {
     private static let englishLetterSet = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    private static let englishWordPattern = unsafeRegex(#"[A-Za-z]+(?:'[A-Za-z]+)?"#)
     private static let dominantScriptThreshold = 0.65
+    private static let maxEnglishWordWeight = 3
     private static let ignoredObservedTextPatterns: [NSRegularExpression] = [
         unsafeRegex(#"https?://\S+|www\.\S+"#),
         unsafeRegex(#"@[A-Za-z0-9_]+"#),
@@ -171,16 +173,9 @@ enum LookupLanguagePairResolver {
             return nil
         }
 
-        var chineseCount = 0
-        var englishCount = 0
-
-        for scalar in filteredText.unicodeScalars {
-            if scalar.properties.isIdeographic {
-                chineseCount += 1
-            } else if englishLetterSet.contains(scalar) {
-                englishCount += 1
-            }
-        }
+        let counts = observedScriptCounts(in: filteredText)
+        let chineseCount = counts.chinese
+        let englishCount = counts.english
 
         guard chineseCount > 0, englishCount > 0 else {
             return nil
@@ -195,6 +190,32 @@ enum LookupLanguagePairResolver {
         }
 
         return chineseCount > englishCount ? .chinese : .english
+    }
+
+    private static func observedScriptCounts(in text: String) -> (chinese: Int, english: Int) {
+        var chineseCount = 0
+        for scalar in text.unicodeScalars {
+            if scalar.properties.isIdeographic {
+                chineseCount += 1
+            }
+        }
+
+        let fullRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        var englishCount = 0
+        englishWordPattern.enumerateMatches(in: text, options: [], range: fullRange) { match, _, _ in
+            guard
+                let match,
+                let range = Range(match.range, in: text)
+            else {
+                return
+            }
+
+            let word = text[range]
+            let weight = min(word.count, maxEnglishWordWeight)
+            englishCount += weight
+        }
+
+        return (chinese: chineseCount, english: englishCount)
     }
 
     private static func filteredObservedText(from observedText: String) -> String {
