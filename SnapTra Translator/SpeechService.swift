@@ -547,7 +547,17 @@ final class EdgeTTSService {
                 ],
             ],
         ]
-        let json = String(data: try! JSONSerialization.data(withJSONObject: config), encoding: .utf8)!
+        // Build the JSON safely. The payload is a static literal dictionary, so
+        // serialization is expected to succeed, but we avoid `try!`/`!` so that
+        // an unexpected failure can't crash the entire app process.
+        let json: String
+        if let data = try? JSONSerialization.data(withJSONObject: config),
+           let string = String(data: data, encoding: .utf8) {
+            json = string
+        } else {
+            logger.error("Failed to serialize TTS config payload; falling back to empty config")
+            json = "{}"
+        }
         return "X-Timestamp:\(Self.getTimestamp())\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n\(json)"
     }
 

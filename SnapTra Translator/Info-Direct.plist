@@ -32,6 +32,12 @@
     <string>public.app-category.productivity</string>
     <key>LSMinimumSystemVersion</key>
     <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSSupportsAutomaticTermination</key>
+    <false/>
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
     <key>NSScreenCaptureUsageDescription</key>
     <string>SnapTra Translator needs screen recording to detect words under the cursor.</string>
     <key>SUEnableInstallerLauncherService</key>

@@ -10,6 +10,7 @@ import Combine
 import SwiftUI
 import SwiftData
 import Translation
+import os.log
 
 @main
 struct Snap_TranslateApp: App {
@@ -31,8 +32,11 @@ struct Snap_TranslateApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
+    private static let logger = Logger(subsystem: "com.yelog.SnapTra-Translator", category: "AppDelegate")
     private let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     private let modelContainer: ModelContainer
+    private let modelContainerDidFallBackToMemory: Bool
+    private var backgroundActivityToken: NSObjectProtocol?
     @MainActor private lazy var model: AppModel = {
         AppModel(modelContext: modelContainer.mainContext)
     }()
@@ -46,12 +50,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var hasCompletedInitialSetup = false
 
     override init() {
+        let schema = Schema([WordRecord.self])
+        let persistentConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         do {
-            let schema = Schema([WordRecord.self])
-            let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-            modelContainer = try ModelContainer(for: schema, configurations: [configuration])
+            modelContainer = try ModelContainer(for: schema, configurations: [persistentConfiguration])
+            modelContainerDidFallBackToMemory = false
         } catch {
-            fatalError("Failed to initialize SwiftData model container: \(error)")
+            // Avoid crashing on disk / migration / quota failures (especially under
+            // App Store sandbox). Fall back to an in-memory store so the app keeps
+            // running; the user just won't have persistent learning history this
+            // session. We surface this through Logger and the About screen later.
+            Self.logger.error("Persistent SwiftData container failed: \(error.localizedDescription, privacy: .public). Falling back to in-memory store.")
+            do {
+                let memoryConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+                modelContainer = try ModelContainer(for: schema, configurations: [memoryConfiguration])
+                modelContainerDidFallBackToMemory = true
+            } catch {
+                // If even the in-memory container can't be created, we genuinely
+                // cannot continue — but log first so crash reports are actionable.
+                Self.logger.fault("In-memory SwiftData container also failed: \(error.localizedDescription, privacy: .public)")
+                fatalError("Failed to initialize SwiftData model container: \(error)")
+            }
         }
         super.init()
     }
@@ -85,7 +104,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !isRunningTests else { return }
 
+        // Keep the menu bar utility alive even when it has no visible windows.
+        // `disableAutomaticTermination` blocks Cocoa's "automatic termination"
+        // path; `disableSuddenTermination` is also required so the system does
+        // not SIGKILL us under memory pressure / logout / idle conditions —
+        // this is the dominant cause of App Store users seeing the app
+        // disappear in the background.
         ProcessInfo.processInfo.disableAutomaticTermination("SnapTra Translator is a menu bar utility that must remain running")
+        ProcessInfo.processInfo.disableSuddenTermination()
+
+        // Hold a long-lived activity assertion so App Nap doesn't freeze our
+        // global hotkey monitor / OCR pipeline while the app sits idle in the
+        // menu bar. We pair this with `endActivity` in
+        // `applicationWillTerminate`.
+        backgroundActivityToken = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep],
+            reason: "SnapTra Translator menu bar agent"
+        )
+
+        if modelContainerDidFallBackToMemory {
+            Self.logger.warning("Running with in-memory SwiftData store; learning history will not persist this session.")
+        }
 
         MemoryMonitor.shared.start()
         configureStatusItem()
@@ -175,6 +214,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if let token = backgroundActivityToken {
+            ProcessInfo.processInfo.endActivity(token)
+            backgroundActivityToken = nil
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
