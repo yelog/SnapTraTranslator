@@ -19,6 +19,15 @@ final class OCRParagraphGroupingTests: XCTestCase {
         XCTAssertTrue(tokens.contains("养老金"))
     }
 
+    func testTokenTextsUsesChineseWordBoundariesInMixedScriptSentence() {
+        let sentence = "生产环境的 Mysql 和 Redis 都是部署在哪里的呢"
+        let tokens = OCRService.tokenTexts(in: sentence, language: "zh-Hans")
+
+        XCTAssertTrue(tokens.contains("Mysql"))
+        XCTAssertTrue(tokens.contains("Redis"))
+        XCTAssertTrue(tokens.contains("部署"))
+    }
+
     func testTokenTextsKeepsNonLatinLetterTokensForFixedLanguageLookups() {
         let tokens = OCRService.tokenTexts(in: "東京 test")
 
@@ -141,6 +150,51 @@ final class OCRParagraphGroupingTests: XCTestCase {
         )
 
         XCTAssertEqual(result, fallbackBox)
+    }
+
+    func testResolvedTokenBoundingBoxKeepsPreciseBoxWhenCharacterFallbackDriftsInMixedScriptLine() {
+        let parentBox = CGRect(x: 0.10, y: 0.40, width: 0.80, height: 0.10)
+        let preciseBox = CGRect(x: 0.62, y: 0.41, width: 0.08, height: 0.08)
+        let fallbackBox = CGRect(x: 0.52, y: 0.40, width: 0.06, height: 0.10)
+
+        let result = OCRService.resolvedTokenBoundingBox(
+            preciseBox: preciseBox,
+            fallbackBox: fallbackBox,
+            parentBox: parentBox,
+            isSubrange: true,
+            allowsFallbackDrift: true
+        )
+
+        XCTAssertEqual(result, preciseBox)
+    }
+
+    func testSelectWordUsesPreciseMixedScriptBoxForChineseWord() {
+        let parentBox = CGRect(x: 0.10, y: 0.40, width: 0.80, height: 0.10)
+        let deploymentBox = OCRService.resolvedTokenBoundingBox(
+            preciseBox: CGRect(x: 0.62, y: 0.41, width: 0.08, height: 0.08),
+            fallbackBox: CGRect(x: 0.52, y: 0.40, width: 0.06, height: 0.10),
+            parentBox: parentBox,
+            isSubrange: true,
+            allowsFallbackDrift: true
+        )
+
+        let words = [
+            RecognizedWord(
+                text: "是",
+                boundingBox: CGRect(x: 0.54, y: 0.40, width: 0.04, height: 0.10)
+            ),
+            RecognizedWord(
+                text: "部署",
+                boundingBox: deploymentBox ?? .zero
+            ),
+        ]
+
+        let selected = OCRService.selectWord(
+            from: words,
+            normalizedPoint: CGPoint(x: 0.65, y: 0.45)
+        )
+
+        XCTAssertEqual(selected?.text, "部署")
     }
 
     func testSelectWordPrefersStrictHitBeforeExpandedEarlierWord() {

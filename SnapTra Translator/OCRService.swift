@@ -117,6 +117,7 @@ final class OCRService {
     ) -> [RecognizedWord] {
         let text = candidate.string
         let textBoundingBox = observation.boundingBox
+        let allowsFallbackDrift = containsHanAndLatin(in: text)
 
         return refinedRanges.compactMap { refinedRange in
             let substring = text[refinedRange]
@@ -130,7 +131,8 @@ final class OCRService {
                 preciseBox: preciseBox,
                 fallbackBox: fallbackBox,
                 parentBox: textBoundingBox,
-                isSubrange: refinedRange != text.startIndex..<text.endIndex
+                isSubrange: refinedRange != text.startIndex..<text.endIndex,
+                allowsFallbackDrift: allowsFallbackDrift
             ) else {
                 return nil
             }
@@ -504,12 +506,18 @@ final class OCRService {
         preciseBox: CGRect?,
         fallbackBox: CGRect?,
         parentBox: CGRect,
-        isSubrange: Bool = false
+        isSubrange: Bool = false,
+        allowsFallbackDrift: Bool = false
     ) -> CGRect? {
         if let preciseBox, isValidTokenBoundingBox(preciseBox, within: parentBox) {
             if isSubrange,
                let fallbackBox,
-               !isCompatibleSubrangeBoundingBox(preciseBox, fallbackBox: fallbackBox, parentBox: parentBox) {
+               !isCompatibleSubrangeBoundingBox(
+                preciseBox,
+                fallbackBox: fallbackBox,
+                parentBox: parentBox,
+                allowsFallbackDrift: allowsFallbackDrift
+               ) {
                 return fallbackBox
             }
 
@@ -535,7 +543,8 @@ final class OCRService {
     nonisolated private static func isCompatibleSubrangeBoundingBox(
         _ box: CGRect,
         fallbackBox: CGRect,
-        parentBox: CGRect
+        parentBox: CGRect,
+        allowsFallbackDrift: Bool
     ) -> Bool {
         guard box.width > 0, fallbackBox.width > 0, parentBox.width > 0 else {
             return false
@@ -544,6 +553,10 @@ final class OCRService {
         let coversMostOfParent = box.width >= parentBox.width * 0.8
         if coversMostOfParent && box.width > fallbackBox.width * 1.8 {
             return false
+        }
+
+        if allowsFallbackDrift {
+            return box.width <= fallbackBox.width * 1.5
         }
 
         let horizontalEdgeTolerance = max(parentBox.width * 0.01, fallbackBox.width * 0.35)
@@ -642,6 +655,25 @@ final class OCRService {
 
     nonisolated private static func containsLetter(in token: Substring) -> Bool {
         token.unicodeScalars.contains { letterSet.contains($0) || $0.properties.isIdeographic }
+    }
+
+    nonisolated private static func containsHanAndLatin(in text: String) -> Bool {
+        var hasHan = false
+        var hasLatin = false
+
+        for scalar in text.unicodeScalars {
+            if scalar.properties.isIdeographic {
+                hasHan = true
+            }
+            if tokenCharacterSet.contains(scalar) {
+                hasLatin = true
+            }
+            if hasHan && hasLatin {
+                return true
+            }
+        }
+
+        return false
     }
 
     nonisolated private static func mergeHorizontallyAdjacentLineFragments(
