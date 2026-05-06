@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.8] - 2026-05-06
+
+### Added
+- improve word bounding box accuracy and selection logic
+- add bidirectional Chinese word lookup support
+
+### Fixed
+- align mixed-script word hit boxes
+- prevent background termination of menu bar app
+- handle Chinese text with English terms
+- refine code token hit boxes
+- strip pinyin from Chinese system definitions
+- detect dominant script in mixed text
+- reduce idle overlay overhead
+- gate selected text translation
+
 ## [1.3.8-beta.3] - 2026-04-28
 
 ### Added
