@@ -585,6 +585,11 @@ final class AppModel: ObservableObject {
             }
             guard activeLookupID == lookupID else { return }
 
+            guard shouldPerformLookup(for: selected.text) else {
+                hideOverlay()
+                return
+            }
+
             let languagePair = resolveLookupLanguagePair(for: selected.text)
             let sourceLanguage = languagePair.sourceLanguage
             let targetLanguage = languagePair.targetLanguage
@@ -1523,6 +1528,14 @@ final class AppModel: ObservableObject {
 
     private func resolveLookupLanguagePair(for observedText: String) -> LookupLanguagePair {
         LookupLanguagePairResolver.resolve(
+            configuredPair: configuredLanguagePair(),
+            observedText: observedText,
+            bidirectionalEnabled: settings.bidirectionalTranslationEnabled
+        )
+    }
+
+    private func shouldPerformLookup(for observedText: String) -> Bool {
+        LookupLanguagePairResolver.shouldLookup(
             configuredPair: configuredLanguagePair(),
             observedText: observedText,
             bidirectionalEnabled: settings.bidirectionalTranslationEnabled

@@ -132,6 +132,26 @@ enum LookupLanguagePairResolver {
             || (sourceFamily == .chinese && targetFamily == .english)
     }
 
+    static func shouldLookup(
+        configuredPair: LookupLanguagePair,
+        observedText: String,
+        bidirectionalEnabled: Bool
+    ) -> Bool {
+        guard !bidirectionalEnabled else { return true }
+
+        let sourceFamily = languageFamily(for: configuredPair.sourceIdentifier)
+        let targetFamily = languageFamily(for: configuredPair.targetIdentifier)
+        guard sourceFamily != .unknown,
+              targetFamily != .unknown,
+              sourceFamily != targetFamily,
+              let observedFamily = observedLanguageFamily(for: observedText)
+        else {
+            return true
+        }
+
+        return observedFamily == sourceFamily
+    }
+
     private enum LanguageFamily {
         case english
         case chinese

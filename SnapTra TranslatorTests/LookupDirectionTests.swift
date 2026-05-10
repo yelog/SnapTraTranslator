@@ -34,6 +34,42 @@ final class OCRTokenClassifierTests: XCTestCase {
         XCTAssertEqual(result, pair)
     }
 
+    func testLookupIsSkippedForTargetLanguageWhenBidirectionalDisabled() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
+
+        let result = LookupLanguagePairResolver.shouldLookup(
+            configuredPair: pair,
+            observedText: "你好",
+            bidirectionalEnabled: false
+        )
+
+        XCTAssertFalse(result)
+    }
+
+    func testLookupContinuesForSourceLanguageWhenBidirectionalDisabled() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
+
+        let result = LookupLanguagePairResolver.shouldLookup(
+            configuredPair: pair,
+            observedText: "hello",
+            bidirectionalEnabled: false
+        )
+
+        XCTAssertTrue(result)
+    }
+
+    func testLookupContinuesForTargetLanguageWhenBidirectionalEnabled() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
+
+        let result = LookupLanguagePairResolver.shouldLookup(
+            configuredPair: pair,
+            observedText: "你好",
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertTrue(result)
+    }
+
     func testBidirectionalResolverUsesForwardDirectionForSourceText() {
         let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
 
