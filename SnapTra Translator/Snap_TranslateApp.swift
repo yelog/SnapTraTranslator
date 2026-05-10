@@ -168,6 +168,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             }
             .store(in: &cancellables)
 
+        model.settings.$menuBarIconStyle
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.updateStatusItemImage()
+                }
+            }
+            .store(in: &cancellables)
+
         model.settings.$showDockIcon
             .sink { [weak self] show in
                 Task { @MainActor in
@@ -266,6 +274,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         if show {
             if statusItem == nil {
                 configureStatusItem()
+            } else {
+                updateStatusItemImage()
             }
         } else {
             if let item = statusItem {
@@ -273,6 +283,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 statusItem = nil
             }
         }
+    }
+
+    @MainActor private func updateStatusItemImage() {
+        statusItem?.button?.image = makeStatusBarImage()
     }
 
     @MainActor private func createStatusBarMenu() -> NSMenu {
@@ -535,20 +549,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func makeStatusBarImage() -> NSImage? {
-        if let image = NSImage(named: "StatusBarIcon")?.copy() as? NSImage {
-            image.size = NSSize(width: 18, height: 18)
-            image.isTemplate = false
-            return image
+        guard let sourceImage = NSImage(named: "StatusBarIcon") ?? NSApp.applicationIconImage else {
+            return nil
         }
 
-        if let sourceImage = NSApp.applicationIconImage,
-           let image = sourceImage.copy() as? NSImage {
-            image.size = NSSize(width: 18, height: 18)
-            image.isTemplate = false
+        let size = NSSize(width: 18, height: 18)
+        switch model.settings.menuBarIconStyle {
+        case .auto:
+            guard let image = sourceImage.copy() as? NSImage else { return nil }
+            image.size = size
+            image.isTemplate = true
             return image
+        case .black:
+            return fixedStatusBarImage(from: sourceImage, color: .black, size: size)
+        case .white:
+            return fixedStatusBarImage(from: sourceImage, color: .white, size: size)
         }
+    }
 
-        return nil
+    private func fixedStatusBarImage(from sourceImage: NSImage, color: NSColor, size: NSSize) -> NSImage {
+        let image = NSImage(size: size)
+        image.lockFocus()
+        defer { image.unlockFocus() }
+
+        let rect = NSRect(origin: .zero, size: size)
+        sourceImage.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+        color.setFill()
+        rect.fill(using: .sourceAtop)
+        image.isTemplate = false
+        return image
     }
 
     private func checkPermissionGrantRestart() {

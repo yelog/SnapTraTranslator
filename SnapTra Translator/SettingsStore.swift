@@ -79,6 +79,9 @@ final class SettingsStore: ObservableObject {
     @Published var showMenuBarIcon: Bool {
         didSet { defaults.set(showMenuBarIcon, forKey: AppSettingKey.showMenuBarIcon) }
     }
+    @Published var menuBarIconStyle: MenuBarIconStyle {
+        didSet { defaults.set(menuBarIconStyle.rawValue, forKey: AppSettingKey.menuBarIconStyle) }
+    }
 
     @Published var showDockIcon: Bool {
         didSet { defaults.set(showDockIcon, forKey: AppSettingKey.showDockIcon) }
@@ -195,6 +198,7 @@ final class SettingsStore: ObservableObject {
         let launchAtLoginValue = defaults.object(forKey: AppSettingKey.launchAtLogin) as? Bool
         let loginStatus = loginItemStatus ?? LoginItemManager.isEnabled()
         let showMenuBarIconValue = defaults.object(forKey: AppSettingKey.showMenuBarIcon) as? Bool
+        let menuBarIconStyleValue = defaults.string(forKey: AppSettingKey.menuBarIconStyle)
         let showDockIconValue = defaults.object(forKey: AppSettingKey.showDockIcon) as? Bool
         let singleKeyValue = defaults.string(forKey: AppSettingKey.singleKey)
         let debugShowOcrRegionValue = defaults.object(forKey: AppSettingKey.debugShowOcrRegion) as? Bool
@@ -202,6 +206,7 @@ final class SettingsStore: ObservableObject {
 
         launchAtLogin = launchAtLoginValue ?? loginStatus
         showMenuBarIcon = showMenuBarIconValue ?? true
+        menuBarIconStyle = MenuBarIconStyle(rawValue: menuBarIconStyleValue ?? "auto") ?? .auto
         showDockIcon = showDockIconValue ?? true
         singleKey = SingleKey(rawValue: singleKeyValue ?? "leftControl") ?? .leftControl
         sourceLanguage = defaults.string(forKey: AppSettingKey.sourceLanguage) ?? "en"
@@ -285,6 +290,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(copySentence, forKey: AppSettingKey.copySentence)
         defaults.set(launchAtLogin, forKey: AppSettingKey.launchAtLogin)
         defaults.set(showMenuBarIcon, forKey: AppSettingKey.showMenuBarIcon)
+        defaults.set(menuBarIconStyle.rawValue, forKey: AppSettingKey.menuBarIconStyle)
         defaults.set(showDockIcon, forKey: AppSettingKey.showDockIcon)
         defaults.set(singleKey.rawValue, forKey: AppSettingKey.singleKey)
         defaults.set(sourceLanguage, forKey: AppSettingKey.sourceLanguage)

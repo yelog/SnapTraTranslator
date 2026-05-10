@@ -118,6 +118,25 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     }
 }
 
+enum MenuBarIconStyle: String, CaseIterable, Identifiable {
+    case auto
+    case black
+    case white
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .auto:
+            return L("Auto")
+        case .black:
+            return L("Black")
+        case .white:
+            return L("White")
+        }
+    }
+}
+
 enum AppSettingKey {
     static let playPronunciation = "playPronunciation"
     static let playWordPronunciation = "playWordPronunciation"
@@ -145,6 +164,7 @@ enum AppSettingKey {
     static let updateChannel = "updateChannel"
     static let debugShowChannelSelector = "debugShowChannelSelector"
     static let showMenuBarIcon = "showMenuBarIcon"
+    static let menuBarIconStyle = "menuBarIconStyle"
     static let showDockIcon = "showDockIcon"
     static let learningMaxRecords = "learningMaxRecords"
     static let learningCleanupDays = "learningCleanupDays"

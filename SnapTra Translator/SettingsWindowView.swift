@@ -999,6 +999,14 @@ struct SystemSettingsView: View {
                         .padding(.horizontal, 14)
                         .opacity(0.5)
 
+                    MenuBarIconStylePickerRow(
+                        style: $model.settings.menuBarIconStyle
+                    )
+
+                    Divider()
+                        .padding(.horizontal, 14)
+                        .opacity(0.5)
+
                     ToggleRow(
                         title: L("Show Dock Icon"),
                         subtitle: L("Display app icon in the Dock"),
@@ -1033,5 +1041,34 @@ struct SystemSettingsView: View {
         }
         .scrollIndicators(hidesScrollIndicator ? .hidden : .automatic, axes: .vertical)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+struct MenuBarIconStylePickerRow: View {
+    @Binding var style: MenuBarIconStyle
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("Menu Bar Icon Style"))
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.primary)
+                Text(L("Choose automatic, black, or white status bar icon rendering"))
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+            Picker("", selection: $style) {
+                ForEach(MenuBarIconStyle.allCases) { iconStyle in
+                    Text(iconStyle.displayName).tag(iconStyle)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .tint(.accentColor)
+            .frame(width: 112)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 }

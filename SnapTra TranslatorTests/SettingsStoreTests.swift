@@ -31,6 +31,7 @@ final class SettingsStoreMigrationTests: XCTestCase {
         AppSettingKey.copySentence,
         AppSettingKey.launchAtLogin,
         AppSettingKey.showMenuBarIcon,
+        AppSettingKey.menuBarIconStyle,
         AppSettingKey.showDockIcon,
         AppSettingKey.singleKey,
         AppSettingKey.sourceLanguage,
@@ -129,6 +130,24 @@ final class SettingsStoreMigrationTests: XCTestCase {
         let isEnabled = SettingsStore.loadBidirectionalTranslationEnabled(defaults: defaults)
 
         XCTAssertFalse(isEnabled)
+    }
+
+    func testMenuBarIconStyleDefaultsToAuto() {
+        let defaults = makeDefaults()
+
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertEqual(settings.menuBarIconStyle, .auto)
+        XCTAssertEqual(defaults.string(forKey: AppSettingKey.menuBarIconStyle), MenuBarIconStyle.auto.rawValue)
+    }
+
+    func testLoadsPersistedMenuBarIconStyle() {
+        let defaults = makeDefaults()
+        defaults.set(MenuBarIconStyle.black.rawValue, forKey: AppSettingKey.menuBarIconStyle)
+
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertEqual(settings.menuBarIconStyle, .black)
     }
 
     func testLoadsPersistedBidirectionalTranslationSetting() {
