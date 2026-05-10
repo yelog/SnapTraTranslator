@@ -179,34 +179,19 @@ struct LearningSettingsView: View {
     }
 
     private var searchAndFilterBar: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    TextField(L("Search words..."), text: $searchText)
-                        .textFieldStyle(.plain)
-                    if !searchText.isEmpty {
-                        Button {
-                            searchText = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color(nsColor: .controlBackgroundColor))
-                .cornerRadius(8)
+                searchField
+                    .frame(minWidth: 220, maxWidth: .infinity)
 
-                Picker("", selection: $filterMode) {
-                    ForEach(FilterMode.allCases, id: \.self) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
+                filterPicker
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+
+            HStack(spacing: 8) {
+                Text(L("Export:"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Button {
                     exportWords(format: .ankiTSV)
@@ -227,28 +212,9 @@ struct LearningSettingsView: View {
                 .disabled(visibleRows.isEmpty)
                 .help(L("Export current words as CSV"))
 
-                Button {
-                    showingClearConfirmation = true
-                } label: {
-                    Image(systemName: "trash")
-                        .foregroundStyle(.red)
-                }
-                .buttonStyle(.plain)
-                .help(L("Clear learning data"))
-                .confirmationDialog(
-                    L("Clear All Learning Data?"),
-                    isPresented: $showingClearConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button(L("Clear All"), role: .destructive) {
-                        Task {
-                            await learningService.clearAllData()
-                        }
-                    }
-                    Button(L("Cancel"), role: .cancel) {}
-                } message: {
-                    Text(L("This will delete all word records. This action cannot be undone."))
-                }
+                Spacer()
+
+                clearLearningDataButton
             }
 
             if let message = exportResultMessage {
@@ -256,6 +222,62 @@ struct LearningSettingsView: View {
                     exportResultMessage = nil
                 }
             }
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField(L("Search words..."), text: $searchText)
+                .textFieldStyle(.plain)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(8)
+    }
+
+    private var filterPicker: some View {
+        Picker("", selection: $filterMode) {
+            ForEach(FilterMode.allCases, id: \.self) { mode in
+                Text(mode.title).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+    }
+
+    private var clearLearningDataButton: some View {
+        Button {
+            showingClearConfirmation = true
+        } label: {
+            Image(systemName: "trash")
+                .foregroundStyle(.red)
+        }
+        .buttonStyle(.plain)
+        .help(L("Clear learning data"))
+        .confirmationDialog(
+            L("Clear All Learning Data?"),
+            isPresented: $showingClearConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(L("Clear All"), role: .destructive) {
+                Task {
+                    await learningService.clearAllData()
+                }
+            }
+            Button(L("Cancel"), role: .cancel) {}
+        } message: {
+            Text(L("This will delete all word records. This action cannot be undone."))
         }
     }
 
