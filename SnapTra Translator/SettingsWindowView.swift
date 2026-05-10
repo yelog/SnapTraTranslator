@@ -26,7 +26,7 @@ enum SettingsWindowLayout {
     static let dictionaryContentWidth: CGFloat = 650
     static let generalContentHeight: CGFloat = 650
     static let dictionaryContentHeight: CGFloat = 550
-    static let systemContentHeight: CGFloat = 260
+    static let systemContentHeight: CGFloat = 360
     static let aboutContentHeight: CGFloat = 520
     static let aboutContentHeightWithChannelSelector: CGFloat = 650
     static let outerPadding: CGFloat = 16
@@ -963,6 +963,7 @@ struct AppLanguagePickerRow: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .tint(.accentColor)
+            .frame(width: 112, alignment: .trailing)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -1066,7 +1067,7 @@ struct MenuBarIconStylePickerRow: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .tint(.accentColor)
-            .frame(width: 112)
+            .frame(width: 112, alignment: .trailing)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
