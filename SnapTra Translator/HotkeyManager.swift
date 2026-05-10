@@ -176,12 +176,6 @@ final class HotkeyManager {
         let now = Date()
 
         if gestureStateMachine.isSingleKeyDown,
-           !NSEvent.modifierFlags.contains(targetFlag),
-           !isTargetFlagPresent {
-            resetState()
-        }
-
-        if gestureStateMachine.isSingleKeyDown,
            isTargetFlagPresent,
            keyCode == expectedKeyCode {
             resetState()
