@@ -132,17 +132,26 @@ final class HotkeyManager {
         stop()
         activeSingleKey = singleKey
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged]) { [weak self] event in
-            self?.handleFlagsChanged(event)
+            DispatchQueue.main.async {
+                self?.handleFlagsChanged(event)
+            }
         }
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged]) { [weak self] event in
-            self?.handleFlagsChanged(event)
+            DispatchQueue.main.async {
+                self?.handleFlagsChanged(event)
+            }
             return event
         }
     }
 
-    func stop() {
+    func resetState() {
         pendingRelease?.cancel()
         pendingRelease = nil
+        gestureStateMachine.reset()
+    }
+
+    func stop() {
+        resetState()
         if let globalMonitor {
             NSEvent.removeMonitor(globalMonitor)
             self.globalMonitor = nil
@@ -151,7 +160,6 @@ final class HotkeyManager {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
         }
-        gestureStateMachine.reset()
         activeSingleKey = nil
     }
 
@@ -166,6 +174,18 @@ final class HotkeyManager {
         let eventFlags = event.modifierFlags
         let isTargetFlagPresent = eventFlags.contains(targetFlag)
         let now = Date()
+
+        if gestureStateMachine.isSingleKeyDown,
+           !NSEvent.modifierFlags.contains(targetFlag),
+           !isTargetFlagPresent {
+            resetState()
+        }
+
+        if gestureStateMachine.isSingleKeyDown,
+           isTargetFlagPresent,
+           keyCode == expectedKeyCode {
+            resetState()
+        }
 
         if isTargetFlagPresent {
             pendingRelease?.cancel()

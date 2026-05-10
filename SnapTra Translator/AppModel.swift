@@ -1388,11 +1388,70 @@ final class AppModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        let workspaceNotifications = NSWorkspace.shared.notificationCenter
+
+        workspaceNotifications.publisher(for: NSWorkspace.willSleepNotification)
+            .sink { [weak self] _ in
+                self?.prepareForSystemSleep()
+            }
+            .store(in: &cancellables)
+
+        workspaceNotifications.publisher(for: NSWorkspace.screensDidSleepNotification)
+            .sink { [weak self] _ in
+                self?.prepareForSystemSleep()
+            }
+            .store(in: &cancellables)
+
+        workspaceNotifications.publisher(for: NSWorkspace.didWakeNotification)
+            .sink { [weak self] _ in
+                self?.scheduleSystemWakeRecovery()
+            }
+            .store(in: &cancellables)
+
+        workspaceNotifications.publisher(for: NSWorkspace.screensDidWakeNotification)
+            .sink { [weak self] _ in
+                self?.scheduleSystemWakeRecovery()
+            }
+            .store(in: &cancellables)
+
+        workspaceNotifications.publisher(for: NSWorkspace.sessionDidBecomeActiveNotification)
+            .sink { [weak self] _ in
+                self?.scheduleSystemWakeRecovery()
+            }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .sink { [weak self] _ in
                 self?.handleScreenConfigurationChange()
             }
             .store(in: &cancellables)
+    }
+
+    private func prepareForSystemSleep() {
+        isHotkeyActive = false
+        hotkeyManager.resetState()
+        stopMouseTracking()
+        cancelActiveLookupWork()
+        hideOverlay()
+        debugOverlayWindowController.hide()
+        paragraphHighlightWindowController.hide()
+    }
+
+    private func scheduleSystemWakeRecovery() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self?.recoverAfterSystemWake()
+        }
+    }
+
+    private func recoverAfterSystemWake() {
+        isHotkeyActive = false
+        hotkeyManager.resetState()
+        stopMouseTracking()
+        cancelActiveLookupWork()
+        hideOverlay()
+        captureService.invalidateCache()
+        restartHotkey()
+        permissions.refreshStatus()
     }
 
     private func handleScreenConfigurationChange() {

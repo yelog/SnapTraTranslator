@@ -65,4 +65,15 @@ final class HotkeyManagerTests: XCTestCase {
 
         XCTAssertEqual(resolution, .immediate)
     }
+
+    func testResetAllowsFreshPressAfterLostRelease() {
+        var stateMachine = HotkeyGestureStateMachine()
+        let start = Date()
+
+        _ = stateMachine.handlePress(now: start)
+        stateMachine.reset()
+        let events = stateMachine.handlePress(now: start.addingTimeInterval(2.0))
+
+        XCTAssertEqual(events, [.trigger])
+    }
 }
