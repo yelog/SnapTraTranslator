@@ -336,6 +336,7 @@ struct DictionarySettingsView: View {
             rightContent
                 .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             loadSources()
             loadSentenceSources()
@@ -394,29 +395,32 @@ struct DictionarySettingsView: View {
 
     @ViewBuilder
     private var rightContent: some View {
-        ScrollView {
-            Group {
-                switch selectedTab {
-                case .dictionary:
-                    dictionarySection
-                case .sentence:
-                    sentenceTranslationSection
-                case .learning:
-                    learningSection
-                case .wordPronunciation:
-                    wordPronunciationSection
-                case .sentencePronunciation:
-                    sentencePronunciationSection
+        GeometryReader { proxy in
+            ScrollView {
+                Group {
+                    switch selectedTab {
+                    case .dictionary:
+                        dictionarySection
+                    case .sentence:
+                        sentenceTranslationSection
+                    case .learning:
+                        learningSection
+                    case .wordPronunciation:
+                        wordPronunciationSection
+                    case .sentencePronunciation:
+                        sentencePronunciationSection
+                    }
                 }
-            }
-            .padding()
-            .background(
-                ScrollViewScrollerConfigurator(
-                    hidesVerticalScroller: hidesScrollIndicator
+                .padding()
+                .frame(width: proxy.size.width, alignment: .topLeading)
+                .background(
+                    ScrollViewScrollerConfigurator(
+                        hidesVerticalScroller: hidesScrollIndicator
+                    )
                 )
-            )
+            }
+            .scrollIndicators(hidesScrollIndicator ? .hidden : .automatic, axes: .vertical)
         }
-        .scrollIndicators(hidesScrollIndicator ? .hidden : .automatic, axes: .vertical)
     }
     
     private var dictionarySection: some View {

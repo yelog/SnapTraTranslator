@@ -70,60 +70,9 @@ struct LearningSettingsView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 16) {
-                Toggle(L("Enable"), isOn: $model.settings.learningAutoCleanup)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(L("Max Records:"))
-                            .font(.caption)
-                        TextField("", value: $model.settings.learningMaxRecords, formatter: NumberFormatter())
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 60)
-                            .controlSize(.small)
-                    }
-
-                    HStack(spacing: 8) {
-                        Text(L("Cleanup Days:"))
-                            .font(.caption)
-                        TextField("", value: $model.settings.learningCleanupDays, formatter: NumberFormatter())
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 60)
-                            .controlSize(.small)
-                    }
-                }
-
-                Spacer()
-
-                Button {
-                    showingCleanupConfirmation = true
-                } label: {
-                    Text(L("Cleanup Now"))
-                        .font(.caption)
-                }
-                .controlSize(.small)
-                .confirmationDialog(
-                    L("Cleanup Old Records?"),
-                    isPresented: $showingCleanupConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button(L("Cleanup"), role: .destructive) {
-                        Task {
-                            let deleted = await learningService.cleanupOldRecords(
-                                maxRecords: model.settings.learningMaxRecords,
-                                cleanupDays: model.settings.learningCleanupDays
-                            )
-                            if deleted > 0 {
-                                cleanupResultMessage = L("Deleted %lld records", deleted)
-                            }
-                        }
-                    }
-                    Button(L("Cancel"), role: .cancel) {}
-                } message: {
-                    Text(L("This will delete mastered words older than %lld days and remove excess records beyond %lld.", model.settings.learningCleanupDays, model.settings.learningMaxRecords))
-                }
+            ViewThatFits(in: .horizontal) {
+                cleanupControlsRow
+                cleanupControlsStack
             }
 
             if let message = cleanupResultMessage {
@@ -141,6 +90,84 @@ struct LearningSettingsView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(.quaternary, lineWidth: 0.5)
         )
+        .confirmationDialog(
+            L("Cleanup Old Records?"),
+            isPresented: $showingCleanupConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(L("Cleanup"), role: .destructive) {
+                Task {
+                    let deleted = await learningService.cleanupOldRecords(
+                        maxRecords: model.settings.learningMaxRecords,
+                        cleanupDays: model.settings.learningCleanupDays
+                    )
+                    if deleted > 0 {
+                        cleanupResultMessage = L("Deleted %lld records", deleted)
+                    }
+                }
+            }
+            Button(L("Cancel"), role: .cancel) {}
+        } message: {
+            Text(L("This will delete mastered words older than %lld days and remove excess records beyond %lld.", model.settings.learningCleanupDays, model.settings.learningMaxRecords))
+        }
+    }
+
+    private var cleanupControlsRow: some View {
+        HStack(spacing: 16) {
+            cleanupToggle
+            cleanupFields
+            Spacer()
+            cleanupNowButton
+        }
+    }
+
+    private var cleanupControlsStack: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 16) {
+                cleanupToggle
+                Spacer()
+                cleanupNowButton
+            }
+            cleanupFields
+        }
+    }
+
+    private var cleanupToggle: some View {
+        Toggle(L("Enable"), isOn: $model.settings.learningAutoCleanup)
+            .toggleStyle(.switch)
+            .controlSize(.small)
+    }
+
+    private var cleanupFields: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text(L("Max Records:"))
+                    .font(.caption)
+                TextField("", value: $model.settings.learningMaxRecords, formatter: NumberFormatter())
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 60)
+                    .controlSize(.small)
+            }
+
+            HStack(spacing: 8) {
+                Text(L("Cleanup Days:"))
+                    .font(.caption)
+                TextField("", value: $model.settings.learningCleanupDays, formatter: NumberFormatter())
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 60)
+                    .controlSize(.small)
+            }
+        }
+    }
+
+    private var cleanupNowButton: some View {
+        Button {
+            showingCleanupConfirmation = true
+        } label: {
+            Text(L("Cleanup Now"))
+                .font(.caption)
+        }
+        .controlSize(.small)
     }
 
     private var headerSection: some View {
@@ -180,12 +207,9 @@ struct LearningSettingsView: View {
 
     private var searchAndFilterBar: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                searchField
-                    .frame(minWidth: 220, maxWidth: .infinity)
-
-                filterPicker
-                    .fixedSize(horizontal: true, vertical: false)
+            ViewThatFits(in: .horizontal) {
+                searchAndFilterControlsRow
+                searchAndFilterControlsStack
             }
 
             HStack(spacing: 8) {
@@ -222,6 +246,26 @@ struct LearningSettingsView: View {
                     exportResultMessage = nil
                 }
             }
+        }
+    }
+
+    private var searchAndFilterControlsRow: some View {
+        HStack(spacing: 12) {
+            searchField
+                .frame(minWidth: 220, maxWidth: .infinity)
+
+            filterPicker
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private var searchAndFilterControlsStack: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            searchField
+                .frame(maxWidth: .infinity)
+
+            filterPicker
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
