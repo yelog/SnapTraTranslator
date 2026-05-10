@@ -14,6 +14,10 @@ final class LearningService: ObservableObject {
     var pendingReviewCount: Int { pendingReviewWords.count }
     var masteredCount: Int { masteredWords.count }
 
+    func wordRecord(for word: String) -> WordRecord? {
+        allWords.first { $0.word == word }
+    }
+
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
     }

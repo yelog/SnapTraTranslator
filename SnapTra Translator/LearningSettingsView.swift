@@ -12,6 +12,7 @@ struct LearningSettingsView: View {
     @State private var showingCleanupConfirmation = false
     @State private var cleanupResultMessage: String?
     @State private var exportResultMessage: String?
+    @State private var visibleRows: [WordRecordRowModel] = []
 
     enum FilterMode: String, CaseIterable {
         case all = "All"
@@ -43,7 +44,23 @@ struct LearningSettingsView: View {
         .onAppear {
             Task {
                 await learningService.refreshWords()
+                updateVisibleRows()
             }
+        }
+        .onChange(of: searchText) { _, _ in
+            updateVisibleRows()
+        }
+        .onChange(of: filterMode) { _, _ in
+            updateVisibleRows()
+        }
+        .onReceive(learningService.$allWords) { _ in
+            updateVisibleRows()
+        }
+        .onReceive(learningService.$pendingReviewWords) { _ in
+            updateVisibleRows()
+        }
+        .onReceive(learningService.$masteredWords) { _ in
+            updateVisibleRows()
         }
     }
 
@@ -198,7 +215,7 @@ struct LearningSettingsView: View {
                         .labelStyle(.titleAndIcon)
                 }
                 .controlSize(.small)
-                .disabled(filteredWords.isEmpty)
+                .disabled(visibleRows.isEmpty)
                 .help(L("Export current words for Anki"))
 
                 Button {
@@ -207,7 +224,7 @@ struct LearningSettingsView: View {
                     Text(L("CSV"))
                 }
                 .controlSize(.small)
-                .disabled(filteredWords.isEmpty)
+                .disabled(visibleRows.isEmpty)
                 .help(L("Export current words as CSV"))
 
                 Button {
@@ -244,35 +261,40 @@ struct LearningSettingsView: View {
 
     private var wordListView: some View {
         Group {
-            if filteredWords.isEmpty {
+            if visibleRows.isEmpty {
                 emptyStateView
             } else {
                 ScrollView {
                     LazyVStack(spacing: 6) {
-                        ForEach(filteredWords, id: \.word) { record in
+                        ForEach(visibleRows) { row in
                             WordRecordRow(
-                                record: record,
+                                row: row,
                                 onMarkMastered: {
+                                    guard let record = learningService.wordRecord(for: row.id) else { return }
                                     Task {
                                         await learningService.markAsMastered(record)
                                     }
                                 },
                                 onMarkReviewed: {
+                                    guard let record = learningService.wordRecord(for: row.id) else { return }
                                     Task {
                                         await learningService.markAsReviewed(record)
                                     }
                                 },
                                 onReset: {
+                                    guard let record = learningService.wordRecord(for: row.id) else { return }
                                     Task {
                                         await learningService.resetReview(record)
                                     }
                                 },
                                 onDelete: {
+                                    guard let record = learningService.wordRecord(for: row.id) else { return }
                                     Task {
                                         await learningService.deleteWord(record)
                                     }
                                 }
                             )
+                            .equatable()
                         }
                     }
                     .padding(.horizontal, 4)
@@ -316,6 +338,11 @@ struct LearningSettingsView: View {
         }
 
         return words
+    }
+
+    private func updateVisibleRows() {
+        let now = Date()
+        visibleRows = filteredWords.map { WordRecordRowModel(record: $0, now: now) }
     }
 
     private func exportWords(format: LearningExportFormat) {
@@ -385,8 +412,47 @@ struct StatCard: View {
     }
 }
 
-struct WordRecordRow: View {
-    let record: WordRecord
+struct WordRecordRowModel: Identifiable, Equatable {
+    let id: String
+    let word: String
+    let definitionText: String?
+    let lookupCount: Int
+    let reviewDateText: String?
+    let isMastered: Bool
+    let needsReview: Bool
+
+    init(record: WordRecord, now: Date) {
+        id = record.word
+        word = record.word
+        definitionText = record.definitionText?
+            .replacingOccurrences(of: "\n", with: " · ")
+        lookupCount = record.lookupCount
+        reviewDateText = Self.formatReviewDate(record.nextReviewDate)
+        isMastered = record.isMastered
+        needsReview = !record.isMastered && (record.nextReviewDate ?? .distantFuture) <= now
+    }
+
+    private static func formatReviewDate(_ date: Date?) -> String? {
+        guard let date else { return nil }
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return L("Today")
+        } else if calendar.isDateInTomorrow(date) {
+            return L("Tomorrow")
+        } else {
+            return reviewDateFormatter.string(from: date)
+        }
+    }
+
+    private static let reviewDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MM/dd"
+        return formatter
+    }()
+}
+
+struct WordRecordRow: View, Equatable {
+    let row: WordRecordRowModel
     let onMarkMastered: () -> Void
     let onMarkReviewed: () -> Void
     let onReset: () -> Void
@@ -394,14 +460,18 @@ struct WordRecordRow: View {
 
     @State private var isHovered = false
 
+    static func == (lhs: WordRecordRow, rhs: WordRecordRow) -> Bool {
+        lhs.row == rhs.row
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Text(record.word)
+                    Text(row.word)
                         .font(.system(size: 14, weight: .medium))
 
-                    if record.isMastered {
+                    if row.isMastered {
                         Text(L("Mastered"))
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(.white)
@@ -409,7 +479,7 @@ struct WordRecordRow: View {
                             .padding(.vertical, 2)
                             .background(Color.green)
                             .cornerRadius(4)
-                    } else if record.needsReview {
+                    } else if row.needsReview {
                         Text(L("Review"))
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(.white)
@@ -420,21 +490,21 @@ struct WordRecordRow: View {
                     }
                 }
 
-                if let definitionText = record.definitionText,
+                if let definitionText = row.definitionText,
                    !definitionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(definitionText.replacingOccurrences(of: "\n", with: " · "))
+                    Text(definitionText)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
 
                 HStack(spacing: 12) {
-                    Label("\(record.lookupCount)", systemImage: "eye.fill")
+                    Label("\(row.lookupCount)", systemImage: "eye.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
 
-                    if let nextReview = record.nextReviewDate {
-                        Label(formatReviewDate(nextReview), systemImage: "calendar")
+                    if let reviewDateText = row.reviewDateText {
+                        Label(reviewDateText, systemImage: "calendar")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -443,9 +513,9 @@ struct WordRecordRow: View {
 
             Spacer()
 
-            if isHovered {
-                actionButtons
-            }
+            actionButtons
+                .opacity(isHovered ? 1 : 0)
+                .allowsHitTesting(isHovered)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -465,8 +535,8 @@ struct WordRecordRow: View {
     @ViewBuilder
     private var actionButtons: some View {
         HStack(spacing: 8) {
-            if !record.isMastered {
-                if record.needsReview {
+            if !row.isMastered {
+                if row.needsReview {
                     Button {
                         onMarkReviewed()
                     } label: {
@@ -504,19 +574,6 @@ struct WordRecordRow: View {
             }
             .buttonStyle(.plain)
             .help(L("Delete"))
-        }
-    }
-
-    private func formatReviewDate(_ date: Date) -> String {
-        let calendar = Calendar.current
-        if calendar.isDateInToday(date) {
-            return L("Today")
-        } else if calendar.isDateInTomorrow(date) {
-            return L("Tomorrow")
-        } else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MM/dd"
-            return formatter.string(from: date)
         }
     }
 }
