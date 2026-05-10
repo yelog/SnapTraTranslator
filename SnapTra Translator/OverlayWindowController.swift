@@ -62,6 +62,7 @@ final class DebugOverlayWindowController: NSWindowController {
         panel.ignoresMouseEvents = true
         panel.isMovableByWindowBackground = false
         super.init(window: panel)
+        CaptureExclusionRegistry.shared.register(panel)
     }
 
     convenience init() {
@@ -260,6 +261,7 @@ final class ParagraphHighlightWindowController: NSWindowController {
         panel.ignoresMouseEvents = true
         panel.isMovableByWindowBackground = false
         super.init(window: panel)
+        CaptureExclusionRegistry.shared.register(panel)
     }
 
     convenience init() {
@@ -416,6 +418,7 @@ final class OverlayWindowController: NSWindowController {
         panel.ignoresMouseEvents = true
         panel.isMovableByWindowBackground = false
         super.init(window: panel)
+        CaptureExclusionRegistry.shared.register(panel)
     }
 
     /// 设置窗口是否接受鼠标事件

@@ -1996,6 +1996,7 @@ final class AppModel: ObservableObject {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.setIsVisible(false)
+        CaptureExclusionRegistry.shared.register(window)
 
         TranslationServiceWindowHolder.shared.window = window
     }

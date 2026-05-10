@@ -13,7 +13,18 @@ final class ScreenCaptureService {
     let captureSize = CGSize(width: 520, height: 140)
     let paragraphCaptureScale: CGFloat = 0.6
 
-    private var cachedOwnWindows: [SCWindow] = []
+    private var cachedExcludedWindows: [SCWindow] = []
+    private let exclusionRegistry: CaptureExclusionRegistry
+
+    @MainActor
+    init() {
+        self.exclusionRegistry = CaptureExclusionRegistry.shared
+    }
+
+    @MainActor
+    init(exclusionRegistry: CaptureExclusionRegistry) {
+        self.exclusionRegistry = exclusionRegistry
+    }
 
     func captureAroundCursor() async -> (image: CGImage, region: CaptureRegion)? {
         let mouseLocation = NSEvent.mouseLocation
@@ -32,7 +43,7 @@ final class ScreenCaptureService {
             let display = try await getDisplay(for: displayID)
             guard let display else { return nil }
 
-            let filter = SCContentFilter(display: display, excludingWindows: cachedOwnWindows)
+            let filter = SCContentFilter(display: display, excludingWindows: cachedExcludedWindows)
             let configuration = makeConfiguration(for: cgRect, scaleFactor: scaleFactor)
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
             return (image, CaptureRegion(rect: rectInScreen, screen: screen, displayID: displayID, scaleFactor: scaleFactor))
@@ -59,7 +70,7 @@ final class ScreenCaptureService {
             let display = try await getDisplay(for: displayID)
             guard let display else { return nil }
 
-            let filter = SCContentFilter(display: display, excludingWindows: cachedOwnWindows)
+            let filter = SCContentFilter(display: display, excludingWindows: cachedExcludedWindows)
             let configuration = makeConfiguration(
                 for: cgRect,
                 scaleFactor: scaleFactor,
@@ -73,7 +84,7 @@ final class ScreenCaptureService {
     }
 
     func invalidateCache() {
-        cachedOwnWindows = []
+        cachedExcludedWindows = []
     }
 
     private func getDisplay(for displayID: CGDirectDisplayID) async throws -> SCDisplay? {
@@ -83,10 +94,19 @@ final class ScreenCaptureService {
             return nil
         }
 
-        // Always refresh our own app's window list so that overlay panels opened
-        // since the last capture are excluded immediately.
-        let ownPID = ProcessInfo.processInfo.processIdentifier
-        cachedOwnWindows = content.windows.filter { $0.owningApplication?.processID == ownPID }
+        // Only exclude SnapTra auxiliary overlays. Regular app windows such as
+        // Settings remain capturable so OCR works on all visible user content.
+        let registeredWindowNumbers = await MainActor.run {
+            exclusionRegistry.registeredWindowNumbers()
+        }
+        let visibleWindowNumbers = content.windows.map { Int($0.windowID) }
+        let excludedWindowNumbers = CaptureExclusionRegistry.excludedWindowNumbers(
+            registeredWindowNumbers: registeredWindowNumbers,
+            visibleWindowNumbers: visibleWindowNumbers
+        )
+        cachedExcludedWindows = content.windows.filter {
+            return excludedWindowNumbers.contains(Int($0.windowID))
+        }
 
         return display
     }
