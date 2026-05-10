@@ -7,6 +7,15 @@
         <language>en</language>
         <sparkle:edPublicKey>OJo/oEqSjtmok1HYx+XgFHLq1FkUAJs8hsDms0+Uv98=</sparkle:edPublicKey>
         <item>
+            <title>Version 1.3.9-beta.0</title>
+            <pubDate>Sun, 10 May 2026 03:40:22 +0000</pubDate>
+            <sparkle:version>13900</sparkle:version>
+            <sparkle:shortVersionString>1.3.9-beta.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description>&lt;h2&gt;SnapTra Translator 1.3.9-beta.0&lt;/h2&gt;&lt;h4&gt;Added&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;export words for Anki&lt;/li&gt;&lt;li&gt;add menu bar icon style setting&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Changed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;update project build version&lt;/li&gt;&lt;/ul&gt;</description>
+            <enclosure url="https://github.com/yelog/SnapTraTranslator/releases/download/v1.3.9-beta.0/SnapTra-Translator-1.3.9-beta.0.dmg" length="5288691" type="application/octet-stream" sparkle:edSignature="aId33DEnBbjW6VIeIdMbqP1xmyDbf52igHoSNo7/7Ylmbq5KTDOfPUCsAZ3q9muQPBP+Ryd8g7daA6ZQYChsAg==" />
+        </item>
+        <item>
             <title>Version 1.3.8</title>
             <pubDate>Wed, 06 May 2026 01:50:54 +0000</pubDate>
             <sparkle:version>13899</sparkle:version>
