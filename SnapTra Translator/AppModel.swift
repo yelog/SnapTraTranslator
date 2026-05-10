@@ -1041,6 +1041,7 @@ final class AppModel: ObservableObject {
         lookupID: UUID,
         anchor: CGPoint
     ) {
+        var updatedContent: OverlayContent?
         updateOverlayContent(for: lookupID, anchor: anchor) { content in
             switch state {
             case .ready:
@@ -1058,6 +1059,11 @@ final class AppModel: ObservableObject {
                 }
                 content.primaryTranslationState = state
             }
+            updatedContent = content
+        }
+
+        if let updatedContent {
+            updateLearningDefinition(from: updatedContent)
         }
     }
 
@@ -1161,6 +1167,7 @@ final class AppModel: ObservableObject {
         lookupID: UUID,
         anchor: CGPoint
     ) {
+        var updatedContent: OverlayContent?
         updateOverlayContent(for: lookupID, anchor: anchor) { content in
             guard let index = content.dictionarySections.firstIndex(where: { $0.sourceType == result.sourceType }) else {
                 return
@@ -1182,13 +1189,60 @@ final class AppModel: ObservableObject {
                 } else if case .failed = content.primaryTranslationState {
                     updateFallbackPrimaryTranslation(for: &content)
                 }
+                updatedContent = content
                 return
             }
 
             if isFallback {
                 updateFallbackPrimaryTranslation(for: &content)
             }
+            updatedContent = content
         }
+
+        if let updatedContent {
+            updateLearningDefinition(from: updatedContent)
+        }
+    }
+
+    private func updateLearningDefinition(from content: OverlayContent) {
+        let definitionText = Self.learningDefinitionText(from: content)
+        guard definitionText != nil else { return }
+
+        Task {
+            await learningService.updateDefinition(
+                word: content.word,
+                definitionText: definitionText
+            )
+        }
+    }
+
+    nonisolated static func learningDefinitionText(from content: OverlayContent) -> String? {
+        var lines: [String] = []
+
+        if case .ready(let translation, _) = content.primaryTranslationState {
+            appendUniqueLine(translation, to: &lines)
+        }
+
+        for entry in content.dictionaryEntries {
+            for definition in entry.definitions.prefix(3) {
+                let meaning = definition.translation ?? definition.meaning
+                var line = meaning.trimmingCharacters(in: .whitespacesAndNewlines)
+                let partOfSpeech = definition.partOfSpeech.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !partOfSpeech.isEmpty, !line.isEmpty {
+                    line = "\(partOfSpeech). \(line)"
+                }
+                appendUniqueLine(line, to: &lines)
+            }
+        }
+
+        let text = lines.joined(separator: "\n")
+        return text.isEmpty ? nil : text
+    }
+
+    nonisolated private static func appendUniqueLine(_ line: String, to lines: inout [String]) {
+        let normalized = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty, !lines.contains(normalized) else { return }
+        lines.append(normalized)
     }
 
     private func updateOverlayContent(

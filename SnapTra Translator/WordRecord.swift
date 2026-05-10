@@ -11,8 +11,9 @@ final class WordRecord {
     var nextReviewDate: Date?
     var isMastered: Bool
     var reviewStage: Int
+    var definitionText: String?
 
-    init(word: String) {
+    init(word: String, definitionText: String? = nil) {
         self.word = word.lowercased()
         self.lookupCount = 1
         self.firstLookupDate = Date()
@@ -21,6 +22,7 @@ final class WordRecord {
         self.nextReviewDate = Calendar.current.date(byAdding: .day, value: 1, to: Date())
         self.isMastered = false
         self.reviewStage = 0
+        self.definitionText = Self.normalizedDefinitionText(definitionText)
     }
 
     var needsReview: Bool {
@@ -28,9 +30,15 @@ final class WordRecord {
         return nextReview <= Date()
     }
 
-    func recordLookup() {
+    func recordLookup(definitionText: String? = nil) {
         lookupCount += 1
         lastLookupDate = Date()
+        updateDefinition(definitionText)
+    }
+
+    func updateDefinition(_ definitionText: String?) {
+        guard let normalized = Self.normalizedDefinitionText(definitionText) else { return }
+        self.definitionText = normalized
     }
 
     func advanceReviewStage() {
@@ -55,6 +63,17 @@ final class WordRecord {
         isMastered = false
         lastReviewDate = nil
         nextReviewDate = Calendar.current.date(byAdding: .day, value: 1, to: Date())
+    }
+
+    private static func normalizedDefinitionText(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let normalized = text
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
     }
 }
 

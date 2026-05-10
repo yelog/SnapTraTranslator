@@ -276,6 +276,72 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
     }
 }
 
+final class LearningExportServiceTests: XCTestCase {
+    private struct StubRecord: LearningExportRecord {
+        var exportWord: String
+        var exportDefinitionText: String?
+        var exportLookupCount: Int
+        var exportReviewStage: Int
+        var exportIsMastered: Bool
+    }
+
+    func testExportRowCanBeBuiltFromRecord() {
+        let record = StubRecord(
+            exportWord: "apple",
+            exportDefinitionText: "n. 苹果",
+            exportLookupCount: 4,
+            exportReviewStage: 2,
+            exportIsMastered: false
+        )
+
+        let row = LearningExportRow(record: record)
+
+        XCTAssertEqual(row.word, "apple")
+        XCTAssertEqual(row.definitionText, "n. 苹果")
+        XCTAssertEqual(row.lookupCount, 4)
+        XCTAssertEqual(row.reviewStage, 2)
+        XCTAssertFalse(row.isMastered)
+    }
+
+    func testAnkiTSVExportEscapesTabsAndNewlines() {
+        let rows = [
+            LearningExportRow(
+                word: "hello",
+                definitionText: "int. 你好\nused as a greeting\twith tab",
+                lookupCount: 3,
+                reviewStage: 1,
+                isMastered: false
+            ),
+        ]
+
+        let output = LearningExportService.export(rows: rows, format: .ankiTSV)
+
+        XCTAssertEqual(
+            output,
+            "Word\tDefinition\tLookup Count\tReview Stage\tMastered\nhello\tint. 你好<br>used as a greeting with tab\t3\t1\tfalse\n"
+        )
+    }
+
+    func testCSVExportQuotesCommaQuoteAndNewline() {
+        let rows = [
+            LearningExportRow(
+                word: "quote",
+                definitionText: "say, \"hello\"\nagain",
+                lookupCount: 2,
+                reviewStage: 0,
+                isMastered: true
+            ),
+        ]
+
+        let output = LearningExportService.export(rows: rows, format: .csv)
+
+        XCTAssertEqual(
+            output,
+            "Word,Definition,Lookup Count,Review Stage,Mastered\nquote,\"say, \"\"hello\"\"\nagain\",2,0,true\n"
+        )
+    }
+}
+
 final class OnlineDictionaryServiceTests: XCTestCase {
     func testGoogleResponseErrorDetectsBlockedHtmlPage() {
         let html = #"""

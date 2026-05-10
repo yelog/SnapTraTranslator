@@ -32,7 +32,7 @@ final class LearningService: ObservableObject {
         }
     }
 
-    func recordLookup(word: String) async {
+    func recordLookup(word: String, definitionText: String? = nil) async {
         let normalizedWord = word.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedWord.isEmpty else { return }
 
@@ -43,15 +43,36 @@ final class LearningService: ObservableObject {
             let existing = try modelContext.fetch(descriptor).first
 
             if let record = existing {
-                record.recordLookup()
+                record.recordLookup(definitionText: definitionText)
             } else {
-                let newRecord = WordRecord(word: normalizedWord)
+                let newRecord = WordRecord(word: normalizedWord, definitionText: definitionText)
                 modelContext.insert(newRecord)
             }
 
             try modelContext.save()
         } catch {
             print("Failed to record word lookup: \(error)")
+        }
+    }
+
+    func updateDefinition(word: String, definitionText: String?) async {
+        let normalizedWord = word.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedWord.isEmpty else { return }
+
+        do {
+            let descriptor = FetchDescriptor<WordRecord>(
+                predicate: #Predicate { $0.word == normalizedWord }
+            )
+            if let record = try modelContext.fetch(descriptor).first {
+                record.updateDefinition(definitionText)
+            } else {
+                modelContext.insert(WordRecord(word: normalizedWord, definitionText: definitionText))
+            }
+
+            try modelContext.save()
+            await refreshWords()
+        } catch {
+            print("Failed to update word definition: \(error)")
         }
     }
 

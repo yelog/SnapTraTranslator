@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct LearningSettingsView: View {
     @EnvironmentObject var model: AppModel
@@ -10,6 +11,7 @@ struct LearningSettingsView: View {
     @State private var showingClearConfirmation = false
     @State private var showingCleanupConfirmation = false
     @State private var cleanupResultMessage: String?
+    @State private var exportResultMessage: String?
 
     enum FilterMode: String, CaseIterable {
         case all = "All"
@@ -108,14 +110,9 @@ struct LearningSettingsView: View {
             }
 
             if let message = cleanupResultMessage {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.green)
-                    .onAppear {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                            cleanupResultMessage = nil
-                        }
-                    }
+                statusMessage(message, color: .green) {
+                    cleanupResultMessage = nil
+                }
             }
         }
         .padding(12)
@@ -165,55 +162,82 @@ struct LearningSettingsView: View {
     }
 
     private var searchAndFilterBar: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField(L("Search words..."), text: $searchText)
-                    .textFieldStyle(.plain)
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(8)
-
-            Picker("", selection: $filterMode) {
-                ForEach(FilterMode.allCases, id: \.self) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            Button {
-                showingClearConfirmation = true
-            } label: {
-                Image(systemName: "trash")
-                    .foregroundStyle(.red)
-            }
-            .buttonStyle(.plain)
-            .help(L("Clear learning data"))
-            .confirmationDialog(
-                L("Clear All Learning Data?"),
-                isPresented: $showingClearConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button(L("Clear All"), role: .destructive) {
-                    Task {
-                        await learningService.clearAllData()
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField(L("Search words..."), text: $searchText)
+                        .textFieldStyle(.plain)
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
-                Button(L("Cancel"), role: .cancel) {}
-            } message: {
-                Text(L("This will delete all word records. This action cannot be undone."))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(8)
+
+                Picker("", selection: $filterMode) {
+                    ForEach(FilterMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Button {
+                    exportWords(format: .ankiTSV)
+                } label: {
+                    Label(L("Anki"), systemImage: "square.and.arrow.up")
+                        .labelStyle(.titleAndIcon)
+                }
+                .controlSize(.small)
+                .disabled(filteredWords.isEmpty)
+                .help(L("Export current words for Anki"))
+
+                Button {
+                    exportWords(format: .csv)
+                } label: {
+                    Text(L("CSV"))
+                }
+                .controlSize(.small)
+                .disabled(filteredWords.isEmpty)
+                .help(L("Export current words as CSV"))
+
+                Button {
+                    showingClearConfirmation = true
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.plain)
+                .help(L("Clear learning data"))
+                .confirmationDialog(
+                    L("Clear All Learning Data?"),
+                    isPresented: $showingClearConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button(L("Clear All"), role: .destructive) {
+                        Task {
+                            await learningService.clearAllData()
+                        }
+                    }
+                    Button(L("Cancel"), role: .cancel) {}
+                } message: {
+                    Text(L("This will delete all word records. This action cannot be undone."))
+                }
+            }
+
+            if let message = exportResultMessage {
+                statusMessage(message, color: message.hasPrefix(L("Export failed")) ? .red : .green) {
+                    exportResultMessage = nil
+                }
             }
         }
     }
@@ -293,6 +317,39 @@ struct LearningSettingsView: View {
 
         return words
     }
+
+    private func exportWords(format: LearningExportFormat) {
+        let rows = filteredWords.map { LearningExportRow(record: $0) }
+        guard !rows.isEmpty else { return }
+
+        let panel = NSSavePanel()
+        panel.title = L("Export Learning Words")
+        panel.nameFieldStringValue = "snaptra-learning-words.\(format.fileExtension)"
+        panel.canCreateDirectories = true
+        panel.allowedContentTypes = [.plainText]
+
+        let response = panel.runModal()
+        guard response == .OK, let url = panel.url else { return }
+
+        do {
+            let content = LearningExportService.export(rows: rows, format: format)
+            try content.write(to: url, atomically: true, encoding: .utf8)
+            exportResultMessage = L("Exported %lld words", rows.count)
+        } catch {
+            exportResultMessage = L("Export failed: %@", error.localizedDescription)
+        }
+    }
+
+    private func statusMessage(_ message: String, color: Color, clear: @escaping () -> Void) -> some View {
+        Text(message)
+            .font(.caption)
+            .foregroundStyle(color)
+            .onAppear {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    clear()
+                }
+            }
+    }
 }
 
 struct StatCard: View {
@@ -361,6 +418,14 @@ struct WordRecordRow: View {
                             .background(Color.orange)
                             .cornerRadius(4)
                     }
+                }
+
+                if let definitionText = record.definitionText,
+                   !definitionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(definitionText.replacingOccurrences(of: "\n", with: " · "))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
 
                 HStack(spacing: 12) {
