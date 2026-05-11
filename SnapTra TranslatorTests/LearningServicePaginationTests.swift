@@ -20,6 +20,24 @@ final class LearningServicePaginationTests: XCTestCase {
         XCTAssertFalse(service.hasMoreWords)
     }
 
+    func testLoadMoreCanAppendMultiplePages() async throws {
+        let context = try makeModelContext()
+        insertWords(count: 275, into: context)
+
+        let service = LearningService(modelContext: context)
+        await service.reloadWords(filter: .all, searchText: "")
+        XCTAssertEqual(service.visibleWords.count, 100)
+        XCTAssertTrue(service.hasMoreWords)
+
+        await service.loadMoreWords()
+        XCTAssertEqual(service.visibleWords.count, 200)
+        XCTAssertTrue(service.hasMoreWords)
+
+        await service.loadMoreWords()
+        XCTAssertEqual(service.visibleWords.count, 275)
+        XCTAssertFalse(service.hasMoreWords)
+    }
+
     func testSearchFindsRecordOutsideInitialPage() async throws {
         let context = try makeModelContext()
         insertWords(count: 100, into: context)

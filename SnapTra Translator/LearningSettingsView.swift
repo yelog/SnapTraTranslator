@@ -13,6 +13,7 @@ struct LearningSettingsView: View {
     @State private var cleanupResultMessage: String?
     @State private var exportResultMessage: String?
     @State private var visibleRows: [WordRecordRowModel] = []
+    @State private var isBottomLoaderVisible = false
 
     init(modelContext: ModelContext) {
         _learningService = StateObject(wrappedValue: LearningService(modelContext: modelContext))
@@ -31,23 +32,29 @@ struct LearningSettingsView: View {
             Task {
                 await learningService.refreshSummaryCounts()
                 await learningService.reloadWords(filter: filterMode, searchText: searchText)
-                updateVisibleRows()
             }
         }
         .onChange(of: searchText) { _, _ in
             Task {
                 await learningService.reloadWords(filter: filterMode, searchText: searchText)
-                updateVisibleRows()
             }
         }
         .onChange(of: filterMode) { _, _ in
             Task {
                 await learningService.reloadWords(filter: filterMode, searchText: searchText)
-                updateVisibleRows()
             }
         }
-        .onReceive(learningService.$visibleWords) { _ in
-            updateVisibleRows()
+        .onReceive(learningService.$visibleWords) { newWords in
+            let now = Date()
+            visibleRows = newWords.map { WordRecordRowModel(record: $0, now: now) }
+        }
+        .onReceive(learningService.$isLoadingPage) { isLoading in
+            guard !isLoading else { return }
+            Task { requestNextPageIfNeeded() }
+        }
+        .onReceive(learningService.$hasMoreWords) { hasMoreWords in
+            guard hasMoreWords else { return }
+            Task { requestNextPageIfNeeded() }
         }
     }
 
@@ -354,8 +361,12 @@ struct LearningSettingsView: View {
                             ProgressView()
                                 .controlSize(.small)
                                 .padding(.vertical, 8)
-                                .task(id: visibleRows.count) {
-                                    await loadMoreWordsIfNeeded()
+                                .onAppear {
+                                    isBottomLoaderVisible = true
+                                    requestNextPageIfNeeded()
+                                }
+                                .onDisappear {
+                                    isBottomLoaderVisible = false
                                 }
                         }
                     }
@@ -383,18 +394,11 @@ struct LearningSettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var filteredWords: [WordRecord] {
-        learningService.visibleWords
-    }
-
-    private func updateVisibleRows() {
-        let now = Date()
-        visibleRows = filteredWords.map { WordRecordRowModel(record: $0, now: now) }
-    }
-
-    private func loadMoreWordsIfNeeded() async {
-        guard learningService.hasMoreWords, !learningService.isLoadingPage else { return }
-        await learningService.loadMoreWords()
+    private func requestNextPageIfNeeded() {
+        guard isBottomLoaderVisible, learningService.hasMoreWords, !learningService.isLoadingPage else { return }
+        Task {
+            await learningService.loadMoreWords()
+        }
     }
 
     private func exportWords(format: LearningExportFormat) {
