@@ -7,26 +7,12 @@ struct LearningSettingsView: View {
     @EnvironmentObject var model: AppModel
     @StateObject private var learningService: LearningService
     @State private var searchText = ""
-    @State private var filterMode: FilterMode = .all
+    @State private var filterMode: LearningWordFilter = .all
     @State private var showingClearConfirmation = false
     @State private var showingCleanupConfirmation = false
     @State private var cleanupResultMessage: String?
     @State private var exportResultMessage: String?
     @State private var visibleRows: [WordRecordRowModel] = []
-
-    enum FilterMode: String, CaseIterable {
-        case all = "All"
-        case pendingReview = "Pending"
-        case mastered = "Mastered"
-
-        var title: String {
-            switch self {
-            case .all: return L("All Words")
-            case .pendingReview: return L("Pending Review")
-            case .mastered: return L("Mastered")
-            }
-        }
-    }
 
     init(modelContext: ModelContext) {
         _learningService = StateObject(wrappedValue: LearningService(modelContext: modelContext))
@@ -43,23 +29,24 @@ struct LearningSettingsView: View {
         .padding()
         .onAppear {
             Task {
-                await learningService.refreshWords()
+                await learningService.refreshSummaryCounts()
+                await learningService.reloadWords(filter: filterMode, searchText: searchText)
                 updateVisibleRows()
             }
         }
         .onChange(of: searchText) { _, _ in
-            updateVisibleRows()
+            Task {
+                await learningService.reloadWords(filter: filterMode, searchText: searchText)
+                updateVisibleRows()
+            }
         }
         .onChange(of: filterMode) { _, _ in
-            updateVisibleRows()
+            Task {
+                await learningService.reloadWords(filter: filterMode, searchText: searchText)
+                updateVisibleRows()
+            }
         }
-        .onReceive(learningService.$allWords) { _ in
-            updateVisibleRows()
-        }
-        .onReceive(learningService.$pendingReviewWords) { _ in
-            updateVisibleRows()
-        }
-        .onReceive(learningService.$masteredWords) { _ in
+        .onReceive(learningService.$visibleWords) { _ in
             updateVisibleRows()
         }
     }
@@ -293,7 +280,7 @@ struct LearningSettingsView: View {
 
     private var filterPicker: some View {
         Picker("", selection: $filterMode) {
-            ForEach(FilterMode.allCases, id: \.self) { mode in
+            ForEach(LearningWordFilter.allCases, id: \.self) { mode in
                 Text(mode.title).tag(mode)
             }
         }
@@ -362,6 +349,15 @@ struct LearningSettingsView: View {
                             )
                             .equatable()
                         }
+
+                        if learningService.hasMoreWords || learningService.isLoadingPage {
+                            ProgressView()
+                                .controlSize(.small)
+                                .padding(.vertical, 8)
+                                .task(id: visibleRows.count) {
+                                    await loadMoreWordsIfNeeded()
+                                }
+                        }
                     }
                     .padding(.horizontal, 4)
                 }
@@ -388,22 +384,7 @@ struct LearningSettingsView: View {
     }
 
     private var filteredWords: [WordRecord] {
-        var words: [WordRecord]
-        switch filterMode {
-        case .all:
-            words = learningService.allWords
-        case .pendingReview:
-            words = learningService.pendingReviewWords
-        case .mastered:
-            words = learningService.masteredWords
-        }
-
-        if !searchText.isEmpty {
-            let query = searchText.lowercased()
-            words = words.filter { $0.word.contains(query) }
-        }
-
-        return words
+        learningService.visibleWords
     }
 
     private func updateVisibleRows() {
@@ -411,25 +392,32 @@ struct LearningSettingsView: View {
         visibleRows = filteredWords.map { WordRecordRowModel(record: $0, now: now) }
     }
 
+    private func loadMoreWordsIfNeeded() async {
+        guard learningService.hasMoreWords, !learningService.isLoadingPage else { return }
+        await learningService.loadMoreWords()
+    }
+
     private func exportWords(format: LearningExportFormat) {
-        let rows = filteredWords.map { LearningExportRow(record: $0) }
-        guard !rows.isEmpty else { return }
+        Task {
+            let rows = await learningService.exportRows(filter: filterMode, searchText: searchText)
+            guard !rows.isEmpty else { return }
 
-        let panel = NSSavePanel()
-        panel.title = L("Export Learning Words")
-        panel.nameFieldStringValue = "snaptra-learning-words.\(format.fileExtension)"
-        panel.canCreateDirectories = true
-        panel.allowedContentTypes = [.plainText]
+            let panel = NSSavePanel()
+            panel.title = L("Export Learning Words")
+            panel.nameFieldStringValue = "snaptra-learning-words.\(format.fileExtension)"
+            panel.canCreateDirectories = true
+            panel.allowedContentTypes = [.plainText]
 
-        let response = panel.runModal()
-        guard response == .OK, let url = panel.url else { return }
+            let response = panel.runModal()
+            guard response == .OK, let url = panel.url else { return }
 
-        do {
-            let content = LearningExportService.export(rows: rows, format: format)
-            try content.write(to: url, atomically: true, encoding: .utf8)
-            exportResultMessage = L("Exported %lld words", rows.count)
-        } catch {
-            exportResultMessage = L("Export failed: %@", error.localizedDescription)
+            do {
+                let content = LearningExportService.export(rows: rows, format: format)
+                try content.write(to: url, atomically: true, encoding: .utf8)
+                exportResultMessage = L("Exported %lld words", rows.count)
+            } catch {
+                exportResultMessage = L("Export failed: %@", error.localizedDescription)
+            }
         }
     }
 

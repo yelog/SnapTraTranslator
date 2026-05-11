@@ -2,37 +2,104 @@ import Combine
 import Foundation
 import SwiftData
 
+enum LearningWordFilter: String, CaseIterable {
+    case all = "All"
+    case pendingReview = "Pending"
+    case mastered = "Mastered"
+
+    var title: String {
+        switch self {
+        case .all: return L("All Words")
+        case .pendingReview: return L("Pending Review")
+        case .mastered: return L("Mastered")
+        }
+    }
+}
+
 @MainActor
 final class LearningService: ObservableObject {
     private let modelContext: ModelContext
 
-    @Published var allWords: [WordRecord] = []
-    @Published var pendingReviewWords: [WordRecord] = []
-    @Published var masteredWords: [WordRecord] = []
+    @Published var visibleWords: [WordRecord] = []
+    @Published var totalWordCount = 0
+    @Published var pendingReviewCount = 0
+    @Published var masteredCount = 0
+    @Published var isLoadingPage = false
+    @Published var hasMoreWords = false
 
-    var totalWordCount: Int { allWords.count }
-    var pendingReviewCount: Int { pendingReviewWords.count }
-    var masteredCount: Int { masteredWords.count }
+    private static let wordSortDescriptors = [
+        SortDescriptor(\WordRecord.lookupCount, order: .reverse),
+        SortDescriptor(\WordRecord.lastLookupDate, order: .reverse),
+    ]
+
+    private let pageSize = 100
+    private var currentOffset = 0
+    private var currentFilter: LearningWordFilter = .all
+    private var currentSearchText = ""
 
     func wordRecord(for word: String) -> WordRecord? {
-        allWords.first { $0.word == word }
+        visibleWords.first { $0.word == word }
     }
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
     }
 
-    func refreshWords() async {
+    func refreshSummaryCounts() async {
         do {
-            let descriptor = FetchDescriptor<WordRecord>(
-                sortBy: [SortDescriptor(\.lookupCount, order: .reverse)]
+            totalWordCount = try modelContext.fetchCount(FetchDescriptor<WordRecord>())
+            pendingReviewCount = try modelContext.fetchCount(
+                FetchDescriptor<WordRecord>(predicate: pendingReviewPredicate(now: Date()))
             )
-            allWords = try modelContext.fetch(descriptor)
-
-            pendingReviewWords = allWords.filter { $0.needsReview }
-            masteredWords = allWords.filter { $0.isMastered }
+            masteredCount = try modelContext.fetchCount(
+                FetchDescriptor<WordRecord>(predicate: #Predicate { $0.isMastered })
+            )
         } catch {
-            print("Failed to fetch word records: \(error)")
+            print("Failed to fetch learning counts: \(error)")
+        }
+    }
+
+    func reloadWords(filter: LearningWordFilter, searchText: String) async {
+        currentFilter = filter
+        currentSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        currentOffset = 0
+        hasMoreWords = false
+        await loadMoreWords(replacingCurrentWords: true)
+    }
+
+    func loadMoreWords() async {
+        await loadMoreWords(replacingCurrentWords: false)
+    }
+
+    private func loadMoreWords(replacingCurrentWords: Bool) async {
+        guard !isLoadingPage else { return }
+        guard currentOffset == 0 || hasMoreWords else { return }
+
+        isLoadingPage = true
+        defer { isLoadingPage = false }
+
+        do {
+            var descriptor = FetchDescriptor<WordRecord>(
+                predicate: listPredicate(
+                    filter: currentFilter,
+                    searchText: currentSearchText,
+                    now: Date()
+                ),
+                sortBy: Self.wordSortDescriptors
+            )
+            descriptor.fetchLimit = currentOffset + pageSize + 1
+
+            let records = try modelContext.fetch(descriptor)
+            let page = Array(records.dropFirst(currentOffset).prefix(pageSize))
+            if replacingCurrentWords {
+                visibleWords = page
+            } else {
+                visibleWords = visibleWords + page
+            }
+            currentOffset += page.count
+            hasMoreWords = records.count > currentOffset
+        } catch {
+            print("Failed to fetch learning words page: \(error)")
         }
     }
 
@@ -74,7 +141,6 @@ final class LearningService: ObservableObject {
             }
 
             try modelContext.save()
-            await refreshWords()
         } catch {
             print("Failed to update word definition: \(error)")
         }
@@ -84,7 +150,7 @@ final class LearningService: ObservableObject {
         record.markAsMastered()
         do {
             try modelContext.save()
-            await refreshWords()
+            await refreshAfterMutation()
         } catch {
             print("Failed to mark word as mastered: \(error)")
         }
@@ -94,7 +160,7 @@ final class LearningService: ObservableObject {
         record.advanceReviewStage()
         do {
             try modelContext.save()
-            await refreshWords()
+            await refreshAfterMutation()
         } catch {
             print("Failed to advance review stage: \(error)")
         }
@@ -104,7 +170,7 @@ final class LearningService: ObservableObject {
         record.resetReview()
         do {
             try modelContext.save()
-            await refreshWords()
+            await refreshAfterMutation()
         } catch {
             print("Failed to reset review: \(error)")
         }
@@ -114,7 +180,7 @@ final class LearningService: ObservableObject {
         modelContext.delete(record)
         do {
             try modelContext.save()
-            await refreshWords()
+            await refreshAfterMutation()
         } catch {
             print("Failed to delete word record: \(error)")
         }
@@ -124,25 +190,42 @@ final class LearningService: ObservableObject {
         do {
             try modelContext.delete(model: WordRecord.self)
             try modelContext.save()
-            await refreshWords()
+            visibleWords = []
+            totalWordCount = 0
+            pendingReviewCount = 0
+            masteredCount = 0
+            currentOffset = 0
+            hasMoreWords = false
         } catch {
             print("Failed to clear all word records: \(error)")
         }
     }
 
     func searchWords(query: String) async -> [WordRecord] {
-        guard !query.isEmpty else { return allWords }
-
         let normalizedQuery = query.lowercased()
         do {
             let descriptor = FetchDescriptor<WordRecord>(
                 predicate: #Predicate { $0.word.contains(normalizedQuery) },
-                sortBy: [SortDescriptor(\.lookupCount, order: .reverse)]
+                sortBy: Self.wordSortDescriptors
             )
             return try modelContext.fetch(descriptor)
         } catch {
             print("Failed to search words: \(error)")
-            return allWords.filter { $0.word.contains(normalizedQuery) }
+            return []
+        }
+    }
+
+    func exportRows(filter: LearningWordFilter, searchText: String) async -> [LearningExportRow] {
+        do {
+            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let descriptor = FetchDescriptor<WordRecord>(
+                predicate: listPredicate(filter: filter, searchText: query, now: Date()),
+                sortBy: Self.wordSortDescriptors
+            )
+            return try modelContext.fetch(descriptor).map { LearningExportRow(record: $0) }
+        } catch {
+            print("Failed to fetch learning export rows: \(error)")
+            return []
         }
     }
 
@@ -184,7 +267,7 @@ final class LearningService: ObservableObject {
                 try modelContext.save()
             }
 
-            await refreshWords()
+            await refreshAfterMutation()
         } catch {
             print("Failed to cleanup old records: \(error)")
         }
@@ -199,6 +282,49 @@ final class LearningService: ObservableObject {
         } catch {
             print("Failed to fetch count: \(error)")
             return 0
+        }
+    }
+
+    private func refreshAfterMutation() async {
+        await refreshSummaryCounts()
+        await reloadWords(filter: currentFilter, searchText: currentSearchText)
+    }
+
+    private func pendingReviewPredicate(now: Date) -> Predicate<WordRecord> {
+        #Predicate { record in
+            if let nextReviewDate = record.nextReviewDate {
+                !record.isMastered && nextReviewDate <= now
+            } else {
+                false
+            }
+        }
+    }
+
+    private func listPredicate(
+        filter: LearningWordFilter,
+        searchText: String,
+        now: Date
+    ) -> Predicate<WordRecord>? {
+        let query = searchText
+        switch (filter, query.isEmpty) {
+        case (.all, true):
+            return nil
+        case (.all, false):
+            return #Predicate { $0.word.contains(query) }
+        case (.pendingReview, true):
+            return pendingReviewPredicate(now: now)
+        case (.pendingReview, false):
+            return #Predicate { record in
+                if let nextReviewDate = record.nextReviewDate {
+                    record.word.contains(query) && !record.isMastered && nextReviewDate <= now
+                } else {
+                    false
+                }
+            }
+        case (.mastered, true):
+            return #Predicate { $0.isMastered }
+        case (.mastered, false):
+            return #Predicate { $0.isMastered && $0.word.contains(query) }
         }
     }
 }
