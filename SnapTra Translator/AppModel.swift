@@ -81,25 +81,41 @@ enum OverlayDictionarySectionState: Equatable {
     case failed(String)
 }
 
+struct ParagraphTranslationLanguageOption: Equatable, Identifiable {
+    let identifier: String
+    let displayName: String
+
+    var id: String { identifier }
+}
+
 struct ParagraphOverlayContent: Equatable {
     var originalText: String?
     var translationState: ParagraphOverlayTranslationState
     var serviceResults: [ServiceTranslationResult]
     var bodyFontSize: CGFloat
     var useFixedFontSize: Bool
+    var languageOptions: [ParagraphTranslationLanguageOption]
+    var sourceLanguageIdentifier: String?
+    var selectedTargetLanguageIdentifier: String?
 
     init(
         originalText: String? = nil,
         translationState: ParagraphOverlayTranslationState,
         serviceResults: [ServiceTranslationResult] = [],
         bodyFontSize: CGFloat = 13,
-        useFixedFontSize: Bool = false
+        useFixedFontSize: Bool = false,
+        languageOptions: [ParagraphTranslationLanguageOption] = [],
+        sourceLanguageIdentifier: String? = nil,
+        selectedTargetLanguageIdentifier: String? = nil
     ) {
         self.originalText = originalText
         self.translationState = translationState
         self.serviceResults = serviceResults
         self.bodyFontSize = bodyFontSize
         self.useFixedFontSize = useFixedFontSize
+        self.languageOptions = languageOptions
+        self.sourceLanguageIdentifier = sourceLanguageIdentifier
+        self.selectedTargetLanguageIdentifier = selectedTargetLanguageIdentifier
     }
 }
 
@@ -227,6 +243,7 @@ final class AppModel: ObservableObject {
     private var activeLookupMode: ActiveLookupMode = .word
     private var lastAvailabilityKey: String?
     private var cachedLanguageStatuses: [String: CachedLanguageAvailabilityStatus] = [:]
+    private var paragraphTranslationTask: Task<Void, Never>?
 
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
@@ -761,6 +778,7 @@ final class AppModel: ObservableObject {
 
         let enabledServices = settings.sentenceTranslationSources
             .filter { $0.isEnabled && !$0.isNative }
+        let languageOptions = paragraphLanguageOptions(for: languagePair)
 
         let initialContent = ParagraphOverlayContent(
             originalText: snapshot.text,
@@ -769,7 +787,10 @@ final class AppModel: ObservableObject {
                 ServiceTranslationResult(sourceType: source.type, state: .loading)
             },
             bodyFontSize: 14,
-            useFixedFontSize: true
+            useFixedFontSize: true,
+            languageOptions: languageOptions,
+            sourceLanguageIdentifier: languagePair.sourceIdentifier,
+            selectedTargetLanguageIdentifier: languagePair.targetIdentifier
         )
         updateOverlay(state: .paragraphResult(initialContent), anchor: mouseLocation)
 
@@ -873,8 +894,8 @@ final class AppModel: ObservableObject {
 
                 let enabledServices = settings.sentenceTranslationSources
                     .filter { $0.isEnabled && !$0.isNative }
+                let languageOptions = paragraphLanguageOptions(for: languagePair)
 
-                // Create initial service results with loading state
                 let initialServiceResults = enabledServices.map { source in
                     ServiceTranslationResult(sourceType: source.type, state: .loading)
                 }
@@ -883,7 +904,10 @@ final class AppModel: ObservableObject {
                     originalText: paragraph.text,
                     translationState: .loading,
                     serviceResults: initialServiceResults,
-                    bodyFontSize: bodyFontSize
+                    bodyFontSize: bodyFontSize,
+                    languageOptions: languageOptions,
+                    sourceLanguageIdentifier: languagePair.sourceIdentifier,
+                    selectedTargetLanguageIdentifier: languagePair.targetIdentifier
                 )
                 updateOverlay(state: .paragraphResult(initialContent), anchor: mouseLocation)
 
@@ -1079,6 +1103,64 @@ final class AppModel: ObservableObject {
     ) {
         updateParagraphOverlayContent(for: lookupID, anchor: anchor) { content in
             content.translationState = state
+        }
+    }
+
+    func translateParagraphOriginal(to targetIdentifier: String) {
+        guard case .paragraphResult(let content) = overlayState,
+              content.selectedTargetLanguageIdentifier != targetIdentifier,
+              let sourceIdentifier = content.sourceLanguageIdentifier,
+              let originalText = content.originalText?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !originalText.isEmpty else {
+            return
+        }
+
+        let languagePair = LookupLanguagePair.fixed(
+            sourceIdentifier: sourceIdentifier,
+            targetIdentifier: targetIdentifier
+        )
+
+        paragraphTranslationTask?.cancel()
+        let lookupID = UUID()
+        activeLookupID = lookupID
+        let anchor = overlayAnchor
+        let enabledServices = settings.sentenceTranslationSources
+            .filter { $0.isEnabled && !$0.isNative }
+
+        updateParagraphOverlayContentIgnoringLookup(anchor: anchor) { content in
+            content.translationState = .loading
+            content.serviceResults = enabledServices.map { source in
+                ServiceTranslationResult(sourceType: source.type, state: .loading)
+            }
+            content.selectedTargetLanguageIdentifier = targetIdentifier
+        }
+
+        paragraphTranslationTask = Task { [weak self] in
+            guard let self else { return }
+
+            async let thirdPartyTranslations: Void = self.performThirdPartySentenceTranslations(
+                text: originalText,
+                sourceLanguage: languagePair.sourceIdentifier,
+                targetLanguage: languagePair.targetIdentifier,
+                enabledServices: enabledServices,
+                lookupID: lookupID,
+                anchor: anchor
+            )
+
+            let translationState = await self.loadSentenceTranslationState(
+                text: originalText,
+                languagePair: languagePair,
+                sourceLanguage: languagePair.sourceLanguage,
+                targetLanguage: languagePair.targetLanguage,
+                translationBridge: self.translationBridge
+            )
+
+            self.applyParagraphTranslationState(
+                translationState,
+                lookupID: lookupID,
+                anchor: anchor
+            )
+            _ = await thirdPartyTranslations
         }
     }
 
@@ -1280,6 +1362,20 @@ final class AppModel: ObservableObject {
     ) {
         guard activeLookupID == lookupID,
               case .paragraphResult(var content) = overlayState else {
+            return
+        }
+
+        let previousContent = content
+        mutate(&content)
+        guard content != previousContent else { return }
+        updateOverlay(state: .paragraphResult(content), anchor: anchor)
+    }
+
+    private func updateParagraphOverlayContentIgnoringLookup(
+        anchor: CGPoint,
+        mutate: (inout ParagraphOverlayContent) -> Void
+    ) {
+        guard case .paragraphResult(var content) = overlayState else {
             return
         }
 
@@ -1544,6 +1640,26 @@ final class AppModel: ObservableObject {
 
     private func resolveParagraphLanguagePair(for text: String) -> LookupLanguagePair {
         resolveLookupLanguagePair(for: text)
+    }
+
+    private func paragraphLanguageOptions(for pair: LookupLanguagePair) -> [ParagraphTranslationLanguageOption] {
+        guard settings.bidirectionalTranslationEnabled,
+              LookupLanguagePairResolver.supportsBidirectionalDetection(for: configuredLanguagePair()) else {
+            return []
+        }
+
+        return [settings.sourceLanguage, settings.targetLanguage].map { identifier in
+            ParagraphTranslationLanguageOption(
+                identifier: identifier,
+                displayName: displayName(forLanguageIdentifier: identifier)
+            )
+        }
+    }
+
+    private func displayName(forLanguageIdentifier identifier: String) -> String {
+        AppLanguage(rawValue: identifier)?.displayName
+            ?? Locale.current.localizedString(forIdentifier: identifier)
+            ?? identifier
     }
 
     private func dictionarySources(for pair: LookupLanguagePair) -> [DictionarySource] {

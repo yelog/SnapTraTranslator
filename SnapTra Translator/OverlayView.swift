@@ -270,12 +270,11 @@ struct OverlayView: View {
                         .padding(.top, 4)
                     }
                     .padding(.horizontal, paragraphTextHorizontalPadding)
-                    .padding(.bottom, 14)
+                    .padding(.bottom, 10)
 
-                    // Divider after original text
-                    Divider()
+                    paragraphLanguageSelector(content: content)
                         .padding(.horizontal, paragraphTextHorizontalPadding)
-                        .opacity(0.6)
+                        .padding(.bottom, 2)
 
                     // Native Translation Section (System Translation)
                     switch content.translationState {
@@ -339,6 +338,74 @@ struct OverlayView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func paragraphLanguageSelector(content: ParagraphOverlayContent) -> some View {
+        if content.languageOptions.count == 2,
+           let selectedIdentifier = content.selectedTargetLanguageIdentifier {
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.18))
+                    .frame(height: 1)
+
+                HStack(spacing: 2) {
+                    ForEach(content.languageOptions) { option in
+                        paragraphLanguageOptionButton(
+                            option: option,
+                            isSelected: Locale.Language(identifier: option.identifier).minimalIdentifier == Locale.Language(identifier: selectedIdentifier).minimalIdentifier
+                        )
+                    }
+                }
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
+                .padding(2)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.045))
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(Color.secondary.opacity(0.14), lineWidth: 0.5)
+                )
+                .padding(.horizontal, 8)
+
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.18))
+                    .frame(height: 1)
+            }
+        } else {
+            Divider()
+                .opacity(0.6)
+        }
+    }
+
+    private func paragraphLanguageOptionButton(
+        option: ParagraphTranslationLanguageOption,
+        isSelected: Bool
+    ) -> some View {
+        Button {
+            model.translateParagraphOriginal(to: option.identifier)
+        } label: {
+            Text(option.displayName)
+                .font(.system(size: 11, weight: isSelected ? .semibold : .medium, design: .rounded))
+                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(isSelected ? selectedParagraphLanguageOptionBackground : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(isSelected)
+        .accessibilityLabel(Text(L("Translate to") + " " + option.displayName))
+    }
+
+    private var selectedParagraphLanguageOptionBackground: Color {
+        colorScheme == .dark ? Color.white.opacity(0.16) : Color.white.opacity(0.9)
     }
 
     @ViewBuilder
