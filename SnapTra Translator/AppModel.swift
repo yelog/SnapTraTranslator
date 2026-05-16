@@ -1120,6 +1120,52 @@ final class AppModel: ObservableObject {
             targetIdentifier: targetIdentifier
         )
 
+        translateCurrentParagraphOriginal(
+            originalText: originalText,
+            languagePair: languagePair,
+            selectedTargetLanguageIdentifier: targetIdentifier
+        )
+    }
+
+    func updateParagraphOriginalText(_ text: String) {
+        updateParagraphOverlayContentIgnoringLookup(anchor: overlayAnchor) { content in
+            content.originalText = text
+        }
+    }
+
+    func submitParagraphOriginalText() {
+        guard case .paragraphResult(let content) = overlayState,
+              let originalText = content.originalText?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !originalText.isEmpty else {
+            return
+        }
+
+        let languagePair: LookupLanguagePair
+        if let sourceIdentifier = content.sourceLanguageIdentifier,
+           let targetIdentifier = content.selectedTargetLanguageIdentifier {
+            languagePair = LookupLanguagePair.fixed(
+                sourceIdentifier: sourceIdentifier,
+                targetIdentifier: targetIdentifier
+            )
+        } else {
+            languagePair = resolveParagraphLanguagePair(for: originalText)
+        }
+
+        translateCurrentParagraphOriginal(
+            originalText: originalText,
+            languagePair: languagePair,
+            selectedTargetLanguageIdentifier: languagePair.targetIdentifier
+        )
+    }
+
+    private func translateCurrentParagraphOriginal(
+        originalText: String,
+        languagePair: LookupLanguagePair,
+        selectedTargetLanguageIdentifier: String
+    ) {
+        let originalText = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !originalText.isEmpty else { return }
+
         paragraphTranslationTask?.cancel()
         let lookupID = UUID()
         activeLookupID = lookupID
@@ -1132,7 +1178,10 @@ final class AppModel: ObservableObject {
             content.serviceResults = enabledServices.map { source in
                 ServiceTranslationResult(sourceType: source.type, state: .loading)
             }
-            content.selectedTargetLanguageIdentifier = targetIdentifier
+            content.originalText = originalText
+            content.sourceLanguageIdentifier = languagePair.sourceIdentifier
+            content.selectedTargetLanguageIdentifier = selectedTargetLanguageIdentifier
+            content.languageOptions = paragraphLanguageOptions(for: languagePair)
         }
 
         paragraphTranslationTask = Task { [weak self] in

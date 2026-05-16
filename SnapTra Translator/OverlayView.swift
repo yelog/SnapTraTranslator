@@ -63,6 +63,10 @@ struct OverlayView: View {
         isParagraphOverlayMode && model.isParagraphOverlayPinned
     }
 
+    private var canEditParagraphOriginalText: Bool {
+        isParagraphOverlayMode && model.isParagraphOverlayPinned
+    }
+
     private var isVisible: Bool {
         if case .idle = model.overlayState { return false }
         return true
@@ -238,7 +242,10 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func paragraphResultView(content: ParagraphOverlayContent) -> some View {
-        let optimalFontSize: CGFloat = if content.useFixedFontSize {
+        let originalText = content.originalText ?? ""
+        let hasOriginalText = !originalText.isEmpty
+        let showsOriginalTextRegion = hasOriginalText || canEditParagraphOriginalText
+        let originalFontSize: CGFloat = if content.useFixedFontSize {
             content.bodyFontSize
         } else {
             ParagraphFontSizing.optimalFontSize(
@@ -248,29 +255,30 @@ struct OverlayView: View {
                 horizontalPadding: paragraphTextHorizontalPadding
             )
         }
+        let translationFontSize: CGFloat = if canEditParagraphOriginalText {
+            ParagraphFontSizing.stableFontSize(preferredFontSize: content.bodyFontSize)
+        } else {
+            originalFontSize
+        }
 
         VStack(alignment: .leading, spacing: 0) {
-            if let originalText = content.originalText,
-               !originalText.isEmpty {
+            if showsOriginalTextRegion {
                 paragraphOriginalTopBar(copyText: originalText)
             } else {
                 paragraphTopBar()
             }
 
             paragraphBodyContainer {
-                if let originalText = content.originalText,
-                   !originalText.isEmpty {
+                if showsOriginalTextRegion {
                     VStack(alignment: .leading, spacing: 0) {
-                        paragraphTextContent(
+                        paragraphOriginalTextView(
                             text: originalText,
-                            font: .systemFont(ofSize: optimalFontSize, weight: .medium),
-                            textColor: .labelColor,
-                            preferredLineHeight: optimalFontSize * 1.5
+                            fontSize: originalFontSize
                         )
                         .padding(.top, 4)
                     }
                     .padding(.horizontal, paragraphTextHorizontalPadding)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, canEditParagraphOriginalText ? 12 : 10)
 
                     paragraphLanguageSelector(content: content)
                         .padding(.horizontal, paragraphTextHorizontalPadding)
@@ -304,9 +312,9 @@ struct OverlayView: View {
 
                             paragraphTextContent(
                                 text: translatedText,
-                                font: .systemFont(ofSize: optimalFontSize, weight: .semibold),
+                                font: .systemFont(ofSize: translationFontSize, weight: .semibold),
                                 textColor: .labelColor,
-                                preferredLineHeight: optimalFontSize * 1.5
+                                preferredLineHeight: translationFontSize * 1.5
                             )
                         }
                         .padding(.horizontal, paragraphTextHorizontalPadding)
@@ -327,7 +335,7 @@ struct OverlayView: View {
                                 .padding(.horizontal, paragraphTextHorizontalPadding)
                                 .opacity(0.6)
 
-                            paragraphServiceResultCard(result: result, fontSize: optimalFontSize)
+                            paragraphServiceResultCard(result: result, fontSize: translationFontSize)
                         }
                     }
                 } else if case .failed(let message) = content.translationState {
@@ -337,6 +345,55 @@ struct OverlayView: View {
                         .padding(.vertical, 18)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func paragraphOriginalTextView(text: String, fontSize: CGFloat) -> some View {
+        if canEditParagraphOriginalText {
+            editableParagraphOriginalTextView(text: text)
+        } else {
+            if !text.isEmpty {
+                paragraphTextContent(
+                    text: text,
+                    font: .systemFont(ofSize: fontSize, weight: .medium),
+                    textColor: .labelColor,
+                    preferredLineHeight: fontSize * 1.5
+                )
+            }
+        }
+    }
+
+    private func editableParagraphOriginalTextView(text: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            EditableParagraphTextView(
+                text: text,
+                placeholder: L("Type or paste text to translate"),
+                font: .systemFont(ofSize: 14, weight: .regular),
+                textColor: .labelColor,
+                placeholderColor: .placeholderTextColor,
+                preferredLineHeight: 20,
+                onTextChange: { newText in
+                    if newText != text {
+                        model.updateParagraphOriginalText(newText)
+                    }
+                },
+                onSubmit: { model.submitParagraphOriginalText() }
+            )
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(colorScheme == .dark ? Color.white.opacity(0.055) : Color.white.opacity(0.82))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+            )
+
+            Text(L("Return to translate · Shift-Return for line break"))
+                .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -1361,6 +1418,10 @@ enum ParagraphFontSizing {
         return min(max(preferredFontSize, minFontSize), maxFontSize)
     }
 
+    static func stableFontSize(preferredFontSize: CGFloat) -> CGFloat {
+        min(normalizedPreferredFontSize(preferredFontSize) * preferredUpscaleFactor, maxFontSize)
+    }
+
     static func fittingFontSizeForOriginalText(
         _ originalText: String?,
         targetFontSize: CGFloat,
@@ -1497,6 +1558,90 @@ private struct SelectableTextView: NSViewRepresentable {
         }
 
         return nsView.measuredSize(forWidth: width)
+    }
+}
+
+private struct EditableParagraphTextView: NSViewRepresentable {
+    let text: String
+    let placeholder: String
+    let font: NSFont
+    let textColor: NSColor
+    let placeholderColor: NSColor
+    let preferredLineHeight: CGFloat
+    let onTextChange: (String) -> Void
+    let onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onTextChange: onTextChange, onSubmit: onSubmit)
+    }
+
+    func makeNSView(context: Context) -> EditableParagraphTextContainerView {
+        let textView = EditableParagraphTextContainerView(frame: .zero)
+        textView.update(
+            text: text,
+            placeholder: placeholder,
+            font: font,
+            textColor: textColor,
+            placeholderColor: placeholderColor,
+            preferredLineHeight: preferredLineHeight,
+            coordinator: context.coordinator
+        )
+        return textView
+    }
+
+    func updateNSView(_ textView: EditableParagraphTextContainerView, context: Context) {
+        context.coordinator.onTextChange = onTextChange
+        context.coordinator.onSubmit = onSubmit
+        textView.update(
+            text: text,
+            placeholder: placeholder,
+            font: font,
+            textColor: textColor,
+            placeholderColor: placeholderColor,
+            preferredLineHeight: preferredLineHeight,
+            coordinator: context.coordinator
+        )
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: EditableParagraphTextContainerView, context: Context) -> CGSize? {
+        guard let width = proposal.width, width > 0 else {
+            return CGSize(width: 0, height: preferredLineHeight)
+        }
+
+        return nsView.measuredSize(forWidth: width)
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var onTextChange: (String) -> Void
+        var onSubmit: () -> Void
+
+        init(
+            onTextChange: @escaping (String) -> Void,
+            onSubmit: @escaping () -> Void
+        ) {
+            self.onTextChange = onTextChange
+            self.onSubmit = onSubmit
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            if let containerView = textView.superview as? EditableParagraphTextContainerView {
+                containerView.handleTextDidChange()
+            }
+            onTextChange(textView.string)
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+                    return false
+                }
+                onSubmit()
+                return true
+            }
+
+            return false
+        }
     }
 }
 
@@ -1729,6 +1874,205 @@ private final class SelectableTextContainerView: NSView {
             textColor: textColor,
             preferredLineHeight: preferredLineHeight
         )
+    }
+}
+
+private final class EditableParagraphTextContainerView: NSView {
+    private let textView: NSTextView
+    private let placeholderLabel: NSTextField
+    private var cachedMeasurement: (width: CGFloat, height: CGFloat)?
+    private var preferredLineHeight: CGFloat = 20
+
+    override var isFlipped: Bool { true }
+
+    override init(frame frameRect: NSRect) {
+        textView = NSTextView(frame: .zero)
+        placeholderLabel = NSTextField(labelWithString: "")
+        super.init(frame: frameRect)
+        configureTextView()
+        configurePlaceholderLabel()
+        addSubview(textView)
+        addSubview(placeholderLabel)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func update(
+        text: String,
+        placeholder: String,
+        font: NSFont,
+        textColor: NSColor,
+        placeholderColor: NSColor,
+        preferredLineHeight: CGFloat,
+        coordinator: EditableParagraphTextView.Coordinator
+    ) {
+        self.preferredLineHeight = preferredLineHeight
+        textView.delegate = coordinator
+        textView.font = font
+        textView.textColor = textColor
+        textView.typingAttributes = typingAttributes(
+            font: font,
+            textColor: textColor,
+            preferredLineHeight: preferredLineHeight
+        )
+        placeholderLabel.stringValue = placeholder
+        placeholderLabel.font = font
+        placeholderLabel.textColor = placeholderColor
+
+        if textView.string != text {
+            textView.textStorage?.setAttributedString(
+                makeAttributedString(
+                    text: text,
+                    font: font,
+                    textColor: textColor,
+                    preferredLineHeight: preferredLineHeight
+                )
+            )
+        }
+        updatePlaceholderVisibility()
+        cachedMeasurement = nil
+        invalidateIntrinsicContentSize()
+        needsLayout = true
+    }
+
+    func handleTextDidChange() {
+        updatePlaceholderVisibility()
+        cachedMeasurement = nil
+        invalidateIntrinsicContentSize()
+        needsLayout = true
+    }
+
+    func measuredSize(forWidth width: CGFloat) -> CGSize {
+        let resolvedWidth = max(1, ceil(width))
+        let height = measuredHeight(forWidth: resolvedWidth)
+        return CGSize(width: resolvedWidth, height: height)
+    }
+
+    override var intrinsicContentSize: CGSize {
+        let width = bounds.width > 0 ? bounds.width : cachedMeasurement?.width ?? 0
+        guard width > 0 else {
+            return CGSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+        }
+        return CGSize(width: NSView.noIntrinsicMetric, height: measuredHeight(forWidth: width))
+    }
+
+    override func layout() {
+        super.layout()
+
+        let width = bounds.width > 0 ? bounds.width : cachedMeasurement?.width ?? 0
+        guard width > 0 else { return }
+
+        let height = measuredHeight(forWidth: width)
+        textView.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        placeholderLabel.frame = CGRect(x: 0, y: 0, width: width, height: preferredLineHeight)
+    }
+
+    private func measuredHeight(forWidth width: CGFloat) -> CGFloat {
+        if let cachedMeasurement,
+           abs(cachedMeasurement.width - width) <= 0.5 {
+            return cachedMeasurement.height
+        }
+
+        guard let textContainer = textView.textContainer,
+              let layoutManager = textView.layoutManager else {
+            return preferredLineHeight
+        }
+
+        let resolvedWidth = max(1, ceil(width))
+        textContainer.containerSize = CGSize(
+            width: resolvedWidth,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        if textView.frame.width != resolvedWidth {
+            textView.frame = CGRect(x: 0, y: 0, width: resolvedWidth, height: textView.frame.height)
+        }
+
+        let glyphRange = layoutManager.glyphRange(for: textContainer)
+        layoutManager.ensureLayout(for: textContainer)
+
+        var maxLineFragmentY: CGFloat = 0
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, usedRect, _, _, _ in
+            maxLineFragmentY = max(maxLineFragmentY, usedRect.maxY)
+        }
+
+        if layoutManager.extraLineFragmentTextContainer == textContainer {
+            maxLineFragmentY = max(maxLineFragmentY, layoutManager.extraLineFragmentRect.maxY)
+        }
+
+        let resolvedHeight = max(preferredLineHeight, ceil(maxLineFragmentY))
+        cachedMeasurement = (width, resolvedHeight)
+        return resolvedHeight
+    }
+
+    private func configureTextView() {
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
+        textView.focusRingType = .none
+        textView.textContainerInset = .zero
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = false
+        textView.minSize = .zero
+        textView.maxSize = CGSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.autoresizingMask = []
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = false
+        textView.textContainer?.heightTracksTextView = false
+        textView.textContainer?.lineBreakMode = .byWordWrapping
+    }
+
+    private func configurePlaceholderLabel() {
+        placeholderLabel.isBezeled = false
+        placeholderLabel.drawsBackground = false
+        placeholderLabel.isEditable = false
+        placeholderLabel.isSelectable = false
+        placeholderLabel.lineBreakMode = .byTruncatingTail
+        placeholderLabel.maximumNumberOfLines = 1
+        placeholderLabel.alphaValue = 0.75
+    }
+
+    private func makeAttributedString(
+        text: String,
+        font: NSFont,
+        textColor: NSColor,
+        preferredLineHeight: CGFloat
+    ) -> NSAttributedString {
+        ParagraphTextAttributedStringBuilder.build(
+            text: text,
+            font: font,
+            textColor: textColor,
+            preferredLineHeight: preferredLineHeight
+        )
+    }
+
+    private func typingAttributes(
+        font: NSFont,
+        textColor: NSColor,
+        preferredLineHeight: CGFloat
+    ) -> [NSAttributedString.Key: Any] {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.minimumLineHeight = preferredLineHeight
+        paragraphStyle.maximumLineHeight = preferredLineHeight
+        paragraphStyle.lineBreakMode = .byWordWrapping
+
+        return [
+            .font: font,
+            .foregroundColor: textColor,
+            .paragraphStyle: paragraphStyle,
+        ]
+    }
+
+    private func updatePlaceholderVisibility() {
+        placeholderLabel.isHidden = !textView.string.isEmpty
     }
 }
 
