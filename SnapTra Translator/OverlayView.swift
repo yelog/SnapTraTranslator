@@ -275,14 +275,14 @@ struct OverlayView: View {
                             text: originalText,
                             fontSize: originalFontSize
                         )
-                        .padding(.top, 4)
+                        .padding(.top, canEditParagraphOriginalText ? 2 : 4)
                     }
                     .padding(.horizontal, paragraphTextHorizontalPadding)
-                    .padding(.bottom, canEditParagraphOriginalText ? 12 : 10)
+                    .padding(.bottom, canEditParagraphOriginalText ? 10 : 10)
 
                     paragraphLanguageSelector(content: content)
                         .padding(.horizontal, paragraphTextHorizontalPadding)
-                        .padding(.bottom, 2)
+                        .padding(.bottom, canEditParagraphOriginalText ? 6 : 2)
 
                     // Native Translation Section (System Translation)
                     switch content.translationState {
@@ -318,7 +318,8 @@ struct OverlayView: View {
                             )
                         }
                         .padding(.horizontal, paragraphTextHorizontalPadding)
-                        .padding(.vertical, 14)
+                        .padding(.top, canEditParagraphOriginalText ? 12 : 14)
+                        .padding(.bottom, 14)
 
                     case .failed(let message):
                         VStack(alignment: .leading, spacing: 0) {
@@ -365,14 +366,14 @@ struct OverlayView: View {
     }
 
     private func editableParagraphOriginalTextView(text: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 7) {
             EditableParagraphTextView(
                 text: text,
                 placeholder: L("Type or paste text to translate"),
-                font: .systemFont(ofSize: 14, weight: .regular),
+                font: .systemFont(ofSize: 14.5, weight: .regular),
                 textColor: .labelColor,
                 placeholderColor: .placeholderTextColor,
-                preferredLineHeight: 20,
+                preferredLineHeight: 21,
                 onTextChange: { newText in
                     if newText != text {
                         model.updateParagraphOriginalText(newText)
@@ -380,31 +381,48 @@ struct OverlayView: View {
                 },
                 onSubmit: { model.submitParagraphOriginalText() }
             )
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(colorScheme == .dark ? Color.white.opacity(0.055) : Color.white.opacity(0.82))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(paragraphEditorFillColor)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(paragraphEditorStrokeColor, lineWidth: 1)
             )
+            .shadow(color: paragraphEditorShadowColor, radius: 1.5, x: 0, y: 1)
 
-            Text(L("Return to translate · Shift-Return for line break"))
-                .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Image(systemName: "return")
+                    .font(.system(size: 9.5, weight: .semibold))
+
+                Text(L("Return to translate · Shift-Return for line break"))
+                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
+            }
+            .foregroundStyle(.tertiary)
+            .padding(.leading, 2)
         }
+    }
+
+    private var paragraphEditorFillColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.05) : Color.white.opacity(0.58)
+    }
+
+    private var paragraphEditorStrokeColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.055)
+    }
+
+    private var paragraphEditorShadowColor: Color {
+        colorScheme == .dark ? Color.black.opacity(0.12) : Color.black.opacity(0.025)
     }
 
     @ViewBuilder
     private func paragraphLanguageSelector(content: ParagraphOverlayContent) -> some View {
         if content.languageOptions.count == 2,
            let selectedIdentifier = content.selectedTargetLanguageIdentifier {
-            HStack(spacing: 0) {
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.18))
-                    .frame(height: 1)
+            HStack {
+                Spacer(minLength: 0)
 
                 HStack(spacing: 2) {
                     ForEach(content.languageOptions) { option in
@@ -419,17 +437,14 @@ struct OverlayView: View {
                 .padding(2)
                 .background(
                     Capsule(style: .continuous)
-                        .fill(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.045))
+                        .fill(colorScheme == .dark ? .white.opacity(0.075) : .black.opacity(0.04))
                 )
                 .overlay(
                     Capsule(style: .continuous)
-                        .stroke(Color.secondary.opacity(0.14), lineWidth: 0.5)
+                        .stroke(Color.secondary.opacity(0.12), lineWidth: 0.5)
                 )
-                .padding(.horizontal, 8)
 
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.18))
-                    .frame(height: 1)
+                Spacer(minLength: 0)
             }
         } else {
             Divider()
