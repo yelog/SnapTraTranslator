@@ -328,6 +328,16 @@ final class AppModel: ObservableObject {
         hotkeyManager.onPersistentRelease = { [weak self] in
             self?.handlePersistentSentenceOverlayRelease()
         }
+        paragraphHighlightWindowController.onResizeBegan = { [weak self] in
+            Task { @MainActor in
+                self?.handleParagraphRegionResizeBegan()
+            }
+        }
+        paragraphHighlightWindowController.onResizeCompleted = { [weak self] rect in
+            Task { @MainActor in
+                self?.handleParagraphRegionResizeCompleted(rect)
+            }
+        }
         resolvedPermissions.refreshStatus()
         Task {
             await checkLanguageAvailability(notifyUser: false)
@@ -526,6 +536,33 @@ final class AppModel: ObservableObject {
         activeLookupID = lookupID
         lookupTask = Task { [weak self] in
             await self?.performParagraphLookup(lookupID: lookupID)
+        }
+    }
+
+    private func handleParagraphRegionResizeBegan() {
+        overlayWindowController.hideWindowOnly()
+    }
+
+    private func handleParagraphRegionResizeCompleted(_ rect: CGRect) {
+        guard rect.width > 0, rect.height > 0 else { return }
+        guard permissions.status.screenRecording else {
+            updateOverlay(state: .error(L("Enable Screen Recording")), anchor: overlayAnchor)
+            return
+        }
+
+        activeLookupMode = .ocrSentence
+        isHotkeyActive = true
+        cancelActiveLookupWork()
+
+        let lookupID = UUID()
+        activeLookupID = lookupID
+        activeParagraphRect = rect
+        overlayPreferredWidth = max(320, rect.width)
+        setOverlayAnchor(CGPoint(x: rect.midX, y: rect.minY))
+        updateOverlay(state: .paragraphLoading, anchor: overlayAnchor)
+
+        lookupTask = Task { [weak self] in
+            await self?.performManualParagraphRegionLookup(rect: rect, lookupID: lookupID)
         }
     }
 
@@ -950,6 +987,111 @@ final class AppModel: ObservableObject {
                 translationState: .failed("Translation failed: \(error.localizedDescription)")
             )
             updateOverlay(state: .paragraphResult(content), anchor: mouseLocation)
+        }
+    }
+
+    private func performManualParagraphRegionLookup(rect: CGRect, lookupID: UUID) async {
+        guard !Task.isCancelled, activeLookupID == lookupID else { return }
+        let anchor = overlayAnchor
+
+        guard let capture = await captureService.capture(rect: rect) else {
+            let content = ParagraphOverlayContent(
+                originalText: nil,
+                translationState: .failed(L("Capture failed"))
+            )
+            updateOverlay(state: .paragraphResult(content), anchor: anchor)
+            return
+        }
+
+        do {
+            let (_, lines) = try await ocrService.recognizeParagraphsWithRawLines(
+                in: capture.image,
+                language: settings.sourceLanguage
+            )
+            guard !Task.isCancelled, activeLookupID == lookupID else { return }
+
+            let text = OCRService.recognizedText(from: lines)
+            guard !text.isEmpty else {
+                let content = ParagraphOverlayContent(
+                    originalText: nil,
+                    translationState: .failed("No text detected in selected region")
+                )
+                updateOverlay(state: .paragraphResult(content), anchor: anchor)
+                return
+            }
+
+            activeParagraphRect = capture.region.rect
+            overlayPreferredWidth = max(320, capture.region.rect.width)
+
+            let bodyFontSize = estimatedDisplayFontSize(from: lines, in: capture.region.rect)
+            let languagePair = resolveParagraphLanguagePair(for: text)
+            let sourceLanguage = languagePair.sourceLanguage
+
+            if settings.playSentencePronunciation {
+                let languageCode = sourceLanguage.languageCode?.identifier
+                speechService.speak(
+                    text,
+                    language: languageCode,
+                    provider: settings.sentenceTTSProvider,
+                    useAmericanAccent: settings.englishAccent.isAmerican
+                )
+            }
+
+            if settings.copySentence {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(text, forType: .string)
+            }
+
+            let enabledServices = settings.sentenceTranslationSources
+                .filter { $0.isEnabled && !$0.isNative }
+            let languageOptions = paragraphLanguageOptions(for: languagePair)
+
+            let initialContent = ParagraphOverlayContent(
+                originalText: text,
+                translationState: .loading,
+                serviceResults: enabledServices.map { source in
+                    ServiceTranslationResult(sourceType: source.type, state: .loading)
+                },
+                bodyFontSize: bodyFontSize,
+                languageOptions: languageOptions,
+                sourceLanguageIdentifier: languagePair.sourceIdentifier,
+                selectedTargetLanguageIdentifier: languagePair.targetIdentifier
+            )
+            updateOverlay(state: .paragraphResult(initialContent), anchor: anchor)
+
+            Task {
+                await performThirdPartySentenceTranslations(
+                    text: text,
+                    sourceLanguage: languagePair.sourceIdentifier,
+                    targetLanguage: languagePair.targetIdentifier,
+                    enabledServices: enabledServices,
+                    lookupID: lookupID,
+                    anchor: anchor
+                )
+            }
+
+            let translationState = await loadSentenceTranslationState(
+                text: text,
+                languagePair: languagePair,
+                sourceLanguage: sourceLanguage,
+                targetLanguage: languagePair.targetLanguage,
+                translationBridge: translationBridge
+            )
+
+            applyParagraphTranslationState(
+                translationState,
+                lookupID: lookupID,
+                anchor: anchor
+            )
+        } catch is CancellationError {
+            return
+        } catch {
+            let content = ParagraphOverlayContent(
+                originalText: nil,
+                translationState: .failed("Translation failed: \(error.localizedDescription)")
+            )
+            updateOverlay(state: .paragraphResult(content), anchor: anchor)
         }
     }
 
@@ -1909,6 +2051,12 @@ final class AppModel: ObservableObject {
             width: normalizedRect.width * captureRect.width,
             height: normalizedRect.height * captureRect.height
         )
+    }
+
+    private func estimatedDisplayFontSize(from lines: [RecognizedTextLine], in captureRect: CGRect) -> CGFloat {
+        guard !lines.isEmpty else { return 14 }
+        let averageHeight = lines.map(\.boundingBox.height).reduce(0, +) / CGFloat(lines.count)
+        return max(11, averageHeight * captureRect.height * 0.75)
     }
 
     private static func lookupDictionarySection(

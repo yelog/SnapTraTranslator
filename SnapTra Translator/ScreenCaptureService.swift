@@ -83,6 +83,41 @@ final class ScreenCaptureService {
         }
     }
 
+    func capture(rect requestedRect: CGRect) async -> (image: CGImage, region: CaptureRegion)? {
+        guard requestedRect.width > 0, requestedRect.height > 0 else {
+            return nil
+        }
+
+        let midpoint = CGPoint(x: requestedRect.midX, y: requestedRect.midY)
+        guard let screen = screen(containing: midpoint) else {
+            return nil
+        }
+        guard let displayNumber = screen.deviceDescription[.init("NSScreenNumber")] as? NSNumber else {
+            return nil
+        }
+
+        let rectInScreen = requestedRect.intersection(screen.frame)
+        guard rectInScreen.width > 1, rectInScreen.height > 1 else {
+            return nil
+        }
+
+        let displayID = CGDirectDisplayID(displayNumber.int32Value)
+        let scaleFactor = screen.backingScaleFactor
+        let cgRect = convertToDisplayLocalCoordinates(rectInScreen, screen: screen)
+
+        do {
+            let display = try await getDisplay(for: displayID)
+            guard let display else { return nil }
+
+            let filter = SCContentFilter(display: display, excludingWindows: cachedExcludedWindows)
+            let configuration = makeConfiguration(for: cgRect, scaleFactor: scaleFactor)
+            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+            return (image, CaptureRegion(rect: rectInScreen, screen: screen, displayID: displayID, scaleFactor: scaleFactor))
+        } catch {
+            return nil
+        }
+    }
+
     func invalidateCache() {
         cachedExcludedWindows = []
     }

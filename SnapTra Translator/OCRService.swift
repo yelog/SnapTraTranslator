@@ -160,6 +160,19 @@ final class OCRService {
         }
     }
 
+    nonisolated static func recognizedText(from lines: [RecognizedTextLine]) -> String {
+        lines
+            .sorted { lhs, rhs in
+                if abs(lhs.boundingBox.midY - rhs.boundingBox.midY) > 0.005 {
+                    return lhs.boundingBox.midY > rhs.boundingBox.midY
+                }
+                return lhs.boundingBox.minX < rhs.boundingBox.minX
+            }
+            .map(\.text)
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     nonisolated static func groupParagraphs(from lines: [RecognizedTextLine]) -> [RecognizedParagraph] {
         let mergedLines = mergeHorizontallyAdjacentLineFragments(in: lines)
 
