@@ -22,6 +22,25 @@ final class OCRTokenClassifierTests: XCTestCase {
         XCTAssertEqual(result, .mixed)
     }
 
+    func testDirectionalPairSwitchesSourceWhenTargetingOriginalSource() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
+
+        let result = pair.directionalPair(targeting: "en")
+
+        XCTAssertEqual(
+            result,
+            LookupLanguagePair.fixed(sourceIdentifier: "zh-Hans", targetIdentifier: "en")
+        )
+    }
+
+    func testDirectionalPairKeepsDirectionWhenTargetingOriginalTarget() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
+
+        let result = pair.directionalPair(targeting: "zh-Hans")
+
+        XCTAssertEqual(result, pair)
+    }
+
     func testBidirectionalResolverKeepsConfiguredDirectionWhenDisabled() {
         let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
 

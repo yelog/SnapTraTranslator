@@ -1259,8 +1259,8 @@ final class AppModel: ObservableObject {
 
         let languagePair = LookupLanguagePair.fixed(
             sourceIdentifier: sourceIdentifier,
-            targetIdentifier: targetIdentifier
-        )
+            targetIdentifier: content.selectedTargetLanguageIdentifier ?? settings.targetLanguage
+        ).directionalPair(targeting: targetIdentifier)
 
         translateCurrentParagraphOriginal(
             originalText: originalText,

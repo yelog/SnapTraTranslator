@@ -41,6 +41,29 @@ struct LookupLanguagePair: Equatable {
             targetIdentifier: sourceIdentifier
         )
     }
+
+    func directionalPair(targeting requestedTargetIdentifier: String) -> LookupLanguagePair {
+        let requestedTargetLanguage = Locale.Language(identifier: requestedTargetIdentifier)
+
+        if requestedTargetLanguage.minimalIdentifier == sourceLanguage.minimalIdentifier {
+            return LookupLanguagePair(
+                sourceIdentifier: targetIdentifier,
+                targetIdentifier: requestedTargetIdentifier
+            )
+        }
+
+        if requestedTargetLanguage.minimalIdentifier == targetLanguage.minimalIdentifier {
+            return LookupLanguagePair(
+                sourceIdentifier: sourceIdentifier,
+                targetIdentifier: requestedTargetIdentifier
+            )
+        }
+
+        return LookupLanguagePair(
+            sourceIdentifier: sourceIdentifier,
+            targetIdentifier: requestedTargetIdentifier
+        )
+    }
 }
 
 enum OCRTokenScript: Equatable {
