@@ -1601,6 +1601,7 @@ private struct EditableParagraphTextView: NSViewRepresentable {
             preferredLineHeight: preferredLineHeight,
             coordinator: context.coordinator
         )
+        textView.focusIfNeeded()
         return textView
     }
 
@@ -1616,6 +1617,7 @@ private struct EditableParagraphTextView: NSViewRepresentable {
             preferredLineHeight: preferredLineHeight,
             coordinator: context.coordinator
         )
+        textView.focusIfNeeded()
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: EditableParagraphTextContainerView, context: Context) -> CGSize? {
@@ -1897,6 +1899,7 @@ private final class EditableParagraphTextContainerView: NSView {
     private let placeholderLabel: NSTextField
     private var cachedMeasurement: (width: CGFloat, height: CGFloat)?
     private var preferredLineHeight: CGFloat = 20
+    private var didRequestInitialFocus = false
 
     override var isFlipped: Bool { true }
 
@@ -1960,6 +1963,15 @@ private final class EditableParagraphTextContainerView: NSView {
         needsLayout = true
     }
 
+    func focusIfNeeded() {
+        guard !didRequestInitialFocus else { return }
+        didRequestInitialFocus = true
+
+        DispatchQueue.main.async { [weak self] in
+            self?.focusTextView()
+        }
+    }
+
     func measuredSize(forWidth width: CGFloat) -> CGSize {
         let resolvedWidth = max(1, ceil(width))
         let height = measuredHeight(forWidth: resolvedWidth)
@@ -1983,6 +1995,16 @@ private final class EditableParagraphTextContainerView: NSView {
         let height = measuredHeight(forWidth: width)
         textView.frame = CGRect(x: 0, y: 0, width: width, height: height)
         placeholderLabel.frame = CGRect(x: 0, y: 0, width: width, height: preferredLineHeight)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        focusTextView()
+        textView.mouseDown(with: event)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hitView = super.hitTest(point)
+        return hitView === placeholderLabel ? self : hitView
     }
 
     private func measuredHeight(forWidth width: CGFloat) -> CGFloat {
@@ -2053,6 +2075,13 @@ private final class EditableParagraphTextContainerView: NSView {
         placeholderLabel.lineBreakMode = .byTruncatingTail
         placeholderLabel.maximumNumberOfLines = 1
         placeholderLabel.alphaValue = 0.75
+        placeholderLabel.isEnabled = false
+    }
+
+    private func focusTextView() {
+        guard let window else { return }
+        window.makeKey()
+        window.makeFirstResponder(textView)
     }
 
     private func makeAttributedString(
