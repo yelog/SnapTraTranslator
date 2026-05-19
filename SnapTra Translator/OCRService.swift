@@ -342,7 +342,9 @@ final class OCRService {
             return scriptAwareTokenRanges(in: text, range: fullRange)
         }
 
-        return tokenizerRanges.flatMap { scriptAwareTokenRanges(in: text, range: $0) }
+        let tokenizerDerivedRanges = tokenizerRanges.flatMap { scriptAwareTokenRanges(in: text, range: $0) }
+        let scriptDerivedRanges = scriptAwareTokenRanges(in: text, range: fullRange)
+        return mergedTokenRanges(tokenizerDerivedRanges + scriptDerivedRanges, in: text)
     }
 
     nonisolated private static func tokenizerWordRanges(
@@ -379,6 +381,26 @@ final class OCRService {
         }
 
         return nil
+    }
+
+    nonisolated private static func mergedTokenRanges(
+        _ ranges: [Range<String.Index>],
+        in text: String
+    ) -> [Range<String.Index>] {
+        var merged: [Range<String.Index>] = []
+
+        for range in ranges.sorted(by: { lhs, rhs in
+            if lhs.lowerBound == rhs.lowerBound {
+                return text.distance(from: lhs.lowerBound, to: lhs.upperBound)
+                    > text.distance(from: rhs.lowerBound, to: rhs.upperBound)
+            }
+            return lhs.lowerBound < rhs.lowerBound
+        }) {
+            guard !merged.contains(where: { $0.overlaps(range) }) else { continue }
+            merged.append(range)
+        }
+
+        return merged
     }
 
     nonisolated private enum TokenKind {

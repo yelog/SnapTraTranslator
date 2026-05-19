@@ -28,6 +28,13 @@ final class OCRParagraphGroupingTests: XCTestCase {
         XCTAssertTrue(tokens.contains("部署"))
     }
 
+    func testTokenTextsRecoversEnglishWordSkippedByTokenizerInMixedText() {
+        let tokens = OCRService.tokenTexts(in: "1.词典选择：Apple Dictionary，原词典内容：", language: "zh-Hans")
+
+        XCTAssertTrue(tokens.contains("Apple"))
+        XCTAssertTrue(tokens.contains("Dictionary"))
+    }
+
     func testTokenTextsKeepsNonLatinLetterTokensForFixedLanguageLookups() {
         let tokens = OCRService.tokenTexts(in: "東京 test")
 
