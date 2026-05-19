@@ -8,6 +8,7 @@ struct LearningSettingsView: View {
     @StateObject private var learningService: LearningService
     @State private var searchText = ""
     @State private var filterMode: LearningWordFilter = .all
+    @State private var sourceLanguageFilter: String?
     @State private var showingClearConfirmation = false
     @State private var showingCleanupConfirmation = false
     @State private var cleanupResultMessage: String?
@@ -31,17 +32,23 @@ struct LearningSettingsView: View {
         .onAppear {
             Task {
                 await learningService.refreshSummaryCounts()
-                await learningService.reloadWords(filter: filterMode, searchText: searchText)
+                await learningService.refreshAvailableLanguageIdentifiers()
+                await reloadWords()
             }
         }
         .onChange(of: searchText) { _, _ in
             Task {
-                await learningService.reloadWords(filter: filterMode, searchText: searchText)
+                await reloadWords()
             }
         }
         .onChange(of: filterMode) { _, _ in
             Task {
-                await learningService.reloadWords(filter: filterMode, searchText: searchText)
+                await reloadWords()
+            }
+        }
+        .onChange(of: sourceLanguageFilter) { _, _ in
+            Task {
+                await reloadWords()
             }
         }
         .onReceive(learningService.$visibleWords) { newWords in
@@ -248,6 +255,9 @@ struct LearningSettingsView: View {
             searchField
                 .frame(minWidth: 220, maxWidth: .infinity)
 
+            languagePicker
+                .fixedSize(horizontal: true, vertical: false)
+
             filterPicker
                 .fixedSize(horizontal: true, vertical: false)
         }
@@ -259,6 +269,9 @@ struct LearningSettingsView: View {
                 .frame(maxWidth: .infinity)
 
             filterPicker
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            languagePicker
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -292,6 +305,18 @@ struct LearningSettingsView: View {
             }
         }
         .pickerStyle(.segmented)
+    }
+
+    private var languagePicker: some View {
+        Picker(L("Language"), selection: $sourceLanguageFilter) {
+            Text(L("All Languages")).tag(String?.none)
+            ForEach(learningService.availableLanguageIdentifiers, id: \.self) { identifier in
+                Text(LearningLanguageDisplay.name(for: identifier)).tag(Optional(identifier))
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .frame(width: 130)
     }
 
     private var clearLearningDataButton: some View {
@@ -401,9 +426,21 @@ struct LearningSettingsView: View {
         }
     }
 
+    private func reloadWords() async {
+        await learningService.reloadWords(
+            filter: filterMode,
+            searchText: searchText,
+            sourceLanguageIdentifier: sourceLanguageFilter
+        )
+    }
+
     private func exportWords(format: LearningExportFormat) {
         Task {
-            let rows = await learningService.exportRows(filter: filterMode, searchText: searchText)
+            let rows = await learningService.exportRows(
+                filter: filterMode,
+                searchText: searchText,
+                sourceLanguageIdentifier: sourceLanguageFilter
+            )
             guard !rows.isEmpty else { return }
 
             let panel = NSSavePanel()
@@ -473,6 +510,7 @@ struct StatCard: View {
 struct WordRecordRowModel: Identifiable, Equatable {
     let id: String
     let word: String
+    let sourceLanguageName: String
     let definitionText: String?
     let lookupCount: Int
     let reviewDateText: String?
@@ -482,6 +520,7 @@ struct WordRecordRowModel: Identifiable, Equatable {
     init(record: WordRecord, now: Date) {
         id = record.word
         word = record.word
+        sourceLanguageName = LearningLanguageDisplay.name(for: record.sourceLanguageIdentifier)
         definitionText = record.definitionText?
             .replacingOccurrences(of: "\n", with: " · ")
         lookupCount = record.lookupCount
@@ -528,6 +567,14 @@ struct WordRecordRow: View, Equatable {
                 HStack(spacing: 8) {
                     Text(row.word)
                         .font(.system(size: 14, weight: .medium))
+
+                    Text(row.sourceLanguageName)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(nsColor: .tertiarySystemFill))
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
 
                     if row.isMastered {
                         Text(L("Mastered"))

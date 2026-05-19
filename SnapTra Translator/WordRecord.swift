@@ -12,8 +12,9 @@ final class WordRecord {
     var isMastered: Bool
     var reviewStage: Int
     var definitionText: String?
+    var sourceLanguageIdentifier: String?
 
-    init(word: String, definitionText: String? = nil) {
+    init(word: String, definitionText: String? = nil, sourceLanguageIdentifier: String? = nil) {
         self.word = word.lowercased()
         self.lookupCount = 1
         self.firstLookupDate = Date()
@@ -23,6 +24,7 @@ final class WordRecord {
         self.isMastered = false
         self.reviewStage = 0
         self.definitionText = Self.normalizedDefinitionText(definitionText)
+        self.sourceLanguageIdentifier = Self.normalizedLanguageIdentifier(sourceLanguageIdentifier)
     }
 
     var needsReview: Bool {
@@ -30,10 +32,16 @@ final class WordRecord {
         return nextReview <= Date()
     }
 
-    func recordLookup(definitionText: String? = nil) {
+    func recordLookup(definitionText: String? = nil, sourceLanguageIdentifier: String? = nil) {
         lookupCount += 1
         lastLookupDate = Date()
         updateDefinition(definitionText)
+        updateSourceLanguage(sourceLanguageIdentifier)
+    }
+
+    func updateSourceLanguage(_ identifier: String?) {
+        guard let normalized = Self.normalizedLanguageIdentifier(identifier) else { return }
+        sourceLanguageIdentifier = normalized
     }
 
     func updateDefinition(_ definitionText: String?) {
@@ -73,6 +81,12 @@ final class WordRecord {
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private static func normalizedLanguageIdentifier(_ identifier: String?) -> String? {
+        guard let identifier else { return nil }
+        let normalized = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized.isEmpty ? nil : normalized
     }
 }

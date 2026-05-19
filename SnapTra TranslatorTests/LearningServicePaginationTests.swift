@@ -127,6 +127,42 @@ final class LearningServicePaginationTests: XCTestCase {
         XCTAssertEqual(service.visibleWords.map(\.word), ["pending"])
     }
 
+    func testRecordLookupStoresSourceLanguage() async throws {
+        let context = try makeModelContext()
+        let service = LearningService(modelContext: context)
+
+        await service.recordLookup(word: "hello", sourceLanguageIdentifier: "en")
+        await service.reloadWords(filter: .all, searchText: "")
+
+        XCTAssertEqual(service.visibleWords.first?.sourceLanguageIdentifier, "en")
+    }
+
+    func testLanguageFilterReturnsMatchingRecords() async throws {
+        let context = try makeModelContext()
+        context.insert(WordRecord(word: "hello", sourceLanguageIdentifier: "en"))
+        context.insert(WordRecord(word: "你好", sourceLanguageIdentifier: "zh-Hans"))
+        context.insert(WordRecord(word: "legacy"))
+        try context.save()
+
+        let service = LearningService(modelContext: context)
+
+        await service.reloadWords(filter: .all, searchText: "", sourceLanguageIdentifier: "zh-Hans")
+
+        XCTAssertEqual(service.visibleWords.map(\.word), ["你好"])
+    }
+
+    func testAvailableLanguageIdentifiersExcludeLegacyUnknownRecords() async throws {
+        let context = try makeModelContext()
+        context.insert(WordRecord(word: "hello", sourceLanguageIdentifier: "en"))
+        context.insert(WordRecord(word: "legacy"))
+        try context.save()
+
+        let service = LearningService(modelContext: context)
+        await service.refreshAvailableLanguageIdentifiers()
+
+        XCTAssertEqual(service.availableLanguageIdentifiers, ["en"])
+    }
+
     private func makeModelContext() throws -> ModelContext {
         let schema = Schema([WordRecord.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)

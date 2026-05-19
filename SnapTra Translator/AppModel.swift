@@ -676,7 +676,10 @@ final class AppModel: ObservableObject {
             updateOverlay(state: .result(initialContent), anchor: mouseLocation)
 
             Task {
-                await learningService.recordLookup(word: selected.text)
+                await learningService.recordLookup(
+                    word: selected.text,
+                    sourceLanguageIdentifier: languagePair.sourceIdentifier
+                )
             }
 
             await withTaskGroup(of: Void.self) { group in

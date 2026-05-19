@@ -16,6 +16,19 @@ enum LearningWordFilter: String, CaseIterable {
     }
 }
 
+enum LearningLanguageDisplay {
+    static func name(for identifier: String?) -> String {
+        guard let identifier,
+              !identifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return L("Unknown")
+        }
+
+        return AppLanguage(rawValue: identifier)?.displayName
+            ?? Locale.current.localizedString(forIdentifier: identifier)
+            ?? identifier
+    }
+}
+
 @MainActor
 final class LearningService: ObservableObject {
     private let modelContext: ModelContext
@@ -26,6 +39,7 @@ final class LearningService: ObservableObject {
     @Published var masteredCount = 0
     @Published var isLoadingPage = false
     @Published var hasMoreWords = false
+    @Published var availableLanguageIdentifiers: [String] = []
 
     private static let wordSortDescriptors = [
         SortDescriptor(\WordRecord.lookupCount, order: .reverse),
@@ -36,6 +50,7 @@ final class LearningService: ObservableObject {
     private var currentOffset = 0
     private var currentFilter: LearningWordFilter = .all
     private var currentSearchText = ""
+    private var currentSourceLanguageIdentifier: String?
 
     func wordRecord(for word: String) -> WordRecord? {
         visibleWords.first { $0.word == word }
@@ -59,9 +74,29 @@ final class LearningService: ObservableObject {
         }
     }
 
-    func reloadWords(filter: LearningWordFilter, searchText: String) async {
+    func refreshAvailableLanguageIdentifiers() async {
+        do {
+            let descriptor = FetchDescriptor<WordRecord>(
+                sortBy: [SortDescriptor(\WordRecord.sourceLanguageIdentifier)]
+            )
+            let records = try modelContext.fetch(descriptor)
+            availableLanguageIdentifiers = records.reduce(into: []) { result, record in
+                guard let identifier = record.sourceLanguageIdentifier,
+                      !identifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      !result.contains(identifier) else {
+                    return
+                }
+                result.append(identifier)
+            }
+        } catch {
+            print("Failed to fetch learning language identifiers: \(error)")
+        }
+    }
+
+    func reloadWords(filter: LearningWordFilter, searchText: String, sourceLanguageIdentifier: String? = nil) async {
         currentFilter = filter
         currentSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        currentSourceLanguageIdentifier = Self.normalizedLanguageIdentifier(sourceLanguageIdentifier)
         currentOffset = 0
         hasMoreWords = false
         await loadMoreWords(replacingCurrentWords: true)
@@ -83,6 +118,7 @@ final class LearningService: ObservableObject {
                 predicate: listPredicate(
                     filter: currentFilter,
                     searchText: currentSearchText,
+                    sourceLanguageIdentifier: currentSourceLanguageIdentifier,
                     now: Date()
                 ),
                 sortBy: Self.wordSortDescriptors
@@ -103,9 +139,10 @@ final class LearningService: ObservableObject {
         }
     }
 
-    func recordLookup(word: String, definitionText: String? = nil) async {
+    func recordLookup(word: String, definitionText: String? = nil, sourceLanguageIdentifier: String? = nil) async {
         let normalizedWord = word.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedWord.isEmpty else { return }
+        let normalizedLanguage = Self.normalizedLanguageIdentifier(sourceLanguageIdentifier)
 
         do {
             let descriptor = FetchDescriptor<WordRecord>(
@@ -114,13 +151,18 @@ final class LearningService: ObservableObject {
             let existing = try modelContext.fetch(descriptor).first
 
             if let record = existing {
-                record.recordLookup(definitionText: definitionText)
+                record.recordLookup(definitionText: definitionText, sourceLanguageIdentifier: normalizedLanguage)
             } else {
-                let newRecord = WordRecord(word: normalizedWord, definitionText: definitionText)
+                let newRecord = WordRecord(
+                    word: normalizedWord,
+                    definitionText: definitionText,
+                    sourceLanguageIdentifier: normalizedLanguage
+                )
                 modelContext.insert(newRecord)
             }
 
             try modelContext.save()
+            await refreshAvailableLanguageIdentifiers()
         } catch {
             print("Failed to record word lookup: \(error)")
         }
@@ -191,6 +233,7 @@ final class LearningService: ObservableObject {
             try modelContext.delete(model: WordRecord.self)
             try modelContext.save()
             visibleWords = []
+            availableLanguageIdentifiers = []
             totalWordCount = 0
             pendingReviewCount = 0
             masteredCount = 0
@@ -215,11 +258,16 @@ final class LearningService: ObservableObject {
         }
     }
 
-    func exportRows(filter: LearningWordFilter, searchText: String) async -> [LearningExportRow] {
+    func exportRows(filter: LearningWordFilter, searchText: String, sourceLanguageIdentifier: String? = nil) async -> [LearningExportRow] {
         do {
             let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let descriptor = FetchDescriptor<WordRecord>(
-                predicate: listPredicate(filter: filter, searchText: query, now: Date()),
+                predicate: listPredicate(
+                    filter: filter,
+                    searchText: query,
+                    sourceLanguageIdentifier: Self.normalizedLanguageIdentifier(sourceLanguageIdentifier),
+                    now: Date()
+                ),
                 sortBy: Self.wordSortDescriptors
             )
             return try modelContext.fetch(descriptor).map { LearningExportRow(record: $0) }
@@ -287,7 +335,12 @@ final class LearningService: ObservableObject {
 
     private func refreshAfterMutation() async {
         await refreshSummaryCounts()
-        await reloadWords(filter: currentFilter, searchText: currentSearchText)
+        await refreshAvailableLanguageIdentifiers()
+        await reloadWords(
+            filter: currentFilter,
+            searchText: currentSearchText,
+            sourceLanguageIdentifier: currentSourceLanguageIdentifier
+        )
     }
 
     private func pendingReviewPredicate(now: Date) -> Predicate<WordRecord> {
@@ -303,17 +356,24 @@ final class LearningService: ObservableObject {
     private func listPredicate(
         filter: LearningWordFilter,
         searchText: String,
+        sourceLanguageIdentifier: String?,
         now: Date
     ) -> Predicate<WordRecord>? {
         let query = searchText
-        switch (filter, query.isEmpty) {
-        case (.all, true):
+        let language = sourceLanguageIdentifier
+
+        switch (filter, query.isEmpty, language) {
+        case (.all, true, nil):
             return nil
-        case (.all, false):
+        case (.all, false, nil):
             return #Predicate { $0.word.contains(query) }
-        case (.pendingReview, true):
+        case (.all, true, .some(let language)):
+            return #Predicate { $0.sourceLanguageIdentifier == language }
+        case (.all, false, .some(let language)):
+            return #Predicate { $0.word.contains(query) && $0.sourceLanguageIdentifier == language }
+        case (.pendingReview, true, nil):
             return pendingReviewPredicate(now: now)
-        case (.pendingReview, false):
+        case (.pendingReview, false, nil):
             return #Predicate { record in
                 if let nextReviewDate = record.nextReviewDate {
                     record.word.contains(query) && !record.isMastered && nextReviewDate <= now
@@ -321,10 +381,36 @@ final class LearningService: ObservableObject {
                     false
                 }
             }
-        case (.mastered, true):
+        case (.pendingReview, true, .some(let language)):
+            return #Predicate { record in
+                if let nextReviewDate = record.nextReviewDate {
+                    record.sourceLanguageIdentifier == language && !record.isMastered && nextReviewDate <= now
+                } else {
+                    false
+                }
+            }
+        case (.pendingReview, false, .some(let language)):
+            return #Predicate { record in
+                if let nextReviewDate = record.nextReviewDate {
+                    record.word.contains(query) && record.sourceLanguageIdentifier == language && !record.isMastered && nextReviewDate <= now
+                } else {
+                    false
+                }
+            }
+        case (.mastered, true, nil):
             return #Predicate { $0.isMastered }
-        case (.mastered, false):
+        case (.mastered, false, nil):
             return #Predicate { $0.isMastered && $0.word.contains(query) }
+        case (.mastered, true, .some(let language)):
+            return #Predicate { $0.isMastered && $0.sourceLanguageIdentifier == language }
+        case (.mastered, false, .some(let language)):
+            return #Predicate { $0.isMastered && $0.word.contains(query) && $0.sourceLanguageIdentifier == language }
         }
+    }
+
+    private static func normalizedLanguageIdentifier(_ identifier: String?) -> String? {
+        guard let identifier else { return nil }
+        let normalized = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
     }
 }

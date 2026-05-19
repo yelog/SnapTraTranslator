@@ -279,6 +279,7 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
 final class LearningExportServiceTests: XCTestCase {
     private struct StubRecord: LearningExportRecord {
         var exportWord: String
+        var exportSourceLanguageIdentifier: String?
         var exportDefinitionText: String?
         var exportLookupCount: Int
         var exportReviewStage: Int
@@ -288,6 +289,7 @@ final class LearningExportServiceTests: XCTestCase {
     func testExportRowCanBeBuiltFromRecord() {
         let record = StubRecord(
             exportWord: "apple",
+            exportSourceLanguageIdentifier: "en",
             exportDefinitionText: "n. 苹果",
             exportLookupCount: 4,
             exportReviewStage: 2,
@@ -297,6 +299,7 @@ final class LearningExportServiceTests: XCTestCase {
         let row = LearningExportRow(record: record)
 
         XCTAssertEqual(row.word, "apple")
+        XCTAssertEqual(row.sourceLanguageName, "English")
         XCTAssertEqual(row.definitionText, "n. 苹果")
         XCTAssertEqual(row.lookupCount, 4)
         XCTAssertEqual(row.reviewStage, 2)
@@ -307,6 +310,7 @@ final class LearningExportServiceTests: XCTestCase {
         let rows = [
             LearningExportRow(
                 word: "hello",
+                sourceLanguageName: "English",
                 definitionText: "int. 你好\nused as a greeting\twith tab",
                 lookupCount: 3,
                 reviewStage: 1,
@@ -318,7 +322,7 @@ final class LearningExportServiceTests: XCTestCase {
 
         XCTAssertEqual(
             output,
-            "Word\tDefinition\tLookup Count\tReview Stage\tMastered\nhello\tint. 你好<br>used as a greeting with tab\t3\t1\tfalse\n"
+            "Word\tLanguage\tDefinition\tLookup Count\tReview Stage\tMastered\nhello\tEnglish\tint. 你好<br>used as a greeting with tab\t3\t1\tfalse\n"
         )
     }
 
@@ -326,6 +330,7 @@ final class LearningExportServiceTests: XCTestCase {
         let rows = [
             LearningExportRow(
                 word: "quote",
+                sourceLanguageName: "English",
                 definitionText: "say, \"hello\"\nagain",
                 lookupCount: 2,
                 reviewStage: 0,
@@ -337,7 +342,7 @@ final class LearningExportServiceTests: XCTestCase {
 
         XCTAssertEqual(
             output,
-            "Word,Definition,Lookup Count,Review Stage,Mastered\nquote,\"say, \"\"hello\"\"\nagain\",2,0,true\n"
+            "Word,Language,Definition,Lookup Count,Review Stage,Mastered\nquote,English,\"say, \"\"hello\"\"\nagain\",2,0,true\n"
         )
     }
 }

@@ -25,6 +25,7 @@ enum LearningExportFormat: CaseIterable {
 
 protocol LearningExportRecord {
     var exportWord: String { get }
+    var exportSourceLanguageIdentifier: String? { get }
     var exportDefinitionText: String? { get }
     var exportLookupCount: Int { get }
     var exportReviewStage: Int { get }
@@ -33,6 +34,7 @@ protocol LearningExportRecord {
 
 extension WordRecord: LearningExportRecord {
     var exportWord: String { word }
+    var exportSourceLanguageIdentifier: String? { sourceLanguageIdentifier }
     var exportDefinitionText: String? { definitionText }
     var exportLookupCount: Int { lookupCount }
     var exportReviewStage: Int { reviewStage }
@@ -41,6 +43,7 @@ extension WordRecord: LearningExportRecord {
 
 struct LearningExportRow: Equatable {
     var word: String
+    var sourceLanguageName: String
     var definitionText: String
     var lookupCount: Int
     var reviewStage: Int
@@ -48,6 +51,7 @@ struct LearningExportRow: Equatable {
 
     init(record: any LearningExportRecord) {
         self.word = record.exportWord
+        self.sourceLanguageName = LearningLanguageDisplay.name(for: record.exportSourceLanguageIdentifier)
         self.definitionText = record.exportDefinitionText ?? ""
         self.lookupCount = record.exportLookupCount
         self.reviewStage = record.exportReviewStage
@@ -56,12 +60,14 @@ struct LearningExportRow: Equatable {
 
     init(
         word: String,
+        sourceLanguageName: String,
         definitionText: String,
         lookupCount: Int,
         reviewStage: Int,
         isMastered: Bool
     ) {
         self.word = word
+        self.sourceLanguageName = sourceLanguageName
         self.definitionText = definitionText
         self.lookupCount = lookupCount
         self.reviewStage = reviewStage
@@ -100,10 +106,11 @@ enum LearningExportService {
         separator: String,
         escape: (String) -> String
     ) -> String {
-        let header = ["Word", "Definition", "Lookup Count", "Review Stage", "Mastered"]
+        let header = ["Word", "Language", "Definition", "Lookup Count", "Review Stage", "Mastered"]
         let lines = [header.map(escape).joined(separator: separator)] + rows.map { row in
             [
                 row.word,
+                row.sourceLanguageName,
                 row.definitionText,
                 String(row.lookupCount),
                 String(row.reviewStage),
