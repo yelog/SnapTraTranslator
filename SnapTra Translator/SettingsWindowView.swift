@@ -722,6 +722,7 @@ struct GeneralTranslationLanguageRow: View {
     @State private var unavailableAlertTitle = ""
     @State private var missingLanguagesMessage = ""
     @State private var unavailablePair: LookupLanguagePair?
+    @State private var activeLanguageStatusRefreshCount = 0
 
     private let commonLanguages: [(id: String, name: String)] = [
         ("zh-Hans", "简体中文"),
@@ -740,6 +741,11 @@ struct GeneralTranslationLanguageRow: View {
         ("vi", "Tiếng Việt"),
     ]
 
+    private enum LanguageRole {
+        case source
+        case target
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
@@ -748,6 +754,8 @@ struct GeneralTranslationLanguageRow: View {
                     .foregroundStyle(.primary)
 
                 Spacer()
+
+                languageStatusIcon(for: .source)
 
                 Picker("", selection: $sourceLanguage) {
                     ForEach(commonLanguages, id: \.id) { lang in
@@ -766,7 +774,7 @@ struct GeneralTranslationLanguageRow: View {
 
                 Spacer()
 
-                statusIcon
+                languageStatusIcon(for: .target)
 
                 Picker("", selection: $targetLanguage) {
                     ForEach(commonLanguages, id: \.id) { lang in
@@ -811,42 +819,86 @@ struct GeneralTranslationLanguageRow: View {
         model.requiredLanguagePairsForCurrentSettings()
     }
 
-    private var allRequiredLanguagePacksInstalled: Bool {
-        requiredLanguagePairs.allSatisfy { pair in
-            if pair.isSameLanguage {
-                return true
+    private var languageStatusProbePairs: [LookupLanguagePair] {
+        let selectedLanguages = [sourceLanguage, targetLanguage]
+        let commonLanguageIdentifiers = commonLanguages.map(\.id)
+        let pairs = selectedLanguages.flatMap { selectedLanguage in
+            commonLanguageIdentifiers.flatMap { commonLanguage in
+                [
+                    LookupLanguagePair.fixed(
+                        sourceIdentifier: selectedLanguage,
+                        targetIdentifier: commonLanguage
+                    ),
+                    LookupLanguagePair.fixed(
+                        sourceIdentifier: commonLanguage,
+                        targetIdentifier: selectedLanguage
+                    ),
+                ]
             }
-            return getLanguagePackStatus(for: pair) == .installed
+        }
+        var seenKeys = Set<String>()
+
+        return pairs.filter { pair in
+            guard !pair.isSameLanguage else { return false }
+            return seenKeys.insert(pair.key).inserted
         }
     }
 
-    private var firstUnavailableLanguagePair: LookupLanguagePair? {
-        requiredLanguagePairs.first { pair in
-            guard !pair.isSameLanguage else {
-                return false
-            }
-            guard let status = getLanguagePackStatus(for: pair) else {
-                return false
-            }
-            return status != .installed
+    private func selectedLanguageIdentifier(for role: LanguageRole) -> String {
+        switch role {
+        case .source:
+            return sourceLanguage
+        case .target:
+            return targetLanguage
         }
+    }
+
+    private func languagePackStatus(for role: LanguageRole) -> LanguageAvailability.Status? {
+        languagePackStatus(for: selectedLanguageIdentifier(for: role))
+    }
+
+    private func languagePackStatus(for languageIdentifier: String) -> LanguageAvailability.Status? {
+        if languageIdentifier == sourceLanguage && languageIdentifier == targetLanguage {
+            return .installed
+        }
+
+        let statuses = languageStatusProbePairs.compactMap { pair -> LanguageAvailability.Status? in
+            guard pair.sourceIdentifier == languageIdentifier || pair.targetIdentifier == languageIdentifier else {
+                return nil
+            }
+            return getLanguagePackStatus(for: pair)
+        }
+
+        if statuses.contains(.installed) {
+            return .installed
+        }
+        if statuses.contains(.supported) {
+            return .supported
+        }
+        if statuses.contains(.unsupported) {
+            return .unsupported
+        }
+        return nil
     }
 
     @ViewBuilder
-    private var statusIcon: some View {
-        let isChecking = model.languagePackManager?.isChecking ?? false
+    private func languageStatusIcon(for role: LanguageRole) -> some View {
+        let status = languagePackStatus(for: role)
 
-        if isChecking {
+        if activeLanguageStatusRefreshCount > 0 {
             ProgressView()
                 .controlSize(.small)
                 .scaleEffect(0.7)
-        } else if allRequiredLanguagePacksInstalled {
+        } else if status == nil {
+            ProgressView()
+                .controlSize(.small)
+                .scaleEffect(0.7)
+        } else if status == .installed {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.green)
                 .help(L("Language pack installed"))
-        } else if let pair = firstUnavailableLanguagePair,
-                  let status = getLanguagePackStatus(for: pair) {
+        } else if let status {
             Button {
                 Task { @MainActor in
                     await refreshRequiredLanguageStatuses(showLoading: true)
@@ -862,22 +914,30 @@ struct GeneralTranslationLanguageRow: View {
     }
 
     private func refreshRequiredLanguageStatuses(showLoading: Bool = false) async {
-        var firstUnavailablePair: LookupLanguagePair?
+        let pairsToRefresh = languageStatusProbePairs
+        var requiredUnavailablePair: LookupLanguagePair?
 
-        for pair in requiredLanguagePairs where !pair.isSameLanguage {
+        activeLanguageStatusRefreshCount += 1
+        defer {
+            activeLanguageStatusRefreshCount = max(0, activeLanguageStatusRefreshCount - 1)
+        }
+
+        for pair in pairsToRefresh where !pair.isSameLanguage {
             let status = await model.refreshLanguageAvailabilityStatus(
                 from: pair.sourceIdentifier,
                 to: pair.targetIdentifier,
-                showLoading: showLoading
+                showLoading: false
             )
-            if status != .installed && firstUnavailablePair == nil {
-                firstUnavailablePair = pair
+            if requiredLanguagePairs.contains(where: { $0.key == pair.key }),
+               status != .installed,
+               requiredUnavailablePair == nil {
+                requiredUnavailablePair = pair
             }
         }
 
-        if showLoading, let firstUnavailablePair {
-            presentLanguageAvailabilityAlert(for: firstUnavailablePair)
-        } else if firstUnavailablePair == nil {
+        if showLoading, let unavailablePair = requiredUnavailablePair {
+            presentLanguageAvailabilityAlert(for: unavailablePair)
+        } else if requiredUnavailablePair == nil {
             unavailablePair = nil
         }
     }
