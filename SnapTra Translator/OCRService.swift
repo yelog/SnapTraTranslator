@@ -280,6 +280,8 @@ final class OCRService {
     enum ParagraphSelectionResult {
         /// Found a paragraph at the cursor position
         case english(RecognizedParagraph)
+        /// Found OCR text at the cursor position that did not pass paragraph grouping
+        case textLine(RecognizedTextLine)
         /// No text found at cursor position
         case noText
     }
@@ -318,7 +320,29 @@ final class OCRService {
             return .english(paragraph)
         }
 
+        if let line = selectLine(from: lines, normalizedPoint: normalizedPoint) {
+            return .textLine(line)
+        }
+
         return .noText
+    }
+
+    nonisolated private static func selectLine(
+        from lines: [RecognizedTextLine],
+        normalizedPoint: CGPoint
+    ) -> RecognizedTextLine? {
+        let tolerance: CGFloat = 0.01
+        let candidates = lines.filter { line in
+            line.boundingBox.insetBy(dx: -tolerance, dy: -tolerance).contains(normalizedPoint)
+        }
+
+        guard !candidates.isEmpty else { return nil }
+
+        return candidates.min { lhs, rhs in
+            let lhsDistance = hypot(lhs.boundingBox.midX - normalizedPoint.x, lhs.boundingBox.midY - normalizedPoint.y)
+            let rhsDistance = hypot(rhs.boundingBox.midX - normalizedPoint.x, rhs.boundingBox.midY - normalizedPoint.y)
+            return lhsDistance < rhsDistance
+        }
     }
 
     // 只包含英语字母，数字和其他符号都作为分隔符

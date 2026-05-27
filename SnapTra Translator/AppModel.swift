@@ -901,6 +901,83 @@ final class AppModel: ObservableObject {
                 )
                 updateOverlay(state: .paragraphResult(content), anchor: mouseLocation)
                 return
+            case .textLine(let line):
+                paragraphHighlightWindowController.hide()
+                let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else {
+                    let content = ParagraphOverlayContent(
+                        originalText: nil,
+                        translationState: .failed("No paragraph detected under cursor")
+                    )
+                    updateOverlay(state: .paragraphResult(content), anchor: mouseLocation)
+                    return
+                }
+
+                let lineRect = screenRect(for: line.boundingBox, in: capture.region.rect)
+                activeParagraphRect = lineRect
+                overlayPreferredWidth = max(320, lineRect.width)
+
+                let languagePair = resolveParagraphLanguagePair(for: text)
+                let sourceLanguage = languagePair.sourceLanguage
+
+                if settings.playSentencePronunciation {
+                    let languageCode = sourceLanguage.languageCode?.identifier
+                    speechService.speak(
+                        text,
+                        language: languageCode,
+                        provider: settings.sentenceTTSProvider,
+                        useAmericanAccent: settings.englishAccent.isAmerican
+                    )
+                }
+
+                if settings.copySentence {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(text, forType: .string)
+                }
+
+                let enabledServices = settings.sentenceTranslationSources
+                    .filter { $0.isEnabled && !$0.isNative }
+                let languageOptions = paragraphLanguageOptions(for: languagePair)
+
+                let initialContent = ParagraphOverlayContent(
+                    originalText: text,
+                    translationState: .loading,
+                    serviceResults: enabledServices.map { source in
+                        ServiceTranslationResult(sourceType: source.type, state: .loading)
+                    },
+                    bodyFontSize: estimatedDisplayFontSize(from: [line], in: capture.region.rect),
+                    languageOptions: languageOptions,
+                    sourceLanguageIdentifier: languagePair.sourceIdentifier,
+                    selectedTargetLanguageIdentifier: languagePair.targetIdentifier
+                )
+                updateOverlay(state: .paragraphResult(initialContent), anchor: mouseLocation)
+
+                Task {
+                    await performThirdPartySentenceTranslations(
+                        text: text,
+                        sourceLanguage: languagePair.sourceIdentifier,
+                        targetLanguage: languagePair.targetIdentifier,
+                        enabledServices: enabledServices,
+                        lookupID: lookupID,
+                        anchor: mouseLocation
+                    )
+                }
+
+                let translationState = await loadSentenceTranslationState(
+                    text: text,
+                    languagePair: languagePair,
+                    sourceLanguage: sourceLanguage,
+                    targetLanguage: languagePair.targetLanguage,
+                    translationBridge: translationBridge
+                )
+
+                applyParagraphTranslationState(
+                    translationState,
+                    lookupID: lookupID,
+                    anchor: mouseLocation
+                )
+                return
             case .english(let paragraph):
                 // Found paragraph - continue with translation
                 let paragraphRect = screenRect(for: paragraph.boundingBox, in: capture.region.rect)

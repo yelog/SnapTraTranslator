@@ -240,6 +240,28 @@ final class OCRParagraphGroupingTests: XCTestCase {
         XCTAssertEqual(selected?.text, "突然")
     }
 
+    func testSelectParagraphWithLanguageCheckFallsBackToChineseLineUnderCursor() {
+        let lines = [
+            RecognizedTextLine(
+                text: "新物料维护",
+                boundingBox: CGRect(x: 0.10, y: 0.40, width: 0.20, height: 0.08)
+            ),
+        ]
+
+        let result = OCRService.selectParagraphWithLanguageCheck(
+            from: [],
+            lines: lines,
+            normalizedPoint: CGPoint(x: 0.18, y: 0.44)
+        )
+
+        switch result {
+        case .textLine(let line):
+            XCTAssertEqual(line.text, "新物料维护")
+        case .english, .noText:
+            XCTFail("Expected Chinese OCR line under cursor to be selected")
+        }
+    }
+
     func testGroupsAlignedEnglishLinesIntoSingleParagraph() {
         let lines = [
             RecognizedTextLine(
