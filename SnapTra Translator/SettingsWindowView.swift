@@ -535,6 +535,16 @@ struct GeneralSettingsView: View {
                         isOn: $model.settings.ocrSentenceTranslationEnabled
                     )
 
+                    Divider()
+                        .padding(.horizontal, 14)
+                        .opacity(0.5)
+
+                    ToggleRow(
+                        title: L("Hide Original Text"),
+                        subtitle: L("Only show translated text in sentence overlays"),
+                        isOn: $model.settings.hideOriginalTextInSentenceOverlay
+                    )
+
                     if supportsSelectedTextTranslation {
                         Divider()
                             .padding(.horizontal, 14)

@@ -46,6 +46,7 @@ final class SettingsStoreMigrationTests: XCTestCase {
         AppSettingKey.legacySentenceTranslationEnabled,
         AppSettingKey.ocrSentenceTranslationEnabled,
         AppSettingKey.selectedTextTranslationEnabled,
+        AppSettingKey.hideOriginalTextInSentenceOverlay,
         AppSettingKey.autoCheckUpdates,
         AppSettingKey.updateChannel,
         AppSettingKey.debugShowChannelSelector,
@@ -156,6 +157,27 @@ final class SettingsStoreMigrationTests: XCTestCase {
 
         let isEnabled = SettingsStore.loadBidirectionalTranslationEnabled(defaults: defaults)
         XCTAssertTrue(isEnabled)
+    }
+
+    func testHideOriginalTextInSentenceOverlayDefaultsToDisabled() {
+        let defaults = makeDefaults()
+
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertFalse(settings.hideOriginalTextInSentenceOverlay)
+        XCTAssertEqual(
+            defaults.object(forKey: AppSettingKey.hideOriginalTextInSentenceOverlay) as? Bool,
+            false
+        )
+    }
+
+    func testLoadsPersistedHideOriginalTextInSentenceOverlaySetting() {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: AppSettingKey.hideOriginalTextInSentenceOverlay)
+
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertTrue(settings.hideOriginalTextInSentenceOverlay)
     }
 }
 

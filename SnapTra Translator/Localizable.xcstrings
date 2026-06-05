@@ -3072,6 +3072,40 @@
         }
       }
     },
+    "Hide Original Text" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Original Text"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原文を非表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "원문 숨기기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏原文"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隱藏原文"
+          }
+        }
+      }
+    },
     "High quality neural voice" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4471,6 +4505,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "離線本地服務"
+          }
+        }
+      }
+    },
+    "Only show translated text in sentence overlays" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only show translated text in sentence overlays"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文のオーバーレイでは翻訳文のみを表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "문장 오버레이에 번역문만 표시"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "句子浮窗中仅显示译文"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "句子浮窗中僅顯示譯文"
           }
         }
       }

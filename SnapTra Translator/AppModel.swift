@@ -207,6 +207,32 @@ private enum ActiveLookupMode {
     case selectedTextSentence
 }
 
+enum ParagraphOutsideClickDismissalPolicy {
+    private static let protectedInset: CGFloat = 8
+
+    static func shouldDismiss(
+        mouseLocation: CGPoint,
+        isParagraphOverlayPresented: Bool,
+        isParagraphOverlayPinned: Bool,
+        isRegionInteractionActive: Bool,
+        overlayFrame: CGRect?,
+        highlightFrame: CGRect?,
+        activeParagraphRect: CGRect?
+    ) -> Bool {
+        guard isParagraphOverlayPresented,
+              isParagraphOverlayPinned,
+              !isRegionInteractionActive else {
+            return false
+        }
+
+        let protectedFrames = [overlayFrame, highlightFrame, activeParagraphRect]
+        return !protectedFrames.contains { frame in
+            guard let frame, !frame.isNull, !frame.isEmpty else { return false }
+            return frame.insetBy(dx: -protectedInset, dy: -protectedInset).contains(mouseLocation)
+        }
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published var overlayState: OverlayState = .idle
@@ -249,10 +275,13 @@ final class AppModel: ObservableObject {
     private var localMouseMonitor: Any?
     private var globalParagraphKeyMonitor: Any?
     private var localParagraphKeyMonitor: Any?
+    private var globalParagraphMouseMonitor: Any?
+    private var localParagraphMouseMonitor: Any?
     private var debounceWorkItem: DispatchWorkItem?
     private var overlayLayoutRefreshWorkItem: DispatchWorkItem?
     private var lastOcrPosition: CGPoint?
     private var translationServiceInitialized = false
+    private var isParagraphRegionInteractionActive = false
     private let debounceInterval: TimeInterval = 0.1
     private let overlayLayoutRefreshInterval: TimeInterval = 0.04
     private let positionThreshold: CGFloat = 10.0
@@ -433,6 +462,7 @@ final class AppModel: ObservableObject {
         if isParagraphOverlayPinned {
             overlayWindowController.setInteractive(true)
         }
+        syncParagraphEscapeMonitoring()
     }
 
     func beginParagraphOverlayDrag() {
@@ -540,10 +570,12 @@ final class AppModel: ObservableObject {
     }
 
     private func handleParagraphRegionResizeBegan() {
+        isParagraphRegionInteractionActive = true
         overlayWindowController.hideWindowOnly()
     }
 
     private func handleParagraphRegionResizeCompleted(_ rect: CGRect) {
+        isParagraphRegionInteractionActive = false
         guard rect.width > 0, rect.height > 0 else { return }
         guard permissions.status.screenRecording else {
             updateOverlay(state: .error(L("Enable Screen Recording")), anchor: overlayAnchor)
@@ -2359,6 +2391,7 @@ final class AppModel: ObservableObject {
     private func hideOverlay() {
         activeLookupMode = .word
         isParagraphOverlayPinned = false
+        isParagraphRegionInteractionActive = false
         stopParagraphEscapeMonitoring()
         cancelPendingOverlayLayoutRefresh()
         speechService.stopSpeaking()
@@ -2493,6 +2526,12 @@ final class AppModel: ObservableObject {
         } else {
             stopParagraphEscapeMonitoring()
         }
+
+        if isParagraphOverlayPresented && isParagraphOverlayPinned {
+            startParagraphOutsideClickMonitoringIfNeeded()
+        } else {
+            stopParagraphOutsideClickMonitoring()
+        }
     }
 
     private func startParagraphEscapeMonitoringIfNeeded() {
@@ -2523,12 +2562,62 @@ final class AppModel: ObservableObject {
             NSEvent.removeMonitor(monitor)
             localParagraphKeyMonitor = nil
         }
+
+        stopParagraphOutsideClickMonitoring()
     }
 
     @discardableResult
     private func handleParagraphEscapeKey(_ event: NSEvent) -> Bool {
         guard isParagraphOverlayPresented else { return false }
         guard event.keyCode == 53 else { return false }
+        dismissOverlay()
+        return true
+    }
+
+    private func startParagraphOutsideClickMonitoringIfNeeded() {
+        guard globalParagraphMouseMonitor == nil, localParagraphMouseMonitor == nil else { return }
+        let eventMask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+
+        globalParagraphMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: eventMask) { [weak self] _ in
+            Task { @MainActor in
+                _ = self?.handleParagraphOutsideMouseDown()
+            }
+        }
+
+        localParagraphMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: eventMask) { [weak self] event in
+            guard let self else { return event }
+            let handled = MainActor.assumeIsolated {
+                self.handleParagraphOutsideMouseDown()
+            }
+            return handled ? nil : event
+        }
+    }
+
+    private func stopParagraphOutsideClickMonitoring() {
+        if let monitor = globalParagraphMouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalParagraphMouseMonitor = nil
+        }
+
+        if let monitor = localParagraphMouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            localParagraphMouseMonitor = nil
+        }
+    }
+
+    @discardableResult
+    private func handleParagraphOutsideMouseDown() -> Bool {
+        let shouldDismiss = ParagraphOutsideClickDismissalPolicy.shouldDismiss(
+            mouseLocation: NSEvent.mouseLocation,
+            isParagraphOverlayPresented: isParagraphOverlayPresented,
+            isParagraphOverlayPinned: isParagraphOverlayPinned,
+            isRegionInteractionActive: isParagraphRegionInteractionActive,
+            overlayFrame: overlayWindowController.visibleFrame,
+            highlightFrame: paragraphHighlightWindowController.visibleFrame,
+            activeParagraphRect: activeParagraphRect
+        )
+
+        guard shouldDismiss else { return false }
         dismissOverlay()
         return true
     }

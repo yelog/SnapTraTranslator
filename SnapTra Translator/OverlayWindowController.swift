@@ -377,6 +377,11 @@ final class ParagraphHighlightWindowController: NSWindowController {
         window?.orderOut(nil)
     }
 
+    var visibleFrame: CGRect? {
+        guard let window, window.isVisible else { return nil }
+        return window.frame
+    }
+
     private func updateResize(corner: ParagraphHighlightResizeCorner, translation: CGSize) {
         guard let window else { return }
         if resizeStartFrame == nil {
@@ -599,6 +604,11 @@ final class OverlayWindowController: NSWindowController {
 
     var isVisible: Bool {
         window?.isVisible == true
+    }
+
+    var visibleFrame: CGRect? {
+        guard let window, window.isVisible else { return nil }
+        return window.frame
     }
 
     func show(at anchor: CGPoint, makeKey: Bool = false) {

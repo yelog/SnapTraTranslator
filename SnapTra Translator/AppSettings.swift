@@ -160,6 +160,7 @@ enum AppSettingKey {
     static let legacySentenceTranslationEnabled = "sentenceTranslationEnabled"
     static let ocrSentenceTranslationEnabled = "ocrSentenceTranslationEnabled"
     static let selectedTextTranslationEnabled = "selectedTextTranslationEnabled"
+    static let hideOriginalTextInSentenceOverlay = "hideOriginalTextInSentenceOverlay"
     static let autoCheckUpdates = "autoCheckUpdates"
     static let updateChannel = "updateChannel"
     static let debugShowChannelSelector = "debugShowChannelSelector"

@@ -244,7 +244,9 @@ struct OverlayView: View {
     private func paragraphResultView(content: ParagraphOverlayContent) -> some View {
         let originalText = content.originalText ?? ""
         let hasOriginalText = !originalText.isEmpty
-        let showsOriginalTextRegion = hasOriginalText || canEditParagraphOriginalText
+        let hidesOriginalTextRegion = model.settings.hideOriginalTextInSentenceOverlay && !canEditParagraphOriginalText
+        let showsOriginalTextRegion = (hasOriginalText || canEditParagraphOriginalText) && !hidesOriginalTextRegion
+        let showsAutoDismissFailure = !hasOriginalText && content.serviceResults.isEmpty
         let originalFontSize: CGFloat = if content.useFixedFontSize {
             content.bodyFontSize
         } else {
@@ -256,6 +258,8 @@ struct OverlayView: View {
             )
         }
         let translationFontSize: CGFloat = if canEditParagraphOriginalText {
+            ParagraphFontSizing.stableFontSize(preferredFontSize: content.bodyFontSize)
+        } else if hidesOriginalTextRegion {
             ParagraphFontSizing.stableFontSize(preferredFontSize: content.bodyFontSize)
         } else {
             originalFontSize
@@ -269,20 +273,30 @@ struct OverlayView: View {
             }
 
             paragraphBodyContainer {
-                if showsOriginalTextRegion {
-                    VStack(alignment: .leading, spacing: 0) {
-                        paragraphOriginalTextView(
-                            text: originalText,
-                            fontSize: originalFontSize
-                        )
-                        .padding(.top, canEditParagraphOriginalText ? 2 : 4)
-                    }
-                    .padding(.horizontal, paragraphTextHorizontalPadding)
-                    .padding(.bottom, canEditParagraphOriginalText ? 10 : 10)
-
-                    paragraphLanguageSelector(content: content)
+                if showsAutoDismissFailure,
+                   case .failed(let message) = content.translationState {
+                    // Auto-dismiss error view for paragraph translation errors with no original text.
+                    AutoDismissErrorView(message: L(message), onDismiss: { model.dismissOverlay() })
                         .padding(.horizontal, paragraphTextHorizontalPadding)
-                        .padding(.bottom, canEditParagraphOriginalText ? 6 : 2)
+                        .padding(.vertical, 18)
+                } else {
+                    if showsOriginalTextRegion {
+                        VStack(alignment: .leading, spacing: 0) {
+                            paragraphOriginalTextView(
+                                text: originalText,
+                                fontSize: originalFontSize
+                            )
+                            .padding(.top, canEditParagraphOriginalText ? 2 : 4)
+                        }
+                        .padding(.horizontal, paragraphTextHorizontalPadding)
+                        .padding(.bottom, canEditParagraphOriginalText ? 10 : 10)
+                    }
+
+                    if showsOriginalTextRegion || content.languageOptions.count == 2 {
+                        paragraphLanguageSelector(content: content)
+                            .padding(.horizontal, paragraphTextHorizontalPadding)
+                            .padding(.bottom, canEditParagraphOriginalText ? 6 : 2)
+                    }
 
                     // Native Translation Section (System Translation)
                     switch content.translationState {
@@ -339,11 +353,6 @@ struct OverlayView: View {
                             paragraphServiceResultCard(result: result, fontSize: translationFontSize)
                         }
                     }
-                } else if case .failed(let message) = content.translationState {
-                    // Auto-dismiss error view for paragraph translation errors
-                    AutoDismissErrorView(message: L(message), onDismiss: { model.dismissOverlay() })
-                        .padding(.horizontal, paragraphTextHorizontalPadding)
-                        .padding(.vertical, 18)
                 }
             }
         }

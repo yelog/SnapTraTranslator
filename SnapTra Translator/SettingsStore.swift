@@ -135,6 +135,9 @@ final class SettingsStore: ObservableObject {
     @Published var selectedTextTranslationEnabled: Bool {
         didSet { defaults.set(selectedTextTranslationEnabled, forKey: AppSettingKey.selectedTextTranslationEnabled) }
     }
+    @Published var hideOriginalTextInSentenceOverlay: Bool {
+        didSet { defaults.set(hideOriginalTextInSentenceOverlay, forKey: AppSettingKey.hideOriginalTextInSentenceOverlay) }
+    }
     @Published var autoCheckUpdates: Bool {
         didSet {
             defaults.set(autoCheckUpdates, forKey: AppSettingKey.autoCheckUpdates)
@@ -255,6 +258,8 @@ final class SettingsStore: ObservableObject {
         let sentenceTranslationSettings = Self.loadSentenceTranslationSettings(defaults: defaults)
         ocrSentenceTranslationEnabled = sentenceTranslationSettings.ocrSentenceTranslationEnabled
         selectedTextTranslationEnabled = sentenceTranslationSettings.selectedTextTranslationEnabled
+        let hideOriginalTextValue = defaults.object(forKey: AppSettingKey.hideOriginalTextInSentenceOverlay) as? Bool
+        hideOriginalTextInSentenceOverlay = hideOriginalTextValue ?? false
 
         // Load auto update settings
         let autoCheckUpdatesValue = defaults.object(forKey: AppSettingKey.autoCheckUpdates) as? Bool
@@ -304,6 +309,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(englishAccent.rawValue, forKey: AppSettingKey.englishAccent)
         defaults.set(ocrSentenceTranslationEnabled, forKey: AppSettingKey.ocrSentenceTranslationEnabled)
         defaults.set(selectedTextTranslationEnabled, forKey: AppSettingKey.selectedTextTranslationEnabled)
+        defaults.set(hideOriginalTextInSentenceOverlay, forKey: AppSettingKey.hideOriginalTextInSentenceOverlay)
         defaults.set(autoCheckUpdates, forKey: AppSettingKey.autoCheckUpdates)
         defaults.set(updateChannel.rawValue, forKey: AppSettingKey.updateChannel)
         #if DEBUG

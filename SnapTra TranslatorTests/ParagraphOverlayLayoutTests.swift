@@ -131,4 +131,98 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
 
         XCTAssertGreaterThan(fontSize, 14)
     }
+
+    func testOutsideClickPolicyDismissesPinnedParagraphOverlayOutsideProtectedFrames() {
+        let shouldDismiss = ParagraphOutsideClickDismissalPolicy.shouldDismiss(
+            mouseLocation: CGPoint(x: 500, y: 500),
+            isParagraphOverlayPresented: true,
+            isParagraphOverlayPinned: true,
+            isRegionInteractionActive: false,
+            overlayFrame: CGRect(x: 100, y: 100, width: 200, height: 120),
+            highlightFrame: CGRect(x: 320, y: 100, width: 120, height: 40),
+            activeParagraphRect: CGRect(x: 320, y: 100, width: 120, height: 40)
+        )
+
+        XCTAssertTrue(shouldDismiss)
+    }
+
+    func testOutsideClickPolicyKeepsOverlayClicks() {
+        let shouldDismiss = ParagraphOutsideClickDismissalPolicy.shouldDismiss(
+            mouseLocation: CGPoint(x: 150, y: 150),
+            isParagraphOverlayPresented: true,
+            isParagraphOverlayPinned: true,
+            isRegionInteractionActive: false,
+            overlayFrame: CGRect(x: 100, y: 100, width: 200, height: 120),
+            highlightFrame: nil,
+            activeParagraphRect: nil
+        )
+
+        XCTAssertFalse(shouldDismiss)
+    }
+
+    func testOutsideClickPolicyKeepsParagraphRegionClicks() {
+        let paragraphRect = CGRect(x: 320, y: 100, width: 120, height: 40)
+
+        let shouldDismiss = ParagraphOutsideClickDismissalPolicy.shouldDismiss(
+            mouseLocation: CGPoint(x: 315, y: 118),
+            isParagraphOverlayPresented: true,
+            isParagraphOverlayPinned: true,
+            isRegionInteractionActive: false,
+            overlayFrame: CGRect(x: 100, y: 100, width: 200, height: 120),
+            highlightFrame: nil,
+            activeParagraphRect: paragraphRect
+        )
+
+        XCTAssertFalse(shouldDismiss)
+    }
+
+    func testOutsideClickPolicyKeepsHighlightWindowClicks() {
+        let shouldDismiss = ParagraphOutsideClickDismissalPolicy.shouldDismiss(
+            mouseLocation: CGPoint(x: 330, y: 118),
+            isParagraphOverlayPresented: true,
+            isParagraphOverlayPinned: true,
+            isRegionInteractionActive: false,
+            overlayFrame: nil,
+            highlightFrame: CGRect(x: 320, y: 100, width: 120, height: 40),
+            activeParagraphRect: nil
+        )
+
+        XCTAssertFalse(shouldDismiss)
+    }
+
+    func testOutsideClickPolicyDoesNotDismissWhileParagraphRegionIsInteractive() {
+        let shouldDismiss = ParagraphOutsideClickDismissalPolicy.shouldDismiss(
+            mouseLocation: CGPoint(x: 500, y: 500),
+            isParagraphOverlayPresented: true,
+            isParagraphOverlayPinned: true,
+            isRegionInteractionActive: true,
+            overlayFrame: nil,
+            highlightFrame: nil,
+            activeParagraphRect: nil
+        )
+
+        XCTAssertFalse(shouldDismiss)
+    }
+
+    func testOutsideClickPolicyOnlyDismissesPinnedParagraphOverlay() {
+        XCTAssertFalse(ParagraphOutsideClickDismissalPolicy.shouldDismiss(
+            mouseLocation: CGPoint(x: 500, y: 500),
+            isParagraphOverlayPresented: false,
+            isParagraphOverlayPinned: true,
+            isRegionInteractionActive: false,
+            overlayFrame: nil,
+            highlightFrame: nil,
+            activeParagraphRect: nil
+        ))
+
+        XCTAssertFalse(ParagraphOutsideClickDismissalPolicy.shouldDismiss(
+            mouseLocation: CGPoint(x: 500, y: 500),
+            isParagraphOverlayPresented: true,
+            isParagraphOverlayPinned: false,
+            isRegionInteractionActive: false,
+            overlayFrame: nil,
+            highlightFrame: nil,
+            activeParagraphRect: nil
+        ))
+    }
 }
