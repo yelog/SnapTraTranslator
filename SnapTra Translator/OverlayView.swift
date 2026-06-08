@@ -11,6 +11,7 @@ struct OverlayView: View {
     @StateObject private var localizationManager = LocalizationManager.shared
     @State private var isParagraphHeaderHovered = false
     @State private var isParagraphHeaderDragging = false
+    @State private var isParagraphOriginalEditorExpanded = false
     private let wordOverlayWidth: CGFloat = 380
     private let paragraphOverlayWidth: CGFloat = 520
     private let paragraphHeaderHeight: CGFloat = 34
@@ -60,10 +61,6 @@ struct OverlayView: View {
     }
 
     private var canDragPinnedParagraphOverlay: Bool {
-        isParagraphOverlayMode && model.isParagraphOverlayPinned
-    }
-
-    private var canEditParagraphOriginalText: Bool {
         isParagraphOverlayMode && model.isParagraphOverlayPinned
     }
 
@@ -163,10 +160,22 @@ struct OverlayView: View {
         .onChange(of: isParagraphOverlayMode) { _, isParagraphMode in
             if !isParagraphMode {
                 resetParagraphHeaderInteractionState()
+                resetParagraphOriginalEditorState()
+            }
+        }
+        .onChange(of: model.isParagraphOverlayPinned) { _, isPinned in
+            if !isPinned {
+                resetParagraphOriginalEditorState()
+            }
+        }
+        .onChange(of: model.settings.hideOriginalTextInSentenceOverlay) { _, hidesOriginalText in
+            if hidesOriginalText {
+                resetParagraphOriginalEditorState()
             }
         }
         .onDisappear {
             resetParagraphHeaderInteractionState()
+            resetParagraphOriginalEditorState()
         }
     }
 
@@ -244,9 +253,13 @@ struct OverlayView: View {
     private func paragraphResultView(content: ParagraphOverlayContent) -> some View {
         let originalText = content.originalText ?? ""
         let hasOriginalText = !originalText.isEmpty
-        let hidesOriginalTextRegion = model.settings.hideOriginalTextInSentenceOverlay && !canEditParagraphOriginalText
-        let showsOriginalTextRegion = (hasOriginalText || canEditParagraphOriginalText) && !hidesOriginalTextRegion
-        let showsAutoDismissFailure = !hasOriginalText && content.serviceResults.isEmpty
+        let originalVisibility = ParagraphOriginalVisibilityPolicy.resolve(
+            hasOriginalText: hasOriginalText,
+            isParagraphOverlayPinned: model.isParagraphOverlayPinned,
+            hidesOriginalTextSetting: model.settings.hideOriginalTextInSentenceOverlay,
+            isOriginalEditorExpanded: isParagraphOriginalEditorExpanded
+        )
+        let showsAutoDismissFailure = !hasOriginalText && content.serviceResults.isEmpty && !originalVisibility.showsOriginalTextRegion
         let originalFontSize: CGFloat = if content.useFixedFontSize {
             content.bodyFontSize
         } else {
@@ -257,19 +270,21 @@ struct OverlayView: View {
                 horizontalPadding: paragraphTextHorizontalPadding
             )
         }
-        let translationFontSize: CGFloat = if canEditParagraphOriginalText {
-            ParagraphFontSizing.stableFontSize(preferredFontSize: content.bodyFontSize)
-        } else if hidesOriginalTextRegion {
+        let translationFontSize: CGFloat = if originalVisibility.usesStableTranslationFont {
             ParagraphFontSizing.stableFontSize(preferredFontSize: content.bodyFontSize)
         } else {
             originalFontSize
         }
+        let showsLanguageSelectorInTopBar = !originalVisibility.showsOriginalTextRegion && hasParagraphLanguageSelector(content)
 
         VStack(alignment: .leading, spacing: 0) {
-            if showsOriginalTextRegion {
-                paragraphOriginalTopBar(copyText: originalText)
+            if originalVisibility.showsOriginalTextRegion {
+                paragraphOriginalTopBar(copyText: originalText, originalVisibility: originalVisibility)
             } else {
-                paragraphTopBar()
+                paragraphTopBar(
+                    originalVisibility: originalVisibility,
+                    languageSelectorContent: showsLanguageSelectorInTopBar ? content : nil
+                )
             }
 
             paragraphBodyContainer {
@@ -280,22 +295,23 @@ struct OverlayView: View {
                         .padding(.horizontal, paragraphTextHorizontalPadding)
                         .padding(.vertical, 18)
                 } else {
-                    if showsOriginalTextRegion {
+                    if originalVisibility.showsOriginalTextRegion {
                         VStack(alignment: .leading, spacing: 0) {
                             paragraphOriginalTextView(
                                 text: originalText,
-                                fontSize: originalFontSize
+                                fontSize: originalFontSize,
+                                usesEditableOriginalText: originalVisibility.usesEditableOriginalText
                             )
-                            .padding(.top, canEditParagraphOriginalText ? 2 : 4)
+                            .padding(.top, originalVisibility.usesEditableOriginalText ? 2 : 4)
                         }
                         .padding(.horizontal, paragraphTextHorizontalPadding)
-                        .padding(.bottom, canEditParagraphOriginalText ? 10 : 10)
+                        .padding(.bottom, 10)
                     }
 
-                    if showsOriginalTextRegion || content.languageOptions.count == 2 {
+                    if !showsLanguageSelectorInTopBar && (originalVisibility.showsOriginalTextRegion || hasParagraphLanguageSelector(content)) {
                         paragraphLanguageSelector(content: content)
                             .padding(.horizontal, paragraphTextHorizontalPadding)
-                            .padding(.bottom, canEditParagraphOriginalText ? 6 : 2)
+                            .padding(.bottom, originalVisibility.usesEditableOriginalText ? 6 : 2)
                     }
 
                     // Native Translation Section (System Translation)
@@ -332,7 +348,7 @@ struct OverlayView: View {
                             )
                         }
                         .padding(.horizontal, paragraphTextHorizontalPadding)
-                        .padding(.top, canEditParagraphOriginalText ? 12 : 14)
+                        .padding(.top, originalVisibility.usesEditableOriginalText ? 12 : 14)
                         .padding(.bottom, 14)
 
                     case .failed(let message):
@@ -359,8 +375,12 @@ struct OverlayView: View {
     }
 
     @ViewBuilder
-    private func paragraphOriginalTextView(text: String, fontSize: CGFloat) -> some View {
-        if canEditParagraphOriginalText {
+    private func paragraphOriginalTextView(
+        text: String,
+        fontSize: CGFloat,
+        usesEditableOriginalText: Bool
+    ) -> some View {
+        if usesEditableOriginalText {
             editableParagraphOriginalTextView(text: text)
         } else {
             if !text.isEmpty {
@@ -428,30 +448,11 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func paragraphLanguageSelector(content: ParagraphOverlayContent) -> some View {
-        if content.languageOptions.count == 2,
-           let selectedIdentifier = content.selectedTargetLanguageIdentifier {
+        if hasParagraphLanguageSelector(content) {
             HStack {
                 Spacer(minLength: 0)
 
-                HStack(spacing: 2) {
-                    ForEach(content.languageOptions) { option in
-                        paragraphLanguageOptionButton(
-                            option: option,
-                            isSelected: Locale.Language(identifier: option.identifier).minimalIdentifier == Locale.Language(identifier: selectedIdentifier).minimalIdentifier
-                        )
-                    }
-                }
-                .fixedSize(horizontal: true, vertical: false)
-                .layoutPriority(1)
-                .padding(2)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(colorScheme == .dark ? .white.opacity(0.075) : .black.opacity(0.04))
-                )
-                .overlay(
-                    Capsule(style: .continuous)
-                        .stroke(Color.secondary.opacity(0.12), lineWidth: 0.5)
-                )
+                paragraphLanguageSelectorCapsule(content: content)
 
                 Spacer(minLength: 0)
             }
@@ -461,20 +462,54 @@ struct OverlayView: View {
         }
     }
 
+    private func hasParagraphLanguageSelector(_ content: ParagraphOverlayContent) -> Bool {
+        content.languageOptions.count == 2 && content.selectedTargetLanguageIdentifier != nil
+    }
+
+    @ViewBuilder
+    private func paragraphLanguageSelectorCapsule(
+        content: ParagraphOverlayContent,
+        isCompact: Bool = false
+    ) -> some View {
+        if let selectedIdentifier = content.selectedTargetLanguageIdentifier {
+            HStack(spacing: isCompact ? 1 : 2) {
+                ForEach(content.languageOptions) { option in
+                    paragraphLanguageOptionButton(
+                        option: option,
+                        isSelected: Locale.Language(identifier: option.identifier).minimalIdentifier == Locale.Language(identifier: selectedIdentifier).minimalIdentifier,
+                        isCompact: isCompact
+                    )
+                }
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(1)
+            .padding(isCompact ? 1 : 2)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(colorScheme == .dark ? .white.opacity(0.075) : .black.opacity(0.04))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(Color.secondary.opacity(0.12), lineWidth: 0.5)
+            )
+        }
+    }
+
     private func paragraphLanguageOptionButton(
         option: ParagraphTranslationLanguageOption,
-        isSelected: Bool
+        isSelected: Bool,
+        isCompact: Bool = false
     ) -> some View {
         Button {
             model.translateParagraphOriginal(to: option.identifier)
         } label: {
             Text(option.displayName)
-                .font(.system(size: 11, weight: isSelected ? .semibold : .medium, design: .rounded))
+                .font(.system(size: isCompact ? 10.5 : 11, weight: isSelected ? .semibold : .medium, design: .rounded))
                 .foregroundStyle(isSelected ? Color.primary : Color.secondary)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .padding(.horizontal, isCompact ? 8 : 10)
+                .padding(.vertical, isCompact ? 3 : 4)
                 .background(
                     Capsule(style: .continuous)
                         .fill(isSelected ? selectedParagraphLanguageOptionBackground : Color.clear)
@@ -652,27 +687,53 @@ struct OverlayView: View {
     }
 
     @ViewBuilder
-    private func paragraphTopBar() -> some View {
-        HStack(spacing: 0) {
+    private func paragraphTopBar(
+        originalVisibility: ParagraphOriginalVisibilityPolicy.Decision? = nil,
+        languageSelectorContent: ParagraphOverlayContent? = nil
+    ) -> some View {
+        let showsLanguageSelector = languageSelectorContent != nil
+
+        ZStack(alignment: .center) {
             paragraphHeaderDragArea()
 
-            paragraphOverlayControlButton()
+            if let languageSelectorContent {
+                paragraphLanguageSelectorCapsule(content: languageSelectorContent, isCompact: true)
+            }
+
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+
+                if let originalVisibility, originalVisibility.showsOriginalEditorToggle {
+                    paragraphOriginalEditorToggleButton(isExpanded: originalVisibility.usesEditableOriginalText)
+                }
+
+                paragraphOverlayControlButton()
+            }
         }
-        .frame(height: 18)
+        .frame(height: showsLanguageSelector ? 24 : 18)
         .padding(.horizontal, 14)
         .padding(.top, 10)
-        .padding(.bottom, 6)
+        .padding(.bottom, showsLanguageSelector ? 4 : 6)
     }
 
     @ViewBuilder
-    private func paragraphOriginalTopBar(copyText: String) -> some View {
+    private func paragraphOriginalTopBar(
+        copyText: String,
+        originalVisibility: ParagraphOriginalVisibilityPolicy.Decision
+    ) -> some View {
         HStack(alignment: .center, spacing: 8) {
             paragraphHeaderDragArea(
                 title: paragraphOriginalSectionTitle,
                 fillsWidth: false
             )
 
-            CopyButton(text: copyText)
+            if !copyText.isEmpty {
+                CopyButton(text: copyText)
+            }
+
+            if originalVisibility.showsOriginalEditorToggle {
+                paragraphOriginalEditorToggleButton(isExpanded: originalVisibility.usesEditableOriginalText)
+            }
 
             paragraphHeaderDragArea()
 
@@ -683,6 +744,15 @@ struct OverlayView: View {
         .padding(.trailing, 14)
         .padding(.top, 10)
         .padding(.bottom, 6)
+    }
+
+    @ViewBuilder
+    private func paragraphOriginalEditorToggleButton(isExpanded: Bool) -> some View {
+        paragraphOverlayControlButton(
+            systemImage: isExpanded ? "eye.slash" : "pencil",
+            helpText: isExpanded ? L("Hide Original Text") : L("Edit Original Text"),
+            action: { isParagraphOriginalEditorExpanded.toggle() }
+        )
     }
 
     @ViewBuilder
@@ -828,6 +898,10 @@ struct OverlayView: View {
         isParagraphHeaderDragging = false
         isParagraphHeaderHovered = false
         NSCursor.arrow.set()
+    }
+
+    private func resetParagraphOriginalEditorState() {
+        isParagraphOriginalEditorExpanded = false
     }
 
     @ViewBuilder
@@ -1407,6 +1481,44 @@ private extension Array where Element == String {
         if contains(value) == false {
             append(value)
         }
+    }
+}
+
+enum ParagraphOriginalVisibilityPolicy {
+    struct Decision: Equatable {
+        let showsOriginalTextRegion: Bool
+        let usesEditableOriginalText: Bool
+        let showsOriginalEditorToggle: Bool
+        let hidesOriginalTextRegion: Bool
+
+        var usesStableTranslationFont: Bool {
+            usesEditableOriginalText || hidesOriginalTextRegion
+        }
+    }
+
+    static func resolve(
+        hasOriginalText: Bool,
+        isParagraphOverlayPinned: Bool,
+        hidesOriginalTextSetting: Bool,
+        isOriginalEditorExpanded: Bool
+    ) -> Decision {
+        let canEditOriginalText = isParagraphOverlayPinned
+        let showsEditableFallback = canEditOriginalText && !hasOriginalText
+        let showsOriginalEditorToggle = canEditOriginalText && hidesOriginalTextSetting && hasOriginalText
+
+        let showsOriginalTextRegion: Bool = if hidesOriginalTextSetting {
+            showsEditableFallback || (canEditOriginalText && isOriginalEditorExpanded)
+        } else {
+            hasOriginalText || canEditOriginalText
+        }
+        let usesEditableOriginalText = canEditOriginalText && showsOriginalTextRegion
+
+        return Decision(
+            showsOriginalTextRegion: showsOriginalTextRegion,
+            usesEditableOriginalText: usesEditableOriginalText,
+            showsOriginalEditorToggle: showsOriginalEditorToggle,
+            hidesOriginalTextRegion: hidesOriginalTextSetting && !showsOriginalTextRegion
+        )
     }
 }
 

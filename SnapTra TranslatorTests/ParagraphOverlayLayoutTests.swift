@@ -225,4 +225,74 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
             activeParagraphRect: nil
         ))
     }
+
+    func testOriginalVisibilityShowsEditableOriginalWhenHideSettingIsOffAndOverlayIsPinned() {
+        let decision = ParagraphOriginalVisibilityPolicy.resolve(
+            hasOriginalText: true,
+            isParagraphOverlayPinned: true,
+            hidesOriginalTextSetting: false,
+            isOriginalEditorExpanded: false
+        )
+
+        XCTAssertTrue(decision.showsOriginalTextRegion)
+        XCTAssertTrue(decision.usesEditableOriginalText)
+        XCTAssertFalse(decision.showsOriginalEditorToggle)
+        XCTAssertFalse(decision.hidesOriginalTextRegion)
+    }
+
+    func testOriginalVisibilityHidesOriginalWhenHideSettingIsOnAndPinnedEditorIsCollapsed() {
+        let decision = ParagraphOriginalVisibilityPolicy.resolve(
+            hasOriginalText: true,
+            isParagraphOverlayPinned: true,
+            hidesOriginalTextSetting: true,
+            isOriginalEditorExpanded: false
+        )
+
+        XCTAssertFalse(decision.showsOriginalTextRegion)
+        XCTAssertFalse(decision.usesEditableOriginalText)
+        XCTAssertTrue(decision.showsOriginalEditorToggle)
+        XCTAssertTrue(decision.hidesOriginalTextRegion)
+    }
+
+    func testOriginalVisibilityShowsEditableFallbackWhenHideSettingIsOnAndPinnedOriginalTextIsMissing() {
+        let decision = ParagraphOriginalVisibilityPolicy.resolve(
+            hasOriginalText: false,
+            isParagraphOverlayPinned: true,
+            hidesOriginalTextSetting: true,
+            isOriginalEditorExpanded: false
+        )
+
+        XCTAssertTrue(decision.showsOriginalTextRegion)
+        XCTAssertTrue(decision.usesEditableOriginalText)
+        XCTAssertFalse(decision.showsOriginalEditorToggle)
+        XCTAssertFalse(decision.hidesOriginalTextRegion)
+    }
+
+    func testOriginalVisibilityShowsEditableOriginalWhenHideSettingIsOnAndPinnedEditorIsExpanded() {
+        let decision = ParagraphOriginalVisibilityPolicy.resolve(
+            hasOriginalText: true,
+            isParagraphOverlayPinned: true,
+            hidesOriginalTextSetting: true,
+            isOriginalEditorExpanded: true
+        )
+
+        XCTAssertTrue(decision.showsOriginalTextRegion)
+        XCTAssertTrue(decision.usesEditableOriginalText)
+        XCTAssertTrue(decision.showsOriginalEditorToggle)
+        XCTAssertFalse(decision.hidesOriginalTextRegion)
+    }
+
+    func testOriginalVisibilityHidesOriginalWhenHideSettingIsOnAndOverlayIsNotPinned() {
+        let decision = ParagraphOriginalVisibilityPolicy.resolve(
+            hasOriginalText: true,
+            isParagraphOverlayPinned: false,
+            hidesOriginalTextSetting: true,
+            isOriginalEditorExpanded: true
+        )
+
+        XCTAssertFalse(decision.showsOriginalTextRegion)
+        XCTAssertFalse(decision.usesEditableOriginalText)
+        XCTAssertFalse(decision.showsOriginalEditorToggle)
+        XCTAssertTrue(decision.hidesOriginalTextRegion)
+    }
 }
