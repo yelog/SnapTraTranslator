@@ -52,6 +52,7 @@ final class SettingsStoreMigrationTests: XCTestCase {
         AppSettingKey.debugShowChannelSelector,
         "dictionarySources",
         "sentenceTranslationSources",
+        "llmProviderConfigurations",
     ]
 
     private func makeDefaults(testName: String = #function) -> UserDefaults {
@@ -102,6 +103,79 @@ final class SettingsStoreMigrationTests: XCTestCase {
         XCTAssertFalse(migrated[2].isEnabled)
         XCTAssertFalse(migrated[3].isEnabled)
         XCTAssertFalse(migrated[4].isEnabled)
+    }
+
+    func testSentenceTranslationSourceMigrationAppendsLLMProvidersDisabled() {
+        let existing: [SentenceTranslationSource] = [
+            SentenceTranslationSource(id: UUID(), type: .native, isEnabled: true),
+            SentenceTranslationSource(id: UUID(), type: .google, isEnabled: true),
+            SentenceTranslationSource(id: UUID(), type: .youdao, isEnabled: false),
+        ]
+
+        let migrated = SettingsStore.migrateSentenceTranslationSources(existing)
+
+        XCTAssertEqual(migrated.prefix(3).map(\.type), [.native, .google, .youdao])
+        XCTAssertTrue(migrated[0].isEnabled)
+        XCTAssertTrue(migrated[1].isEnabled)
+        XCTAssertFalse(migrated[2].isEnabled)
+        XCTAssertEqual(
+            migrated.filter { $0.type.isLLMProvider }.map(\.type),
+            SentenceTranslationSource.SourceType.llmProviderTypes
+        )
+        XCTAssertTrue(migrated.filter { $0.type.isLLMProvider }.allSatisfy { !$0.isEnabled })
+    }
+
+    func testDefaultLLMProviderConfigurations() {
+        let configurations = SettingsStore.defaultLLMProviderConfigurations()
+
+        XCTAssertEqual(
+            configurations.map(\.provider),
+            SentenceTranslationSource.SourceType.llmProviderTypes
+        )
+        XCTAssertEqual(
+            configurations.first { $0.provider == .openAI }?.baseURL,
+            "https://api.openai.com/v1"
+        )
+        XCTAssertEqual(
+            configurations.first { $0.provider == .anthropic }?.model,
+            "claude-haiku-4-5"
+        )
+        XCTAssertEqual(
+            configurations.first { $0.provider == .gemini }?.model,
+            "gemini-3.5-flash"
+        )
+        XCTAssertEqual(
+            configurations.first { $0.provider == .deepSeek }?.model,
+            "deepseek-v4-flash"
+        )
+        XCTAssertEqual(
+            configurations.first { $0.provider == .ollama }?.baseURL,
+            "http://localhost:11434/v1"
+        )
+        XCTAssertEqual(
+            configurations.first { $0.provider == .omlx }?.baseURL,
+            "http://localhost:8000/v1"
+        )
+    }
+
+    func testLLMProviderConfigurationMigrationPreservesCustomValuesAndFillsMissingProviders() {
+        let existing = [
+            LLMProviderConfiguration(
+                provider: .openAI,
+                model: "custom-model",
+                baseURL: "https://proxy.example/v1"
+            ),
+        ]
+
+        let migrated = SettingsStore.migrateLLMProviderConfigurations(existing)
+
+        XCTAssertEqual(
+            migrated.map(\.provider),
+            SentenceTranslationSource.SourceType.llmProviderTypes
+        )
+        XCTAssertEqual(migrated.first { $0.provider == .openAI }?.model, "custom-model")
+        XCTAssertEqual(migrated.first { $0.provider == .openAI }?.baseURL, "https://proxy.example/v1")
+        XCTAssertEqual(migrated.first { $0.provider == .gemini }?.baseURL, "https://generativelanguage.googleapis.com/v1beta")
     }
 
     func testLegacySentenceTranslationSettingMigratesToOcrSentenceToggle() {

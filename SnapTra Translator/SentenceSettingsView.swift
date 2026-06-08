@@ -31,8 +31,10 @@ struct SentenceSettingsView: View {
                 ReorderableVStack(items: $sources, content: { source, index in
                     SentenceServiceRow(
                         source: source,
+                        settings: model.settings,
                         latency: latencyTester.latencies[source.wrappedValue.type] ?? .pending,
-                        onToggle: { updateSources() }
+                        onToggle: { updateSources() },
+                        onConfigurationChange: refreshLatencyState
                     )
                 }, onMove: moveSource)
                 .padding(.horizontal)
@@ -41,7 +43,12 @@ struct SentenceSettingsView: View {
                 HStack {
                     Spacer()
                     Button {
-                        Task { await latencyTester.testAll() }
+                        Task {
+                            await latencyTester.testAll(
+                                sources: sources,
+                                configurations: model.settings.llmProviderConfigurations
+                            )
+                        }
                     } label: {
                         HStack(spacing: 6) {
                             if latencyTester.isTesting {
@@ -80,7 +87,12 @@ struct SentenceSettingsView: View {
             loadSources()
             if !hasTestedLatency {
                 hasTestedLatency = true
-                Task { await latencyTester.testAll() }
+                Task {
+                    await latencyTester.testAll(
+                        sources: sources,
+                        configurations: model.settings.llmProviderConfigurations
+                    )
+                }
             }
         }
     }
@@ -93,6 +105,12 @@ struct SentenceSettingsView: View {
         model.settings.sentenceTranslationSources = sources
     }
 
+    private func refreshLatencyState() {
+        for source in sources where source.type.isLLMProvider {
+            latencyTester.latencies[source.type] = .pending
+        }
+    }
+
     private func moveSource(from indices: IndexSet, to offset: Int) {
         sources.move(fromOffsets: indices, toOffset: offset)
         updateSources()
@@ -103,9 +121,12 @@ struct SentenceSettingsView: View {
 
 struct SentenceServiceRow: View {
     @Binding var source: SentenceTranslationSource
+    @ObservedObject var settings: SettingsStore
     var latency: SentenceLatencyTester.LatencyResult
     var onToggle: () -> Void
+    var onConfigurationChange: () -> Void
     @StateObject private var localizationManager = LocalizationManager.shared
+    @State private var apiKeyText = ""
 
     private var isNativeUnavailable: Bool {
         if source.isNative {
@@ -141,6 +162,10 @@ struct SentenceServiceRow: View {
                         if !source.isNative {
                             latencyView
                         }
+
+                        if showsMissingAPIKeyBadge {
+                            missingAPIKeyBadge
+                        }
                     }
                     Text(localizedSubtitle)
                         .font(.system(size: 11))
@@ -158,6 +183,7 @@ struct SentenceServiceRow: View {
                     .disabled(isNativeUnavailable)
                     .onChange(of: source.isEnabled) { _, _ in
                         onToggle()
+                        loadAPIKey()
                     }
             }
             .padding(.vertical, 8)
@@ -175,6 +201,11 @@ struct SentenceServiceRow: View {
                 }
                 .padding(.top, 4)
             }
+
+            if source.type.isLLMProvider && source.isEnabled {
+                llmConfigurationView
+                    .padding(.top, 8)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -191,6 +222,9 @@ struct SentenceServiceRow: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(Color.accentColor.opacity(isNativeUnavailable ? 0 : 0.3), lineWidth: source.isNative ? 1.5 : 0)
         )
+        .onAppear {
+            loadAPIKey()
+        }
     }
 
     @ViewBuilder
@@ -212,6 +246,30 @@ struct SentenceServiceRow: View {
             Image("TTSYoudao")
                 .resizable()
                 .interpolation(.high)
+        case .openAI:
+            Image(systemName: "sparkles")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.teal)
+        case .anthropic:
+            Image(systemName: "brain.head.profile")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.purple)
+        case .gemini:
+            Image(systemName: "diamond")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.blue)
+        case .deepSeek:
+            Image(systemName: "waveform.path.ecg")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.cyan)
+        case .ollama:
+            Image(systemName: "desktopcomputer")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.green)
+        case .omlx:
+            Image(systemName: "cpu")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.orange)
         }
     }
 
@@ -285,6 +343,18 @@ struct SentenceServiceRow: View {
             return L("Bing Translate")
         case .youdao:
             return L("Youdao Translate")
+        case .openAI:
+            return "OpenAI"
+        case .anthropic:
+            return "Anthropic"
+        case .gemini:
+            return "Gemini"
+        case .deepSeek:
+            return "DeepSeek"
+        case .ollama:
+            return "Ollama"
+        case .omlx:
+            return "oMLX"
         }
     }
 
@@ -299,7 +369,133 @@ struct SentenceServiceRow: View {
             return L("Bing web translation")
         case .youdao:
             return L("Youdao web translation")
+        case .openAI:
+            return L("OpenAI API translation")
+        case .anthropic:
+            return L("Claude API translation")
+        case .gemini:
+            return L("Gemini API translation")
+        case .deepSeek:
+            return L("DeepSeek API translation")
+        case .ollama:
+            return L("Local Ollama translation")
+        case .omlx:
+            return L("Local oMLX translation")
         }
+    }
+
+    @ViewBuilder
+    private var llmConfigurationView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider()
+                .padding(.leading, 52)
+
+            llmFieldRow(title: L("Model")) {
+                TextField(
+                    source.type.defaultLLMModel,
+                    text: Binding(
+                        get: {
+                            settings.llmProviderConfiguration(for: source.type).model
+                        },
+                        set: { model in
+                            let configuration = settings.llmProviderConfiguration(for: source.type)
+                            settings.updateLLMProviderConfiguration(
+                                for: source.type,
+                                model: model,
+                                baseURL: configuration.baseURL
+                            )
+                            onConfigurationChange()
+                        }
+                    )
+                )
+            }
+
+            llmFieldRow(title: L("Base URL")) {
+                TextField(
+                    source.type.defaultLLMBaseURL,
+                    text: Binding(
+                        get: {
+                            settings.llmProviderConfiguration(for: source.type).baseURL
+                        },
+                        set: { baseURL in
+                            let configuration = settings.llmProviderConfiguration(for: source.type)
+                            settings.updateLLMProviderConfiguration(
+                                for: source.type,
+                                model: configuration.model,
+                                baseURL: baseURL
+                            )
+                            onConfigurationChange()
+                        }
+                    )
+                )
+            }
+
+            if source.type.requiresAPIKey || source.type.acceptsOptionalAPIKey {
+                llmFieldRow(title: source.type.requiresAPIKey ? L("API Key") : L("API Key Optional")) {
+                    SecureField(
+                        source.type.requiresAPIKey ? L("Required") : L("Optional"),
+                        text: $apiKeyText
+                    )
+                    .onChange(of: apiKeyText) { _, newValue in
+                        LLMProviderCredentialStore.setAPIKey(newValue, for: source.type)
+                        onConfigurationChange()
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                Spacer()
+                Button {
+                    settings.resetLLMProviderConfiguration(for: source.type)
+                    onConfigurationChange()
+                } label: {
+                    Label(L("Reset Defaults"), systemImage: "arrow.counterclockwise")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+            .padding(.leading, 52)
+        }
+    }
+
+    private func llmFieldRow<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 82, alignment: .leading)
+
+            content()
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12))
+        }
+        .padding(.leading, 52)
+    }
+
+    private var showsMissingAPIKeyBadge: Bool {
+        source.isEnabled
+            && source.type.requiresAPIKey
+            && !LLMProviderCredentialStore.hasAPIKey(for: source.type)
+    }
+
+    private var missingAPIKeyBadge: some View {
+        Text(L("API Key Required"))
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(Color.orange.opacity(0.12))
+            )
+    }
+
+    private func loadAPIKey() {
+        apiKeyText = LLMProviderCredentialStore.apiKey(for: source.type) ?? ""
     }
 }
 

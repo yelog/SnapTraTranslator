@@ -1479,14 +1479,38 @@ final class AppModel: ObservableObject {
 
         await withTaskGroup(of: (SentenceTranslationSource.SourceType, TranslationResultState).self) { group in
             for service in enabledServices {
+                let llmConfiguration = service.type.isLLMProvider
+                    ? settings.llmProviderConfiguration(for: service.type)
+                    : nil
                 group.addTask {
                     do {
-                        let result = try await self.sentenceTranslationService.translate(
-                            text: text,
-                            provider: service.type,
-                            sourceLanguage: sourceLanguage,
-                            targetLanguage: targetLanguage
-                        )
+                        let result: String?
+                        if service.type.isLLMProvider {
+                            result = try await self.sentenceTranslationService.translateStreaming(
+                                text: text,
+                                provider: service.type,
+                                sourceLanguage: sourceLanguage,
+                                targetLanguage: targetLanguage,
+                                llmConfiguration: llmConfiguration,
+                                onPartialResult: { partialText in
+                                    guard !partialText.isEmpty else { return }
+                                    await self.updateSentenceServiceTranslationResult(
+                                        sourceType: service.type,
+                                        state: .ready(partialText),
+                                        lookupID: lookupID,
+                                        anchor: anchor
+                                    )
+                                }
+                            )
+                        } else {
+                            result = try await self.sentenceTranslationService.translate(
+                                text: text,
+                                provider: service.type,
+                                sourceLanguage: sourceLanguage,
+                                targetLanguage: targetLanguage,
+                                llmConfiguration: llmConfiguration
+                            )
+                        }
 
                         if let translation = result, !translation.isEmpty {
                             return (service.type, .ready(translation))
@@ -1503,11 +1527,27 @@ final class AppModel: ObservableObject {
             for await (sourceType, state) in group {
                 guard !Task.isCancelled, self.activeLookupID == lookupID else { return }
 
-                self.updateParagraphOverlayContent(for: lookupID, anchor: anchor) { content in
-                    if let index = content.serviceResults.firstIndex(where: { $0.sourceType == sourceType }) {
-                        content.serviceResults[index].state = state
-                    }
-                }
+                self.updateSentenceServiceTranslationResult(
+                    sourceType: sourceType,
+                    state: state,
+                    lookupID: lookupID,
+                    anchor: anchor
+                )
+            }
+        }
+    }
+
+    private func updateSentenceServiceTranslationResult(
+        sourceType: SentenceTranslationSource.SourceType,
+        state: TranslationResultState,
+        lookupID: UUID,
+        anchor: CGPoint
+    ) {
+        guard !Task.isCancelled, activeLookupID == lookupID else { return }
+
+        updateParagraphOverlayContent(for: lookupID, anchor: anchor) { content in
+            if let index = content.serviceResults.firstIndex(where: { $0.sourceType == sourceType }) {
+                content.serviceResults[index].state = state
             }
         }
     }

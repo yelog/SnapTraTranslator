@@ -31,13 +31,17 @@ final class SentenceLatencyTester: ObservableObject {
         self.session = session ?? SharedURLSession.ephemeral
     }
 
-    /// Test all third-party sentence translation sources.
-    func testAll() async {
+    /// Test enabled sentence translation sources.
+    func testAll(
+        sources: [SentenceTranslationSource] = [],
+        configurations: [LLMProviderConfiguration] = []
+    ) async {
         guard !isTesting else { return }
         isTesting = true
         defer { isTesting = false }
 
-        let testTypes: [SentenceTranslationSource.SourceType] = [.google, .bing, .youdao]
+        let testTypes = resolvedTestTypes(from: sources)
+        guard !testTypes.isEmpty else { return }
 
         // Reset to testing state
         for type in testTypes {
@@ -46,7 +50,8 @@ final class SentenceLatencyTester: ObservableObject {
 
         // Test sequentially to avoid rate limiting
         for type in testTypes {
-            let result = await testLatency(for: type)
+            let configuration = configurations.first { $0.provider == type }
+            let result = await testLatency(for: type, configuration: configuration)
             self.latencies[type] = result
             // Small delay between tests to avoid rate limiting
             if type != testTypes.last {
@@ -56,16 +61,22 @@ final class SentenceLatencyTester: ObservableObject {
     }
 
     /// Test latency for a specific sentence translation source.
-    private func testLatency(for type: SentenceTranslationSource.SourceType) async -> LatencyResult {
+    private func testLatency(
+        for type: SentenceTranslationSource.SourceType,
+        configuration: LLMProviderConfiguration?
+    ) async -> LatencyResult {
         switch type {
         case .native:
             return .local
-        case .google, .bing, .youdao:
-            return await testThirdPartyService(type: type)
+        case .google, .bing, .youdao, .openAI, .anthropic, .gemini, .deepSeek, .ollama, .omlx:
+            return await testThirdPartyService(type: type, configuration: configuration)
         }
     }
 
-    private func testThirdPartyService(type: SentenceTranslationSource.SourceType) async -> LatencyResult {
+    private func testThirdPartyService(
+        type: SentenceTranslationSource.SourceType,
+        configuration: LLMProviderConfiguration?
+    ) async -> LatencyResult {
         let testText = "hello"
         let sourceLanguage = "en"
         let targetLanguage = "zh-Hans"
@@ -78,7 +89,8 @@ final class SentenceLatencyTester: ObservableObject {
                     text: testText,
                     provider: type,
                     sourceLanguage: sourceLanguage,
-                    targetLanguage: targetLanguage
+                    targetLanguage: targetLanguage,
+                    llmConfiguration: configuration
                 )
             }
 
@@ -97,6 +109,23 @@ final class SentenceLatencyTester: ObservableObject {
         } catch {
             return .failed(error.localizedDescription)
         }
+    }
+
+    private func resolvedTestTypes(
+        from sources: [SentenceTranslationSource]
+    ) -> [SentenceTranslationSource.SourceType] {
+        guard !sources.isEmpty else {
+            return [.google, .bing, .youdao]
+        }
+
+        let regularTypes = sources
+            .filter { !$0.isNative && !$0.type.isLLMProvider }
+            .map(\.type)
+        let enabledLLMTypes = sources
+            .filter { $0.isEnabled && $0.type.isLLMProvider }
+            .map(\.type)
+
+        return regularTypes + enabledLLMTypes
     }
 
     private struct TimeoutError: Error {}

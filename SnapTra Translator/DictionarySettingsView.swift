@@ -346,7 +346,12 @@ struct DictionarySettingsView: View {
             }
             if !hasTestedSentence {
                 hasTestedSentence = true
-                Task { await sentenceLatencyTester.testAll() }
+                Task {
+                    await sentenceLatencyTester.testAll(
+                        sources: sentenceSources,
+                        configurations: model.settings.llmProviderConfigurations
+                    )
+                }
             }
         }
     }
@@ -633,8 +638,10 @@ struct DictionarySettingsView: View {
             ReorderableVStack(items: $sentenceSources, content: { source, index in
                 SentenceServiceRow(
                     source: source,
+                    settings: model.settings,
                     latency: sentenceLatencyTester.latencies[source.wrappedValue.type] ?? .pending,
-                    onToggle: { updateSentenceSources() }
+                    onToggle: { updateSentenceSources() },
+                    onConfigurationChange: refreshSentenceLatencyState
                 )
             }, onMove: moveSentenceSource)
             .padding(.horizontal)
@@ -642,7 +649,12 @@ struct DictionarySettingsView: View {
             HStack {
                 Spacer()
                 Button {
-                    Task { await sentenceLatencyTester.testAll() }
+                    Task {
+                        await sentenceLatencyTester.testAll(
+                            sources: sentenceSources,
+                            configurations: model.settings.llmProviderConfigurations
+                        )
+                    }
                 } label: {
                     HStack(spacing: 6) {
                         if sentenceLatencyTester.isTesting {
@@ -761,6 +773,12 @@ struct DictionarySettingsView: View {
 
     private func updateSentenceSources() {
         model.settings.sentenceTranslationSources = sentenceSources
+    }
+
+    private func refreshSentenceLatencyState() {
+        for source in sentenceSources where source.type.isLLMProvider {
+            sentenceLatencyTester.latencies[source.type] = .pending
+        }
     }
 
     private func moveSource(from indices: IndexSet, to offset: Int) {

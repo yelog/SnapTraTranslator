@@ -14,6 +14,12 @@ struct SentenceTranslationSource: Identifiable, Codable, Equatable {
         case google
         case bing
         case youdao
+        case openAI = "openai"
+        case anthropic
+        case gemini
+        case deepSeek = "deepseek"
+        case ollama
+        case omlx
     }
 
     var displayName: String {
@@ -29,7 +35,42 @@ struct SentenceTranslationSource: Identifiable, Codable, Equatable {
     }
 }
 
+struct LLMProviderConfiguration: Identifiable, Codable, Equatable {
+    let provider: SentenceTranslationSource.SourceType
+    var model: String
+    var baseURL: String
+
+    var id: String {
+        provider.rawValue
+    }
+
+    init(
+        provider: SentenceTranslationSource.SourceType,
+        model: String? = nil,
+        baseURL: String? = nil
+    ) {
+        self.provider = provider
+        self.model = model ?? provider.defaultLLMModel
+        self.baseURL = baseURL ?? provider.defaultLLMBaseURL
+    }
+
+    static func defaultConfiguration(
+        for provider: SentenceTranslationSource.SourceType
+    ) -> LLMProviderConfiguration {
+        LLMProviderConfiguration(provider: provider)
+    }
+}
+
 extension SentenceTranslationSource.SourceType {
+    static let llmProviderTypes: [Self] = [
+        .openAI,
+        .anthropic,
+        .gemini,
+        .deepSeek,
+        .ollama,
+        .omlx,
+    ]
+
     var displayName: String {
         switch self {
         case .native:
@@ -40,6 +81,18 @@ extension SentenceTranslationSource.SourceType {
             return String(localized: "Bing Translate")
         case .youdao:
             return String(localized: "Youdao Translate")
+        case .openAI:
+            return "OpenAI"
+        case .anthropic:
+            return "Anthropic"
+        case .gemini:
+            return "Gemini"
+        case .deepSeek:
+            return "DeepSeek"
+        case .ollama:
+            return "Ollama"
+        case .omlx:
+            return "oMLX"
         }
     }
 
@@ -53,6 +106,78 @@ extension SentenceTranslationSource.SourceType {
             return String(localized: "Bing web translation")
         case .youdao:
             return String(localized: "Youdao web translation")
+        case .openAI:
+            return String(localized: "OpenAI API translation")
+        case .anthropic:
+            return String(localized: "Claude API translation")
+        case .gemini:
+            return String(localized: "Gemini API translation")
+        case .deepSeek:
+            return String(localized: "DeepSeek API translation")
+        case .ollama:
+            return String(localized: "Local Ollama translation")
+        case .omlx:
+            return String(localized: "Local oMLX translation")
+        }
+    }
+
+    var isLLMProvider: Bool {
+        Self.llmProviderTypes.contains(self)
+    }
+
+    var requiresAPIKey: Bool {
+        switch self {
+        case .openAI, .anthropic, .gemini, .deepSeek:
+            return true
+        case .native, .google, .bing, .youdao, .ollama, .omlx:
+            return false
+        }
+    }
+
+    var acceptsOptionalAPIKey: Bool {
+        switch self {
+        case .ollama, .omlx:
+            return true
+        case .native, .google, .bing, .youdao, .openAI, .anthropic, .gemini, .deepSeek:
+            return false
+        }
+    }
+
+    var defaultLLMModel: String {
+        switch self {
+        case .openAI:
+            return "gpt-4.1-mini"
+        case .anthropic:
+            return "claude-haiku-4-5"
+        case .gemini:
+            return "gemini-3.5-flash"
+        case .deepSeek:
+            return "deepseek-v4-flash"
+        case .ollama:
+            return "gpt-oss:20b"
+        case .omlx:
+            return "qwen3.5"
+        case .native, .google, .bing, .youdao:
+            return ""
+        }
+    }
+
+    var defaultLLMBaseURL: String {
+        switch self {
+        case .openAI:
+            return "https://api.openai.com/v1"
+        case .anthropic:
+            return "https://api.anthropic.com/v1"
+        case .gemini:
+            return "https://generativelanguage.googleapis.com/v1beta"
+        case .deepSeek:
+            return "https://api.deepseek.com"
+        case .ollama:
+            return "http://localhost:11434/v1"
+        case .omlx:
+            return "http://localhost:8000/v1"
+        case .native, .google, .bing, .youdao:
+            return ""
         }
     }
 }
@@ -114,6 +239,11 @@ final class SettingsStore: ObservableObject {
             saveSentenceTranslationSources()
         }
     }
+    @Published var llmProviderConfigurations: [LLMProviderConfiguration] {
+        didSet {
+            saveLLMProviderConfigurations()
+        }
+    }
     @Published var wordTTSProvider: TTSProvider {
         didSet { defaults.set(wordTTSProvider.rawValue, forKey: AppSettingKey.wordTTSProvider) }
     }
@@ -172,6 +302,7 @@ final class SettingsStore: ObservableObject {
     private let defaults: UserDefaults
     private static let dictionarySourcesKey = "dictionarySources"
     private static let sentenceTranslationSourcesKey = "sentenceTranslationSources"
+    private static let llmProviderConfigurationsKey = "llmProviderConfigurations"
 
     init(defaults: UserDefaults = .standard, loginItemStatus: Bool? = nil) {
         self.defaults = defaults
@@ -224,6 +355,7 @@ final class SettingsStore: ObservableObject {
 
         // Load sentence translation sources
         sentenceTranslationSources = Self.loadOrMigrateSentenceTranslationSources(defaults: defaults)
+        llmProviderConfigurations = Self.loadOrMigrateLLMProviderConfigurations(defaults: defaults)
 
         // Load TTS providers with migration from old single ttsProvider
         let hasOldTTSKey = defaults.object(forKey: AppSettingKey.ttsProvider) != nil
@@ -320,6 +452,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(learningAutoCleanup, forKey: AppSettingKey.learningAutoCleanup)
         saveDictionarySources()
         saveSentenceTranslationSources()
+        saveLLMProviderConfigurations()
     }
 
     private static func loadOrMigrateDictionarySources(defaults: UserDefaults) -> [DictionarySource] {
@@ -492,11 +625,17 @@ final class SettingsStore: ObservableObject {
         Self.persistSentenceTranslationSources(sentenceTranslationSources, defaults: defaults)
     }
 
+    private func saveLLMProviderConfigurations() {
+        Self.persistLLMProviderConfigurations(llmProviderConfigurations, defaults: defaults)
+    }
+
     private static func loadOrMigrateSentenceTranslationSources(defaults: UserDefaults) -> [SentenceTranslationSource] {
         // Try to load existing sources
         if let data = defaults.data(forKey: sentenceTranslationSourcesKey),
            let sources = try? JSONDecoder().decode([SentenceTranslationSource].self, from: data) {
-            return sources
+            let migrated = migrateSentenceTranslationSources(sources)
+            persistSentenceTranslationSources(migrated, defaults: defaults)
+            return migrated
         }
 
         let sources = defaultSentenceTranslationSources()
@@ -504,20 +643,65 @@ final class SettingsStore: ObservableObject {
         return sources
     }
 
+    static func migrateSentenceTranslationSources(
+        _ sources: [SentenceTranslationSource]
+    ) -> [SentenceTranslationSource] {
+        var migrated: [SentenceTranslationSource] = []
+        var seenTypes = Set<SentenceTranslationSource.SourceType>()
+
+        for source in sources where !seenTypes.contains(source.type) {
+            migrated.append(source)
+            seenTypes.insert(source.type)
+        }
+
+        for definition in defaultSentenceTranslationSourceDefinitions()
+            where !seenTypes.contains(definition.type) {
+            migrated.append(
+                SentenceTranslationSource(
+                    id: UUID(),
+                    type: definition.type,
+                    isEnabled: definition.isEnabled
+                )
+            )
+        }
+
+        return migrated
+    }
+
     private static func defaultSentenceTranslationSources() -> [SentenceTranslationSource] {
+        defaultSentenceTranslationSourceDefinitions().map {
+            SentenceTranslationSource(id: UUID(), type: $0.type, isEnabled: $0.isEnabled)
+        }
+    }
+
+    private static func defaultSentenceTranslationSourceDefinitions() -> [
+        (type: SentenceTranslationSource.SourceType, isEnabled: Bool)
+    ] {
         if #available(macOS 15.0, *) {
             return [
-                SentenceTranslationSource(id: UUID(), type: .native, isEnabled: true),
-                SentenceTranslationSource(id: UUID(), type: .google, isEnabled: false),
-                SentenceTranslationSource(id: UUID(), type: .bing, isEnabled: false),
-                SentenceTranslationSource(id: UUID(), type: .youdao, isEnabled: false),
+                (.native, true),
+                (.google, false),
+                (.bing, false),
+                (.youdao, false),
+                (.openAI, false),
+                (.anthropic, false),
+                (.gemini, false),
+                (.deepSeek, false),
+                (.ollama, false),
+                (.omlx, false),
             ]
         } else {
             return [
-                SentenceTranslationSource(id: UUID(), type: .native, isEnabled: false),
-                SentenceTranslationSource(id: UUID(), type: .google, isEnabled: false),
-                SentenceTranslationSource(id: UUID(), type: .bing, isEnabled: false),
-                SentenceTranslationSource(id: UUID(), type: .youdao, isEnabled: true),
+                (.native, false),
+                (.google, false),
+                (.bing, false),
+                (.youdao, true),
+                (.openAI, false),
+                (.anthropic, false),
+                (.gemini, false),
+                (.deepSeek, false),
+                (.ollama, false),
+                (.omlx, false),
             ]
         }
     }
@@ -529,5 +713,107 @@ final class SettingsStore: ObservableObject {
         if let data = try? JSONEncoder().encode(sources) {
             defaults.set(data, forKey: sentenceTranslationSourcesKey)
         }
+    }
+
+    private static func persistLLMProviderConfigurations(
+        _ configurations: [LLMProviderConfiguration],
+        defaults: UserDefaults
+    ) {
+        if let data = try? JSONEncoder().encode(configurations) {
+            defaults.set(data, forKey: llmProviderConfigurationsKey)
+        }
+    }
+
+    private static func loadOrMigrateLLMProviderConfigurations(
+        defaults: UserDefaults
+    ) -> [LLMProviderConfiguration] {
+        if let data = defaults.data(forKey: llmProviderConfigurationsKey),
+           let configurations = try? JSONDecoder().decode([LLMProviderConfiguration].self, from: data) {
+            let migrated = migrateLLMProviderConfigurations(configurations)
+            persistLLMProviderConfigurations(migrated, defaults: defaults)
+            return migrated
+        }
+
+        let configurations = defaultLLMProviderConfigurations()
+        persistLLMProviderConfigurations(configurations, defaults: defaults)
+        return configurations
+    }
+
+    static func migrateLLMProviderConfigurations(
+        _ configurations: [LLMProviderConfiguration]
+    ) -> [LLMProviderConfiguration] {
+        var result: [LLMProviderConfiguration] = []
+        var seenTypes = Set<SentenceTranslationSource.SourceType>()
+
+        for provider in SentenceTranslationSource.SourceType.llmProviderTypes {
+            let existing = configurations.first {
+                $0.provider == provider && !seenTypes.contains($0.provider)
+            }
+            let configuration = existing ?? LLMProviderConfiguration.defaultConfiguration(for: provider)
+            result.append(
+                LLMProviderConfiguration(
+                    provider: provider,
+                    model: configuration.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? provider.defaultLLMModel
+                        : configuration.model,
+                    baseURL: configuration.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? provider.defaultLLMBaseURL
+                        : configuration.baseURL
+                )
+            )
+            seenTypes.insert(provider)
+        }
+
+        return result
+    }
+
+    static func defaultLLMProviderConfigurations() -> [LLMProviderConfiguration] {
+        SentenceTranslationSource.SourceType.llmProviderTypes.map {
+            LLMProviderConfiguration.defaultConfiguration(for: $0)
+        }
+    }
+
+    func llmProviderConfiguration(
+        for provider: SentenceTranslationSource.SourceType
+    ) -> LLMProviderConfiguration {
+        guard provider.isLLMProvider else {
+            return LLMProviderConfiguration(provider: provider)
+        }
+
+        return llmProviderConfigurations.first { $0.provider == provider }
+            ?? LLMProviderConfiguration.defaultConfiguration(for: provider)
+    }
+
+    func updateLLMProviderConfiguration(
+        for provider: SentenceTranslationSource.SourceType,
+        model: String,
+        baseURL: String
+    ) {
+        guard provider.isLLMProvider else { return }
+
+        var configurations = llmProviderConfigurations
+        let configuration = LLMProviderConfiguration(
+            provider: provider,
+            model: model,
+            baseURL: baseURL
+        )
+
+        if let index = configurations.firstIndex(where: { $0.provider == provider }) {
+            configurations[index] = configuration
+        } else {
+            configurations.append(configuration)
+        }
+
+        llmProviderConfigurations = Self.migrateLLMProviderConfigurations(configurations)
+    }
+
+    func resetLLMProviderConfiguration(for provider: SentenceTranslationSource.SourceType) {
+        guard provider.isLLMProvider else { return }
+
+        updateLLMProviderConfiguration(
+            for: provider,
+            model: provider.defaultLLMModel,
+            baseURL: provider.defaultLLMBaseURL
+        )
     }
 }
