@@ -1,11 +1,14 @@
 import Foundation
 
 enum LearningExportFormat: CaseIterable {
+    case plainText
     case ankiTSV
     case csv
 
     var displayName: String {
         switch self {
+        case .plainText:
+            return "TXT"
         case .ankiTSV:
             return "Anki TSV"
         case .csv:
@@ -15,6 +18,8 @@ enum LearningExportFormat: CaseIterable {
 
     var fileExtension: String {
         switch self {
+        case .plainText:
+            return "txt"
         case .ankiTSV:
             return "tsv"
         case .csv:
@@ -78,11 +83,20 @@ struct LearningExportRow: Equatable {
 enum LearningExportService {
     static func export(rows: [LearningExportRow], format: LearningExportFormat) -> String {
         switch format {
+        case .plainText:
+            return plainText(rows: rows)
         case .ankiTSV:
             return tabSeparated(rows: rows)
         case .csv:
             return commaSeparated(rows: rows)
         }
+    }
+
+    private static func plainText(rows: [LearningExportRow]) -> String {
+        guard !rows.isEmpty else { return "" }
+        return rows
+            .map { escapePlainTextWord($0.word) }
+            .joined(separator: "\n") + "\n"
     }
 
     private static func tabSeparated(rows: [LearningExportRow]) -> String {
@@ -121,6 +135,14 @@ enum LearningExportService {
         }
 
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    private static func escapePlainTextWord(_ word: String) -> String {
+        word
+            .replacingOccurrences(of: "\r\n", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func escapeTSVField(_ field: String) -> String {

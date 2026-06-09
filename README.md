@@ -41,6 +41,7 @@ Chinese (Simplified), Chinese (Traditional), English, Japanese, Korean, French, 
 
 ### Additional Features
 - **Copy to clipboard** - Quick copy word or translation
+- **Learning export** - Save looked-up words as TXT, Anki TSV, or CSV
 - **Language pack detection** - Automatically checks and prompts for missing language packs
 - **Menu bar app** - Runs quietly in the menu bar without cluttering your dock
 

@@ -219,6 +219,16 @@ struct LearningSettingsView: View {
                     .foregroundStyle(.secondary)
 
                 Button {
+                    exportWords(format: .plainText)
+                } label: {
+                    Label(L("TXT"), systemImage: "doc.text")
+                        .labelStyle(.titleAndIcon)
+                }
+                .controlSize(.small)
+                .disabled(visibleRows.isEmpty)
+                .help(L("Export matching words as TXT"))
+
+                Button {
                     exportWords(format: .ankiTSV)
                 } label: {
                     Label(L("Anki"), systemImage: "square.and.arrow.up")
@@ -226,7 +236,7 @@ struct LearningSettingsView: View {
                 }
                 .controlSize(.small)
                 .disabled(visibleRows.isEmpty)
-                .help(L("Export current words for Anki"))
+                .help(L("Export matching words for Anki"))
 
                 Button {
                     exportWords(format: .csv)
@@ -235,7 +245,7 @@ struct LearningSettingsView: View {
                 }
                 .controlSize(.small)
                 .disabled(visibleRows.isEmpty)
-                .help(L("Export current words as CSV"))
+                .help(L("Export matching words as CSV"))
 
                 Spacer()
 

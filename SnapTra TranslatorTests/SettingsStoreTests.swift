@@ -511,6 +511,31 @@ final class LearningExportServiceTests: XCTestCase {
         )
     }
 
+    func testPlainTextExportWritesOneWordPerLine() {
+        let rows = [
+            LearningExportRow(
+                word: "apple",
+                sourceLanguageName: "English",
+                definitionText: "n. apple",
+                lookupCount: 3,
+                reviewStage: 1,
+                isMastered: false
+            ),
+            LearningExportRow(
+                word: "banana",
+                sourceLanguageName: "English",
+                definitionText: "n. banana",
+                lookupCount: 1,
+                reviewStage: 0,
+                isMastered: false
+            ),
+        ]
+
+        let output = LearningExportService.export(rows: rows, format: .plainText)
+
+        XCTAssertEqual(output, "apple\nbanana\n")
+    }
+
     func testCSVExportQuotesCommaQuoteAndNewline() {
         let rows = [
             LearningExportRow(
