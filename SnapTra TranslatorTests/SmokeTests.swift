@@ -83,6 +83,69 @@ final class SentenceTranslationServiceStreamingTests: XCTestCase {
         XCTAssertEqual(requestBodies.first?["think"] as? Bool, false)
     }
 
+    func testLLMPromptNormalizesOCRWrappedLineBreaksSemantically() async throws {
+        let stream = """
+        data: {"choices":[{"delta":{"content":"如果你已经意识到自己经验不足，就不应该把时间用来练习吗？"}}]}
+
+        data: [DONE]
+
+        """
+        var requestBody: [String: Any]?
+
+        MockLLMURLProtocol.requestHandler = { request in
+            guard request.url?.absoluteString == "https://llm.example/v1/chat/completions" else {
+                throw MockLLMURLProtocol.Error.unexpectedURL
+            }
+            requestBody = try request.jsonBody()
+
+            return (
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!,
+                Data(stream.utf8)
+            )
+        }
+
+        let service = SentenceTranslationService(session: .mockLLM)
+
+        let translation = try await service.translateStreaming(
+            text: """
+            If you're
+            aware enough
+            to know you're
+            inexperienced,
+            then shouldn't
+            you be using
+            your time to
+            practice?
+            """,
+            provider: .ollama,
+            sourceLanguage: "en",
+            targetLanguage: "zh-Hans",
+            llmConfiguration: LLMProviderConfiguration(
+                provider: .ollama,
+                model: "test-model",
+                baseURL: "https://llm.example/v1"
+            ),
+            onPartialResult: { _ in }
+        )
+
+        XCTAssertEqual(translation, "如果你已经意识到自己经验不足，就不应该把时间用来练习吗？")
+
+        let messages = try XCTUnwrap(requestBody?["messages"] as? [[String: Any]])
+        let systemPrompt = try XCTUnwrap(messages.first?["content"] as? String)
+        let userPrompt = try XCTUnwrap(messages.dropFirst().first?["content"] as? String)
+
+        XCTAssertTrue(systemPrompt.contains("Normalize OCR line breaks by meaning"))
+        XCTAssertTrue(systemPrompt.contains("if a line break only splits one continuous sentence"))
+        XCTAssertTrue(systemPrompt.contains("Preserve line breaks that carry structure or meaning"))
+        XCTAssertTrue(systemPrompt.contains("list items"))
+        XCTAssertTrue(userPrompt.contains("If you're\naware enough\nto know you're"))
+    }
+
     func testOpenAICompatibleStreamingRetriesWithoutThinkingWhenParameterIsUnsupported() async throws {
         let stream = """
         data: {"choices":[{"delta":{"content":"嗨，yangyj13!"}}]}
