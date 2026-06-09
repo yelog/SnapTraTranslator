@@ -11,6 +11,8 @@ final class SmokeTests: XCTestCase {
 final class SentenceTranslationServiceStreamingTests: XCTestCase {
     private var didCaptureOpenAIAPIKey = false
     private var capturedOpenAIAPIKey: String?
+    private var didCaptureZhipuAPIKey = false
+    private var capturedZhipuAPIKey: String?
 
     override func tearDown() {
         if didCaptureOpenAIAPIKey {
@@ -18,6 +20,13 @@ final class SentenceTranslationServiceStreamingTests: XCTestCase {
                 LLMProviderCredentialStore.setAPIKey(capturedOpenAIAPIKey, for: .openAI)
             } else {
                 LLMProviderCredentialStore.deleteAPIKey(for: .openAI)
+            }
+        }
+        if didCaptureZhipuAPIKey {
+            if let capturedZhipuAPIKey {
+                LLMProviderCredentialStore.setAPIKey(capturedZhipuAPIKey, for: .zhipu)
+            } else {
+                LLMProviderCredentialStore.deleteAPIKey(for: .zhipu)
             }
         }
         MockLLMURLProtocol.requestHandler = nil
@@ -323,11 +332,74 @@ final class SentenceTranslationServiceStreamingTests: XCTestCase {
         XCTAssertNil(requestBodies.last?["reasoning_effort"])
     }
 
+    func testZhipuStreamingUsesInternationalURLAndDisablesThinking() async throws {
+        try configureTemporaryZhipuAPIKey()
+
+        let stream = """
+        data: {"choices":[{"delta":{"content":"你好"}}]}
+
+        data: [DONE]
+
+        """
+        var requestBody: [String: Any]?
+
+        MockLLMURLProtocol.requestHandler = { request in
+            guard request.url?.absoluteString == "https://api.z.ai/api/paas/v4/chat/completions" else {
+                throw MockLLMURLProtocol.Error.unexpectedURL
+            }
+            guard request.value(forHTTPHeaderField: "Authorization") == "Bearer zhipu-test-key" else {
+                throw MockLLMURLProtocol.Error.unexpectedHeader
+            }
+            requestBody = try request.jsonBody()
+
+            return (
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!,
+                Data(stream.utf8)
+            )
+        }
+
+        let service = SentenceTranslationService(session: .mockLLM)
+
+        let translation = try await service.translateStreaming(
+            text: "Hello",
+            provider: .zhipu,
+            sourceLanguage: "en",
+            targetLanguage: "zh-Hans",
+            llmConfiguration: LLMProviderConfiguration(
+                provider: .zhipu,
+                zhipuRegion: .international
+            ),
+            onPartialResult: { _ in }
+        )
+
+        XCTAssertEqual(translation, "你好")
+        XCTAssertEqual(requestBody?["model"] as? String, "glm-4.7-flash")
+        XCTAssertEqual(requestBody?["stream"] as? Bool, true)
+        let thinking = try XCTUnwrap(requestBody?["thinking"] as? [String: Any])
+        XCTAssertEqual(thinking["type"] as? String, "disabled")
+        XCTAssertNil(requestBody?["think"])
+        XCTAssertNil(requestBody?["reasoning_effort"])
+    }
+
     private func configureTemporaryOpenAIAPIKey() throws {
         capturedOpenAIAPIKey = LLMProviderCredentialStore.apiKey(for: .openAI)
         didCaptureOpenAIAPIKey = true
 
         guard LLMProviderCredentialStore.setAPIKey("test-api-key", for: .openAI) else {
+            throw MockLLMURLProtocol.Error.missingBody
+        }
+    }
+
+    private func configureTemporaryZhipuAPIKey() throws {
+        capturedZhipuAPIKey = LLMProviderCredentialStore.apiKey(for: .zhipu)
+        didCaptureZhipuAPIKey = true
+
+        guard LLMProviderCredentialStore.setAPIKey("zhipu-test-key", for: .zhipu) else {
             throw MockLLMURLProtocol.Error.missingBody
         }
     }

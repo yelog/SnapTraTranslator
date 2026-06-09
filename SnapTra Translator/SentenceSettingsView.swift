@@ -262,6 +262,10 @@ struct SentenceServiceRow: View {
             Image(systemName: "waveform.path.ecg")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.cyan)
+        case .zhipu:
+            Image(systemName: "sparkle.magnifyingglass")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.indigo)
         case .ollama:
             Image(systemName: "desktopcomputer")
                 .font(.system(size: 15, weight: .semibold))
@@ -351,6 +355,8 @@ struct SentenceServiceRow: View {
             return "Gemini"
         case .deepSeek:
             return "DeepSeek"
+        case .zhipu:
+            return "智谱"
         case .ollama:
             return "Ollama"
         case .omlx:
@@ -377,6 +383,8 @@ struct SentenceServiceRow: View {
             return L("Gemini API translation")
         case .deepSeek:
             return L("DeepSeek API translation")
+        case .zhipu:
+            return L("Zhipu API translation")
         case .ollama:
             return L("Local Ollama translation")
         case .omlx:
@@ -408,6 +416,35 @@ struct SentenceServiceRow: View {
                         }
                     )
                 )
+            }
+
+            if source.type == .zhipu {
+                llmFieldRow(title: L("Region")) {
+                    Picker(
+                        "",
+                        selection: Binding(
+                            get: {
+                                settings.llmProviderConfiguration(for: source.type).zhipuRegion ?? .domestic
+                            },
+                            set: { region in
+                                let configuration = settings.llmProviderConfiguration(for: source.type)
+                                settings.updateLLMProviderConfiguration(
+                                    for: source.type,
+                                    model: configuration.model,
+                                    baseURL: region.defaultBaseURL,
+                                    zhipuRegion: region
+                                )
+                                onConfigurationChange()
+                            }
+                        )
+                    ) {
+                        ForEach(ZhipuAPIRegion.allCases, id: \.self) { region in
+                            Text(region.displayName).tag(region)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
             }
 
             llmFieldRow(title: L("Base URL")) {

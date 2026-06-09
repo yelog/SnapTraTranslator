@@ -46,7 +46,7 @@ final class SentenceTranslationService {
                 return try await translateYoudao(trimmedText, sourceLanguage: sourceLanguage, targetLanguage: targetLanguage)
             case .native:
                 return nil
-            case .openAI, .deepSeek, .ollama, .omlx:
+            case .openAI, .deepSeek, .zhipu, .ollama, .omlx:
                 return try await translateOpenAICompatible(
                     trimmedText,
                     provider: provider,
@@ -101,7 +101,7 @@ final class SentenceTranslationService {
 
         do {
             switch provider {
-            case .openAI, .deepSeek, .ollama, .omlx:
+            case .openAI, .deepSeek, .zhipu, .ollama, .omlx:
                 return try await streamOpenAICompatible(
                     trimmedText,
                     provider: provider,
@@ -878,7 +878,7 @@ final class SentenceTranslationService {
                 return .init(reasoningEffort: "low")
             }
             return nil
-        case .deepSeek:
+        case .deepSeek, .zhipu:
             return .init(thinking: .init(type: "disabled"))
         case .ollama, .omlx:
             if normalizedModel.contains("gpt-oss") {

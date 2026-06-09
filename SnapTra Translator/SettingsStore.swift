@@ -18,6 +18,7 @@ struct SentenceTranslationSource: Identifiable, Codable, Equatable {
         case anthropic
         case gemini
         case deepSeek = "deepseek"
+        case zhipu
         case ollama
         case omlx
     }
@@ -39,6 +40,7 @@ struct LLMProviderConfiguration: Identifiable, Codable, Equatable {
     let provider: SentenceTranslationSource.SourceType
     var model: String
     var baseURL: String
+    var zhipuRegion: ZhipuAPIRegion?
 
     var id: String {
         provider.rawValue
@@ -47,11 +49,16 @@ struct LLMProviderConfiguration: Identifiable, Codable, Equatable {
     init(
         provider: SentenceTranslationSource.SourceType,
         model: String? = nil,
-        baseURL: String? = nil
+        baseURL: String? = nil,
+        zhipuRegion: ZhipuAPIRegion? = nil
     ) {
         self.provider = provider
+        let resolvedZhipuRegion = provider == .zhipu
+            ? (zhipuRegion ?? ZhipuAPIRegion.region(for: baseURL) ?? .domestic)
+            : nil
         self.model = model ?? provider.defaultLLMModel
-        self.baseURL = baseURL ?? provider.defaultLLMBaseURL
+        self.baseURL = baseURL ?? provider.defaultLLMBaseURL(region: resolvedZhipuRegion)
+        self.zhipuRegion = resolvedZhipuRegion
     }
 
     static func defaultConfiguration(
@@ -61,12 +68,51 @@ struct LLMProviderConfiguration: Identifiable, Codable, Equatable {
     }
 }
 
+enum ZhipuAPIRegion: String, CaseIterable, Codable, Equatable {
+    case domestic
+    case international
+
+    var displayName: String {
+        switch self {
+        case .domestic:
+            return String(localized: "China")
+        case .international:
+            return String(localized: "Global")
+        }
+    }
+
+    var defaultBaseURL: String {
+        switch self {
+        case .domestic:
+            return "https://open.bigmodel.cn/api/paas/v4"
+        case .international:
+            return "https://api.z.ai/api/paas/v4"
+        }
+    }
+
+    static func region(for baseURL: String?) -> ZhipuAPIRegion? {
+        guard let baseURL else { return nil }
+
+        let normalizedURL = baseURL
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if normalizedURL.contains("api.z.ai") {
+            return .international
+        }
+        if normalizedURL.contains("open.bigmodel.cn") {
+            return .domestic
+        }
+        return nil
+    }
+}
+
 extension SentenceTranslationSource.SourceType {
     static let llmProviderTypes: [Self] = [
         .openAI,
         .anthropic,
         .gemini,
         .deepSeek,
+        .zhipu,
         .ollama,
         .omlx,
     ]
@@ -89,6 +135,8 @@ extension SentenceTranslationSource.SourceType {
             return "Gemini"
         case .deepSeek:
             return "DeepSeek"
+        case .zhipu:
+            return "智谱"
         case .ollama:
             return "Ollama"
         case .omlx:
@@ -114,6 +162,8 @@ extension SentenceTranslationSource.SourceType {
             return String(localized: "Gemini API translation")
         case .deepSeek:
             return String(localized: "DeepSeek API translation")
+        case .zhipu:
+            return String(localized: "Zhipu API translation")
         case .ollama:
             return String(localized: "Local Ollama translation")
         case .omlx:
@@ -127,7 +177,7 @@ extension SentenceTranslationSource.SourceType {
 
     var requiresAPIKey: Bool {
         switch self {
-        case .openAI, .anthropic, .gemini, .deepSeek:
+        case .openAI, .anthropic, .gemini, .deepSeek, .zhipu:
             return true
         case .native, .google, .bing, .youdao, .ollama, .omlx:
             return false
@@ -138,7 +188,7 @@ extension SentenceTranslationSource.SourceType {
         switch self {
         case .ollama, .omlx:
             return true
-        case .native, .google, .bing, .youdao, .openAI, .anthropic, .gemini, .deepSeek:
+        case .native, .google, .bing, .youdao, .openAI, .anthropic, .gemini, .deepSeek, .zhipu:
             return false
         }
     }
@@ -153,6 +203,8 @@ extension SentenceTranslationSource.SourceType {
             return "gemini-3.5-flash"
         case .deepSeek:
             return "deepseek-v4-flash"
+        case .zhipu:
+            return "glm-4.7-flash"
         case .ollama:
             return "gpt-oss:20b"
         case .omlx:
@@ -163,6 +215,10 @@ extension SentenceTranslationSource.SourceType {
     }
 
     var defaultLLMBaseURL: String {
+        defaultLLMBaseURL(region: nil)
+    }
+
+    func defaultLLMBaseURL(region: ZhipuAPIRegion?) -> String {
         switch self {
         case .openAI:
             return "https://api.openai.com/v1"
@@ -172,6 +228,8 @@ extension SentenceTranslationSource.SourceType {
             return "https://generativelanguage.googleapis.com/v1beta"
         case .deepSeek:
             return "https://api.deepseek.com"
+        case .zhipu:
+            return (region ?? .domestic).defaultBaseURL
         case .ollama:
             return "http://localhost:11434/v1"
         case .omlx:
@@ -687,6 +745,7 @@ final class SettingsStore: ObservableObject {
                 (.anthropic, false),
                 (.gemini, false),
                 (.deepSeek, false),
+                (.zhipu, false),
                 (.ollama, false),
                 (.omlx, false),
             ]
@@ -700,6 +759,7 @@ final class SettingsStore: ObservableObject {
                 (.anthropic, false),
                 (.gemini, false),
                 (.deepSeek, false),
+                (.zhipu, false),
                 (.ollama, false),
                 (.omlx, false),
             ]
@@ -750,6 +810,9 @@ final class SettingsStore: ObservableObject {
                 $0.provider == provider && !seenTypes.contains($0.provider)
             }
             let configuration = existing ?? LLMProviderConfiguration.defaultConfiguration(for: provider)
+            let zhipuRegion = provider == .zhipu
+                ? (configuration.zhipuRegion ?? ZhipuAPIRegion.region(for: configuration.baseURL) ?? .domestic)
+                : nil
             result.append(
                 LLMProviderConfiguration(
                     provider: provider,
@@ -757,8 +820,9 @@ final class SettingsStore: ObservableObject {
                         ? provider.defaultLLMModel
                         : configuration.model,
                     baseURL: configuration.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        ? provider.defaultLLMBaseURL
-                        : configuration.baseURL
+                        ? provider.defaultLLMBaseURL(region: zhipuRegion)
+                        : configuration.baseURL,
+                    zhipuRegion: zhipuRegion
                 )
             )
             seenTypes.insert(provider)
@@ -787,15 +851,21 @@ final class SettingsStore: ObservableObject {
     func updateLLMProviderConfiguration(
         for provider: SentenceTranslationSource.SourceType,
         model: String,
-        baseURL: String
+        baseURL: String,
+        zhipuRegion: ZhipuAPIRegion? = nil
     ) {
         guard provider.isLLMProvider else { return }
 
         var configurations = llmProviderConfigurations
+        let currentConfiguration = llmProviderConfiguration(for: provider)
+        let resolvedZhipuRegion = provider == .zhipu
+            ? (zhipuRegion ?? currentConfiguration.zhipuRegion ?? ZhipuAPIRegion.region(for: baseURL) ?? .domestic)
+            : nil
         let configuration = LLMProviderConfiguration(
             provider: provider,
             model: model,
-            baseURL: baseURL
+            baseURL: baseURL,
+            zhipuRegion: resolvedZhipuRegion
         )
 
         if let index = configurations.firstIndex(where: { $0.provider == provider }) {
@@ -813,7 +883,8 @@ final class SettingsStore: ObservableObject {
         updateLLMProviderConfiguration(
             for: provider,
             model: provider.defaultLLMModel,
-            baseURL: provider.defaultLLMBaseURL
+            baseURL: provider.defaultLLMBaseURL,
+            zhipuRegion: provider == .zhipu ? .domestic : nil
         )
     }
 }

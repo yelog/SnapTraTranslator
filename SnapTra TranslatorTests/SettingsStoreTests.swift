@@ -149,6 +149,18 @@ final class SettingsStoreMigrationTests: XCTestCase {
             "deepseek-v4-flash"
         )
         XCTAssertEqual(
+            configurations.first { $0.provider == .zhipu }?.model,
+            "glm-4.7-flash"
+        )
+        XCTAssertEqual(
+            configurations.first { $0.provider == .zhipu }?.baseURL,
+            "https://open.bigmodel.cn/api/paas/v4"
+        )
+        XCTAssertEqual(
+            configurations.first { $0.provider == .zhipu }?.zhipuRegion,
+            .domestic
+        )
+        XCTAssertEqual(
             configurations.first { $0.provider == .ollama }?.baseURL,
             "http://localhost:11434/v1"
         )
@@ -176,6 +188,26 @@ final class SettingsStoreMigrationTests: XCTestCase {
         XCTAssertEqual(migrated.first { $0.provider == .openAI }?.model, "custom-model")
         XCTAssertEqual(migrated.first { $0.provider == .openAI }?.baseURL, "https://proxy.example/v1")
         XCTAssertEqual(migrated.first { $0.provider == .gemini }?.baseURL, "https://generativelanguage.googleapis.com/v1beta")
+        XCTAssertEqual(migrated.first { $0.provider == .zhipu }?.model, "glm-4.7-flash")
+        XCTAssertEqual(migrated.first { $0.provider == .zhipu }?.baseURL, "https://open.bigmodel.cn/api/paas/v4")
+        XCTAssertEqual(migrated.first { $0.provider == .zhipu }?.zhipuRegion, .domestic)
+    }
+
+    func testZhipuConfigurationInfersInternationalRegionFromBaseURL() {
+        let existing = [
+            LLMProviderConfiguration(
+                provider: .zhipu,
+                model: "glm-custom",
+                baseURL: "https://api.z.ai/api/paas/v4"
+            ),
+        ]
+
+        let migrated = SettingsStore.migrateLLMProviderConfigurations(existing)
+        let zhipu = migrated.first { $0.provider == .zhipu }
+
+        XCTAssertEqual(zhipu?.model, "glm-custom")
+        XCTAssertEqual(zhipu?.baseURL, "https://api.z.ai/api/paas/v4")
+        XCTAssertEqual(zhipu?.zhipuRegion, .international)
     }
 
     func testLegacySentenceTranslationSettingMigratesToOcrSentenceToggle() {

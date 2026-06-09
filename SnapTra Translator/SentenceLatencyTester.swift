@@ -68,7 +68,7 @@ final class SentenceLatencyTester: ObservableObject {
         switch type {
         case .native:
             return .local
-        case .google, .bing, .youdao, .openAI, .anthropic, .gemini, .deepSeek, .ollama, .omlx:
+        case .google, .bing, .youdao, .openAI, .anthropic, .gemini, .deepSeek, .zhipu, .ollama, .omlx:
             return await testThirdPartyService(type: type, configuration: configuration)
         }
     }
