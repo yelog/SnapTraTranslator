@@ -399,6 +399,10 @@ final class SentenceTranslationService {
             endpointPath: "chat/completions"
         )
         let apiKey = try resolvedAPIKey(for: provider)
+        let thinkingOptions = lowLatencyOpenAICompatibleThinkingOptions(
+            for: provider,
+            model: configuration.model
+        )
         let requestBody = OpenAIChatCompletionRequest(
             model: configuration.model,
             messages: [
@@ -407,7 +411,8 @@ final class SentenceTranslationService {
             ],
             temperature: 0,
             maxTokens: estimatedMaxOutputTokens(for: text),
-            stream: false
+            stream: false,
+            thinkingOptions: thinkingOptions
         )
 
         var request = URLRequest(url: url)
@@ -421,7 +426,27 @@ final class SentenceTranslationService {
             request.setValue("Bearer ollama", forHTTPHeaderField: "Authorization")
         }
 
-        let data = try await performProviderRequest(request, provider: provider.displayName)
+        let data: Data
+        do {
+            data = try await performProviderRequest(request, provider: provider.displayName)
+        } catch {
+            guard requestBody.usesLowLatencyThinking,
+                  shouldRetryWithoutLowLatencyThinking(after: error) else {
+                throw error
+            }
+
+            var retryRequest = request
+            retryRequest.httpBody = try JSONEncoder().encode(
+                OpenAIChatCompletionRequest(
+                    model: configuration.model,
+                    messages: requestBody.messages,
+                    temperature: requestBody.temperature,
+                    maxTokens: requestBody.maxTokens,
+                    stream: requestBody.stream
+                )
+            )
+            data = try await performProviderRequest(retryRequest, provider: provider.displayName)
+        }
         let response = try JSONDecoder().decode(OpenAIChatCompletionResponse.self, from: data)
         let translation = response.choices.first?.message.content.text?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -450,6 +475,10 @@ final class SentenceTranslationService {
             endpointPath: "chat/completions"
         )
         let apiKey = try resolvedAPIKey(for: provider)
+        let thinkingOptions = lowLatencyOpenAICompatibleThinkingOptions(
+            for: provider,
+            model: configuration.model
+        )
         let requestBody = OpenAIChatCompletionRequest(
             model: configuration.model,
             messages: [
@@ -458,7 +487,8 @@ final class SentenceTranslationService {
             ],
             temperature: 0,
             maxTokens: estimatedMaxOutputTokens(for: text),
-            stream: true
+            stream: true,
+            thinkingOptions: thinkingOptions
         )
 
         var request = URLRequest(url: url)
@@ -473,32 +503,57 @@ final class SentenceTranslationService {
         }
 
         var accumulatedText = ""
-        try await streamSSEData(from: request, provider: provider.displayName) { eventData in
-            guard eventData != "[DONE]" else { return }
+        func streamResponse(from request: URLRequest) async throws {
+            accumulatedText = ""
 
-            let data = Data(eventData.utf8)
-            let response = try JSONDecoder().decode(OpenAIChatCompletionStreamResponse.self, from: data)
-            if let error = response.error {
-                throw SentenceTranslationError.providerRejected(
-                    provider: provider.displayName,
-                    code: -1,
-                    message: error.message ?? error.type ?? error.code
-                )
+            try await streamSSEData(from: request, provider: provider.displayName) { eventData in
+                guard eventData != "[DONE]" else { return }
+
+                let data = Data(eventData.utf8)
+                let response = try JSONDecoder().decode(OpenAIChatCompletionStreamResponse.self, from: data)
+                if let error = response.error {
+                    throw SentenceTranslationError.providerRejected(
+                        provider: provider.displayName,
+                        code: -1,
+                        message: error.message ?? error.type ?? error.code
+                    )
+                }
+
+                let deltaText = response.choices
+                    .map { choices in
+                        choices.compactMap { choice in
+                            choice.delta?.content?.text
+                                ?? choice.message?.content?.text
+                                ?? choice.text?.text
+                        }
+                        .joined()
+                    } ?? ""
+
+                guard !deltaText.isEmpty else { return }
+                accumulatedText += deltaText
+                await onPartialResult(accumulatedText)
+            }
+        }
+
+        do {
+            try await streamResponse(from: request)
+        } catch {
+            guard requestBody.usesLowLatencyThinking,
+                  shouldRetryWithoutLowLatencyThinking(after: error) else {
+                throw error
             }
 
-            let deltaText = response.choices
-                .map { choices in
-                    choices.compactMap { choice in
-                        choice.delta?.content?.text
-                            ?? choice.message?.content?.text
-                            ?? choice.text?.text
-                    }
-                    .joined()
-                } ?? ""
-
-            guard !deltaText.isEmpty else { return }
-            accumulatedText += deltaText
-            await onPartialResult(accumulatedText)
+            var retryRequest = request
+            retryRequest.httpBody = try JSONEncoder().encode(
+                OpenAIChatCompletionRequest(
+                    model: configuration.model,
+                    messages: requestBody.messages,
+                    temperature: requestBody.temperature,
+                    maxTokens: requestBody.maxTokens,
+                    stream: requestBody.stream
+                )
+            )
+            try await streamResponse(from: retryRequest)
         }
 
         let translation = accumulatedText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -539,7 +594,7 @@ final class SentenceTranslationService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.httpBody = try JSONEncoder().encode(requestBody)
-        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         if let apiKey {
@@ -657,6 +712,7 @@ final class SentenceTranslationService {
             url = keyedURL
         }
 
+        let thinkingConfig = lowLatencyGeminiThinkingConfig(for: configuration.model)
         let requestBody = GeminiGenerateContentRequest(
             systemInstruction: .init(parts: [.init(text: prompt.system)]),
             contents: [
@@ -664,7 +720,8 @@ final class SentenceTranslationService {
             ],
             generationConfig: .init(
                 temperature: 0,
-                maxOutputTokens: estimatedMaxOutputTokens(for: text)
+                maxOutputTokens: estimatedMaxOutputTokens(for: text),
+                thinkingConfig: thinkingConfig
             )
         )
 
@@ -673,7 +730,28 @@ final class SentenceTranslationService {
         request.httpBody = try JSONEncoder().encode(requestBody)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let data = try await performProviderRequest(request, provider: provider.displayName)
+        let data: Data
+        do {
+            data = try await performProviderRequest(request, provider: provider.displayName)
+        } catch {
+            guard thinkingConfig != nil,
+                  shouldRetryWithoutLowLatencyThinking(after: error) else {
+                throw error
+            }
+
+            var retryRequest = request
+            retryRequest.httpBody = try JSONEncoder().encode(
+                GeminiGenerateContentRequest(
+                    systemInstruction: requestBody.systemInstruction,
+                    contents: requestBody.contents,
+                    generationConfig: .init(
+                        temperature: requestBody.generationConfig.temperature,
+                        maxOutputTokens: requestBody.generationConfig.maxOutputTokens
+                    )
+                )
+            )
+            data = try await performProviderRequest(retryRequest, provider: provider.displayName)
+        }
         let response = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
         let translation = response.candidates?
             .compactMap(\.content)
@@ -718,6 +796,7 @@ final class SentenceTranslationService {
         }
         url = streamingURL
 
+        let thinkingConfig = lowLatencyGeminiThinkingConfig(for: configuration.model)
         let requestBody = GeminiGenerateContentRequest(
             systemInstruction: .init(parts: [.init(text: prompt.system)]),
             contents: [
@@ -725,7 +804,8 @@ final class SentenceTranslationService {
             ],
             generationConfig: .init(
                 temperature: 0,
-                maxOutputTokens: estimatedMaxOutputTokens(for: text)
+                maxOutputTokens: estimatedMaxOutputTokens(for: text),
+                thinkingConfig: thinkingConfig
             )
         )
 
@@ -735,23 +815,135 @@ final class SentenceTranslationService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         var accumulatedText = ""
-        try await streamSSEData(from: request, provider: provider.displayName) { eventData in
-            let data = Data(eventData.utf8)
-            let response = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
-            let deltaText = response.candidates?
-                .compactMap(\.content)
-                .flatMap(\.parts)
-                .compactMap(\.text)
-                .joined() ?? ""
+        func streamResponse(from request: URLRequest) async throws {
+            accumulatedText = ""
 
-            guard !deltaText.isEmpty else { return }
-            accumulatedText += deltaText
-            await onPartialResult(accumulatedText)
+            try await streamSSEData(from: request, provider: provider.displayName) { eventData in
+                let data = Data(eventData.utf8)
+                let response = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+                let deltaText = response.candidates?
+                    .compactMap(\.content)
+                    .flatMap(\.parts)
+                    .compactMap(\.text)
+                    .joined() ?? ""
+
+                guard !deltaText.isEmpty else { return }
+                accumulatedText += deltaText
+                await onPartialResult(accumulatedText)
+            }
+        }
+
+        do {
+            try await streamResponse(from: request)
+        } catch {
+            guard thinkingConfig != nil,
+                  shouldRetryWithoutLowLatencyThinking(after: error) else {
+                throw error
+            }
+
+            var retryRequest = request
+            retryRequest.httpBody = try JSONEncoder().encode(
+                GeminiGenerateContentRequest(
+                    systemInstruction: requestBody.systemInstruction,
+                    contents: requestBody.contents,
+                    generationConfig: .init(
+                        temperature: requestBody.generationConfig.temperature,
+                        maxOutputTokens: requestBody.generationConfig.maxOutputTokens
+                    )
+                )
+            )
+            try await streamResponse(from: retryRequest)
         }
 
         let translation = accumulatedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !translation.isEmpty else { return nil }
         return translation
+    }
+
+    private func lowLatencyOpenAICompatibleThinkingOptions(
+        for provider: SentenceTranslationSource.SourceType,
+        model: String
+    ) -> OpenAIChatCompletionRequest.ThinkingOptions? {
+        let normalizedModel = model.lowercased()
+
+        switch provider {
+        case .openAI:
+            if normalizedModel.contains("pro") {
+                return nil
+            }
+            if normalizedModel.contains("gpt-5") {
+                return .init(reasoningEffort: "none")
+            }
+            if isOpenAIReasoningModel(normalizedModel) {
+                return .init(reasoningEffort: "low")
+            }
+            return nil
+        case .deepSeek:
+            return .init(thinking: .init(type: "disabled"))
+        case .ollama, .omlx:
+            if normalizedModel.contains("gpt-oss") {
+                return .init(think: .string("low"))
+            }
+            return .init(think: .bool(false))
+        case .native, .google, .bing, .youdao, .anthropic, .gemini:
+            return nil
+        }
+    }
+
+    private func isOpenAIReasoningModel(_ normalizedModel: String) -> Bool {
+        let reasoningPrefixes = ["o1", "o3", "o4"]
+        return reasoningPrefixes.contains { prefix in
+            normalizedModel == prefix
+                || normalizedModel.hasPrefix("\(prefix)-")
+                || normalizedModel.hasPrefix("\(prefix).")
+        }
+    }
+
+    private func lowLatencyGeminiThinkingConfig(
+        for model: String
+    ) -> GeminiGenerateContentRequest.GenerationConfig.ThinkingConfig? {
+        let normalizedModel = geminiModelName(model).lowercased()
+
+        if normalizedModel.contains("gemini-3") {
+            if normalizedModel.contains("flash") {
+                return .init(thinkingLevel: "minimal")
+            }
+            return .init(thinkingLevel: "low")
+        }
+
+        if normalizedModel.contains("2.5") {
+            if normalizedModel.contains("pro") {
+                return .init(thinkingBudget: 128)
+            }
+            return .init(thinkingBudget: 0)
+        }
+
+        return nil
+    }
+
+    private func shouldRetryWithoutLowLatencyThinking(after error: Error) -> Bool {
+        guard case SentenceTranslationError.providerRejected(_, let code, let message) = error else {
+            return false
+        }
+
+        guard code == 400 || code == 422 || code == -1 else {
+            return false
+        }
+
+        let normalizedMessage = message?.lowercased() ?? ""
+        let thinkingMarkers = [
+            "invalid_request_error",
+            "reasoning",
+            "reasoning_effort",
+            "supported values",
+            "thinking",
+            "thinkingconfig",
+            "thinking_config",
+            "think",
+            "unsupported parameter",
+            "unsupported value",
+        ]
+        return thinkingMarkers.contains { normalizedMessage.contains($0) }
     }
 
     private func normalizedLLMConfiguration(
@@ -1202,6 +1394,31 @@ private struct OpenAIChatCompletionRequest: Encodable {
     let temperature: Double
     let maxTokens: Int
     let stream: Bool
+    let reasoningEffort: String?
+    let thinking: Thinking?
+    let think: ThinkValue?
+
+    var usesLowLatencyThinking: Bool {
+        reasoningEffort != nil || thinking != nil || think != nil
+    }
+
+    init(
+        model: String,
+        messages: [Message],
+        temperature: Double,
+        maxTokens: Int,
+        stream: Bool,
+        thinkingOptions: ThinkingOptions? = nil
+    ) {
+        self.model = model
+        self.messages = messages
+        self.temperature = temperature
+        self.maxTokens = maxTokens
+        self.stream = stream
+        self.reasoningEffort = thinkingOptions?.reasoningEffort
+        self.thinking = thinkingOptions?.thinking
+        self.think = thinkingOptions?.think
+    }
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -1209,11 +1426,49 @@ private struct OpenAIChatCompletionRequest: Encodable {
         case temperature
         case maxTokens = "max_tokens"
         case stream
+        case reasoningEffort = "reasoning_effort"
+        case thinking
+        case think
     }
 
     struct Message: Encodable {
         let role: String
         let content: String
+    }
+
+    struct ThinkingOptions {
+        let reasoningEffort: String?
+        let thinking: Thinking?
+        let think: ThinkValue?
+
+        init(
+            reasoningEffort: String? = nil,
+            thinking: Thinking? = nil,
+            think: ThinkValue? = nil
+        ) {
+            self.reasoningEffort = reasoningEffort
+            self.thinking = thinking
+            self.think = think
+        }
+    }
+
+    struct Thinking: Encodable {
+        let type: String
+    }
+
+    enum ThinkValue: Encodable {
+        case bool(Bool)
+        case string(String)
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            switch self {
+            case .bool(let value):
+                try container.encode(value)
+            case .string(let value):
+                try container.encode(value)
+            }
+        }
     }
 }
 
@@ -1332,6 +1587,30 @@ private struct GeminiGenerateContentRequest: Encodable {
     struct GenerationConfig: Encodable {
         let temperature: Double
         let maxOutputTokens: Int
+        let thinkingConfig: ThinkingConfig?
+
+        init(
+            temperature: Double,
+            maxOutputTokens: Int,
+            thinkingConfig: ThinkingConfig? = nil
+        ) {
+            self.temperature = temperature
+            self.maxOutputTokens = maxOutputTokens
+            self.thinkingConfig = thinkingConfig
+        }
+
+        struct ThinkingConfig: Encodable {
+            let thinkingBudget: Int?
+            let thinkingLevel: String?
+
+            init(
+                thinkingBudget: Int? = nil,
+                thinkingLevel: String? = nil
+            ) {
+                self.thinkingBudget = thinkingBudget
+                self.thinkingLevel = thinkingLevel
+            }
+        }
     }
 }
 
