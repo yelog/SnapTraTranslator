@@ -799,6 +799,12 @@ final class AppModel: ObservableObject {
             debugSelectedTextRoute(
                 "snapshot text=\"\(truncate(selectionSnapshot.text))\" bounds=\(selectionSnapshot.bounds.map { describe(rect: $0) } ?? "nil") sourceApp=\(selectionSnapshot.sourceAppIdentifier ?? "nil")"
             )
+            if let rejectionReason = SinglePressLookupRouter.selectedTextRejectionReason(
+                mouseLocation: mouseLocation,
+                selectionSnapshot: selectionSnapshot
+            ) {
+                debugSelectedTextRoute("snapshotRejected reason=\(rejectionReason)")
+            }
         } else {
             debugSelectedTextRoute("snapshot=nil")
         }

@@ -276,7 +276,7 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
         XCTAssertEqual(intent, .selectedTextSentence(snapshot))
     }
 
-    func testSnapshotWithoutBoundsStillRoutesToSelectedTextTranslation() {
+    func testSnapshotWithoutBoundsRoutesToSelectedTextTranslation() {
         let snapshot = SelectedTextSnapshot(
             text: "Hello world",
             selectedRange: NSRange(location: 0, length: 11),
@@ -295,7 +295,7 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
         XCTAssertEqual(intent, .selectedTextSentence(snapshot))
     }
 
-    func testMouseOutsideBoundsStillRoutesToSelectedTextTranslation() {
+    func testMouseOutsideBoundsRoutesToSelectedTextTranslation() {
         let snapshot = SelectedTextSnapshot(
             text: "Hello world",
             selectedRange: NSRange(location: 0, length: 11),
@@ -312,6 +312,63 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
         )
 
         XCTAssertEqual(intent, .selectedTextSentence(snapshot))
+    }
+
+    func testMouseNearSelectionEdgeRoutesToSelectedTextTranslation() {
+        let snapshot = SelectedTextSnapshot(
+            text: "Hello world",
+            selectedRange: NSRange(location: 0, length: 11),
+            bounds: CGRect(x: 100, y: 100, width: 120, height: 24),
+            sourceAppIdentifier: "com.apple.TextEdit"
+        )
+
+        let intent = SinglePressLookupRouter.resolve(
+            mouseLocation: CGPoint(x: 96, y: 110),
+            isSelectedTextTranslationSupported: true,
+            isSelectedTextTranslationEnabled: true,
+            hasAccessibilityPermission: true,
+            selectionSnapshot: snapshot
+        )
+
+        XCTAssertEqual(intent, .selectedTextSentence(snapshot))
+    }
+
+    func testOversizedSelectionBoundsRoutesToSelectedTextTranslation() {
+        let snapshot = SelectedTextSnapshot(
+            text: "Hello world",
+            selectedRange: NSRange(location: 0, length: 11),
+            bounds: CGRect(x: 100, y: 100, width: 1400, height: 700),
+            sourceAppIdentifier: "com.microsoft.teams2"
+        )
+
+        let intent = SinglePressLookupRouter.resolve(
+            mouseLocation: CGPoint(x: 140, y: 110),
+            isSelectedTextTranslationSupported: true,
+            isSelectedTextTranslationEnabled: true,
+            hasAccessibilityPermission: true,
+            selectionSnapshot: snapshot
+        )
+
+        XCTAssertEqual(intent, .selectedTextSentence(snapshot))
+    }
+
+    func testInvisibleSelectedTextFallsBackToOcrWord() {
+        let snapshot = SelectedTextSnapshot(
+            text: "\u{200B}\u{FFFC}",
+            selectedRange: NSRange(location: 0, length: 2),
+            bounds: CGRect(x: 100, y: 100, width: 120, height: 24),
+            sourceAppIdentifier: "com.microsoft.teams2"
+        )
+
+        let intent = SinglePressLookupRouter.resolve(
+            mouseLocation: CGPoint(x: 140, y: 110),
+            isSelectedTextTranslationSupported: true,
+            isSelectedTextTranslationEnabled: true,
+            hasAccessibilityPermission: true,
+            selectionSnapshot: snapshot
+        )
+
+        XCTAssertEqual(intent, .ocrWord)
     }
 
     func testMissingAccessibilityFallsBackToOcrWord() {
