@@ -769,7 +769,7 @@ struct GeneralTranslationLanguageRow: View {
 
                 Picker("", selection: $sourceLanguage) {
                     ForEach(commonLanguages, id: \.id) { lang in
-                        Text(verbatim: lang.name).tag(lang.id)
+                        Text(verbatim: languageMenuLabel(for: .source, language: lang)).tag(lang.id)
                     }
                 }
                 .labelsHidden()
@@ -788,7 +788,7 @@ struct GeneralTranslationLanguageRow: View {
 
                 Picker("", selection: $targetLanguage) {
                     ForEach(commonLanguages, id: \.id) { lang in
-                        Text(verbatim: lang.name).tag(lang.id)
+                        Text(verbatim: languageMenuLabel(for: .target, language: lang)).tag(lang.id)
                     }
                 }
                 .labelsHidden()
@@ -860,6 +860,21 @@ struct GeneralTranslationLanguageRow: View {
             return sourceLanguage
         case .target:
             return targetLanguage
+        }
+    }
+
+    private func languagePair(for role: LanguageRole, candidateIdentifier: String) -> LookupLanguagePair {
+        switch role {
+        case .source:
+            return LookupLanguagePair.fixed(
+                sourceIdentifier: candidateIdentifier,
+                targetIdentifier: targetLanguage
+            )
+        case .target:
+            return LookupLanguagePair.fixed(
+                sourceIdentifier: sourceLanguage,
+                targetIdentifier: candidateIdentifier
+            )
         }
     }
 
@@ -958,6 +973,22 @@ struct GeneralTranslationLanguageRow: View {
             from: pair.sourceIdentifier,
             to: pair.targetIdentifier
         )
+    }
+
+    private func menuItemStatus(for role: LanguageRole, candidateIdentifier: String) -> LanguageAvailability.Status? {
+        let pair = languagePair(for: role, candidateIdentifier: candidateIdentifier)
+        return getLanguagePackStatus(for: pair)
+    }
+
+    private func languageMenuLabel(for role: LanguageRole, language: (id: String, name: String)) -> String {
+        if language.id == sourceLanguage && language.id == targetLanguage { return "● \(language.name)" }
+        guard let status = menuItemStatus(for: role, candidateIdentifier: language.id) else { return "⋯ \(language.name)" }
+        switch status {
+        case .installed:   return "● \(language.name)"
+        case .supported:   return "↓ \(language.name)"
+        case .unsupported: return "✗ \(language.name)"
+        @unknown default:  return "⋯ \(language.name)"
+        }
     }
 
     private func languageName(for id: String) -> String {
