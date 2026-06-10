@@ -152,23 +152,87 @@ final class DictionaryService {
         preferEnglish: Bool
     ) -> DictionaryEntry? {
         let range = CFRange(location: 0, length: word.utf16.count)
-        guard let definition = DCSCopyTextDefinition(nil, word as CFString, range) else {
-            return nil
+        let cfWord = word as CFString
+
+        // Fast path: try the default dictionary first
+        if let definition = DCSCopyTextDefinition(nil, cfWord, range) {
+            let html = definition.takeRetainedValue() as String
+
+            #if DEBUG
+            print("[DictionaryService] System dictionary result for '\(word)' (\(html.count) chars):\n\(html.prefix(2000))")
+            #endif
+
+            let stripped = stripHTML(html)
+            let containsChinese = stripped.range(of: "\\p{Han}", options: .regularExpression) != nil
+
+            // If the default result already has Chinese content (or we don't
+            // need Chinese), parse it directly — no further search required.
+            if containsChinese
+                || preferEnglish
+                || !(targetLanguage.map(isChineseLanguageIdentifier) ?? false) {
+                return parseSystemDictionaryHTML(
+                    html,
+                    word: word,
+                    sourceLanguage: sourceLanguage,
+                    targetLanguage: targetLanguage,
+                    preferEnglish: preferEnglish
+                )
+            }
+
+            // When the target is Chinese but the default dictionary returned
+            // English-only content (e.g. an encyclopedia entry), iterate
+            // through all installed dictionaries to find a bilingual result.
+            // DCSCopyTextDefinition(nil, …) picks the first match which may
+            // resolve to a monolingual encyclopedia instead of a bilingual
+            // dictionary.
+            if let dictionaries = DCSCopyAvailableDictionaries()?.takeRetainedValue() as? [DCSDictionary] {
+                #if DEBUG
+                print("[DictionaryService] Searching \(dictionaries.count) available dictionaries for Chinese result for '\(word)'...")
+                #endif
+                for dictionary in dictionaries {
+                    guard let candidate = DCSCopyTextDefinition(dictionary, cfWord, range) else {
+                        continue
+                    }
+                    let candidateHTML = candidate.takeRetainedValue() as String
+                    let candidateStripped = stripHTML(candidateHTML)
+                    let candidateHasChinese = candidateStripped.range(
+                        of: "\\p{Han}", options: .regularExpression
+                    ) != nil
+
+                    #if DEBUG
+                    let name = (DCSDictionaryGetName(dictionary)?.takeRetainedValue() as String?) ?? "unknown"
+                    print("[DictionaryService]   dict='\(name)' hasChinese=\(candidateHasChinese) len=\(candidateHTML.count)")
+                    #endif
+
+                    if candidateHasChinese {
+                        return parseSystemDictionaryHTML(
+                            candidateHTML,
+                            word: word,
+                            sourceLanguage: sourceLanguage,
+                            targetLanguage: targetLanguage,
+                            preferEnglish: preferEnglish
+                        )
+                    }
+                }
+            }
+
+            // No bilingual dictionary entry found.  Still return the
+            // English-only result so the translation pipeline can translate
+            // it to Chinese.  The overlay layer will hide the English meaning
+            // once a Chinese translation is available (Fix 2).
+            #if DEBUG
+            print("[DictionaryService] No Chinese-containing dictionary found for '\(word)', falling through to translation pipeline")
+            #endif
+            return parseSystemDictionaryHTML(
+                html,
+                word: word,
+                sourceLanguage: sourceLanguage,
+                targetLanguage: targetLanguage,
+                preferEnglish: preferEnglish
+            )
         }
 
-        let html = definition.takeRetainedValue() as String
-
-        #if DEBUG
-        print("[DictionaryService] System dictionary result for '\(word)' (\(html.count) chars):\n\(html.prefix(2000))")
-        #endif
-
-        return parseSystemDictionaryHTML(
-            html,
-            word: word,
-            sourceLanguage: sourceLanguage,
-            targetLanguage: targetLanguage,
-            preferEnglish: preferEnglish
-        )
+        return nil
     }
 
     nonisolated static func parseSystemDictionaryHTML(
@@ -214,6 +278,10 @@ final class DictionaryService {
 
     private nonisolated static func isEnglishLanguageIdentifier(_ identifier: String) -> Bool {
         identifier.hasPrefix("en")
+    }
+
+    private nonisolated static func isChineseLanguageIdentifier(_ identifier: String) -> Bool {
+        identifier.hasPrefix("zh")
     }
 
     // MARK: - Private

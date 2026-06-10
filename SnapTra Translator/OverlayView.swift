@@ -1322,12 +1322,19 @@ struct OverlayView: View {
                 grouped[key]?.translations.appendIfMissing(translation)
             }
 
-            // Always show meanings that differ from translations (e.g. English definitions
-            // when target is Chinese), so users can see full context including proper nouns.
+            // Show meanings that differ from translations.
+            // When target is Chinese and a Chinese translation already exists,
+            // suppress the standalone English meaning — the Chinese translation
+            // already preserves any embedded English proper nouns (e.g. "苹果公司",
+            // "Mac 电脑"). Showing a full English definition alongside adds noise.
             let meaning = normalizedDictionaryText(definition.meaning)
             if let meaning,
                meaning.caseInsensitiveCompare(translation ?? "") != .orderedSame {
-                grouped[key]?.meanings.appendIfMissing(meaning)
+                let targetIsChinese = model.settings.targetLanguage.hasPrefix("zh")
+                let translationHasChinese = translation?.range(of: "\\p{Han}", options: .regularExpression) != nil
+                if !(targetIsChinese && translationHasChinese) {
+                    grouped[key]?.meanings.appendIfMissing(meaning)
+                }
             }
 
             if includeSupplementaryDetails {
