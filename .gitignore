@@ -2,6 +2,9 @@
 .agent/
 .agents/
 
+# CodeGraph
+.codegraph/
+
 # macOS
 .DS_Store
 
