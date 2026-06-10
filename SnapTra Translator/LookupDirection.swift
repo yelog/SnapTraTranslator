@@ -105,9 +105,8 @@ enum OCRTokenClassifier {
 }
 
 enum LookupLanguagePairResolver {
-    private static let englishLetterSet = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
     private static let englishWordPattern = unsafeRegex(#"[A-Za-z]+(?:'[A-Za-z]+)?"#)
-    private static let dominantScriptThreshold = 0.65
+    private static let dominantScriptThreshold = 0.55
     private static let maxEnglishWordWeight = 3
     private static let ignoredObservedTextPatterns: [NSRegularExpression] = [
         unsafeRegex(#"https?://\S+|www\.\S+"#),
@@ -124,23 +123,23 @@ enum LookupLanguagePairResolver {
             return configuredPair
         }
 
-        let sourceFamily = languageFamily(for: configuredPair.sourceIdentifier)
-        let targetFamily = languageFamily(for: configuredPair.targetIdentifier)
-        guard sourceFamily != .unknown,
-              targetFamily != .unknown,
-              sourceFamily != targetFamily else {
+        let sourceScript = scriptFamily(for: configuredPair.sourceIdentifier)
+        let targetScript = scriptFamily(for: configuredPair.targetIdentifier)
+        guard let sourceScript,
+              let targetScript,
+              sourceScript != targetScript else {
             return configuredPair
         }
 
-        guard let observedFamily = observedLanguageFamily(for: observedText) else {
+        guard let observedScript = observedScriptFamily(for: observedText) else {
             return configuredPair
         }
 
-        if observedFamily == sourceFamily {
+        if observedScript == sourceScript {
             return configuredPair
         }
 
-        if observedFamily == targetFamily {
+        if observedScript == targetScript {
             return configuredPair.reversed()
         }
 
@@ -148,11 +147,11 @@ enum LookupLanguagePairResolver {
     }
 
     static func supportsBidirectionalDetection(for pair: LookupLanguagePair) -> Bool {
-        let sourceFamily = languageFamily(for: pair.sourceIdentifier)
-        let targetFamily = languageFamily(for: pair.targetIdentifier)
-
-        return (sourceFamily == .english && targetFamily == .chinese)
-            || (sourceFamily == .chinese && targetFamily == .english)
+        guard let sourceScript = scriptFamily(for: pair.sourceIdentifier),
+              let targetScript = scriptFamily(for: pair.targetIdentifier) else {
+            return false
+        }
+        return sourceScript != targetScript
     }
 
     static func shouldLookup(
@@ -162,78 +161,133 @@ enum LookupLanguagePairResolver {
     ) -> Bool {
         guard !bidirectionalEnabled else { return true }
 
-        let sourceFamily = languageFamily(for: configuredPair.sourceIdentifier)
-        let targetFamily = languageFamily(for: configuredPair.targetIdentifier)
-        guard sourceFamily != .unknown,
-              targetFamily != .unknown,
-              sourceFamily != targetFamily,
-              let observedFamily = observedLanguageFamily(for: observedText)
+        let sourceScript = scriptFamily(for: configuredPair.sourceIdentifier)
+        let targetScript = scriptFamily(for: configuredPair.targetIdentifier)
+        guard let sourceScript,
+              let targetScript,
+              sourceScript != targetScript,
+              let observedScript = observedScriptFamily(for: observedText)
         else {
             return true
         }
 
-        return observedFamily == sourceFamily
+        return observedScript == sourceScript
     }
 
-    private enum LanguageFamily {
-        case english
-        case chinese
-        case unknown
+    // MARK: - Script Family Detection
+
+    /// Returns the dominant Unicode script family for a language identifier.
+    ///
+    /// Uses `Locale.Language.script.identifier` when available, with manual
+    /// fallbacks for common CJK and multi-script languages.
+    static func scriptFamily(for languageIdentifier: String) -> String? {
+        // Manual overrides for well-known multi-script or ambiguous languages
+        if languageIdentifier.hasPrefix("zh") {
+            return languageIdentifier.contains("Hant") ? "Hant" : "Hans"
+        }
+        if languageIdentifier.hasPrefix("ja") { return "Jpan" }
+        if languageIdentifier.hasPrefix("ko") { return "Kore" }
+
+        let language = Locale.Language(identifier: languageIdentifier)
+        if let scriptId = language.script?.identifier, !scriptId.isEmpty {
+            return scriptId
+        }
+
+        // Fallback: extract 4-letter script subtag from identifier
+        // e.g. "sr-Cyrl" → "Cyrl", "uz-Latn" → "Latn"
+        let parts = languageIdentifier.split(separator: "-")
+        for part in parts where part.count == 4 && part.first?.isUppercase == true {
+            return String(part)
+        }
+
+        return nil
     }
 
-    private static func languageFamily(for identifier: String) -> LanguageFamily {
-        if identifier.hasPrefix("en") {
-            return .english
+    /// Returns the dominant Unicode script family for a piece of observed text.
+    ///
+    /// Counts characters by their Unicode script property and returns the
+    /// script with the highest count, applying a dominance threshold for
+    /// mixed-script text.
+    static func observedScriptFamily(for text: String) -> String? {
+        let filteredText = filteredObservedText(from: text)
+
+        var scriptCounts: [String: Int] = [:]
+        for scalar in filteredText.unicodeScalars {
+            guard let script = scriptName(for: scalar) else { continue }
+            scriptCounts[script, default: 0] += 1
         }
 
-        if identifier.hasPrefix("zh") {
-            return .chinese
-        }
+        guard !scriptCounts.isEmpty else { return nil }
 
-        return .unknown
-    }
+        let sorted = scriptCounts.sorted { $0.value > $1.value }
+        guard let dominant = sorted.first else { return nil }
 
-    private static func languageFamily(for script: OCRTokenScript) -> LanguageFamily? {
-        switch script {
-        case .english:
-            return .english
-        case .chinese:
-            return .chinese
-        case .mixed, .unknown:
-            return nil
-        }
-    }
-
-    private static func observedLanguageFamily(for observedText: String) -> LanguageFamily? {
-        let filteredText = filteredObservedText(from: observedText)
-        let script = OCRTokenClassifier.classify(filteredText)
-
-        if let family = languageFamily(for: script) {
-            return family
-        }
-
-        guard script == .mixed else {
-            return nil
-        }
-
-        let counts = observedScriptCounts(in: filteredText)
-        let chineseCount = counts.chinese
-        let englishCount = counts.english
-
-        guard chineseCount > 0, englishCount > 0 else {
-            return nil
-        }
-
-        let dominantCount = max(chineseCount, englishCount)
-        let totalCount = chineseCount + englishCount
-        let dominantShare = Double(dominantCount) / Double(totalCount)
+        let totalCount = sorted.reduce(0) { $0 + $1.value }
+        let dominantShare = Double(dominant.value) / Double(totalCount)
 
         guard dominantShare >= dominantScriptThreshold else {
             return nil
         }
 
-        return chineseCount > englishCount ? .chinese : .english
+        return dominant.key
     }
+
+    /// Maps a Unicode scalar to its script family name.
+    ///
+    /// Groups related Unicode blocks into higher-level script families:
+    /// - CJK Unified Ideographs → `Hans` (covers both simplified and traditional)
+    /// - Hiragana / Katakana → `Jpan`
+    /// - Hangul → `Kore`
+    /// - Latin / Cyrillic / Arabic / Devanagari / Thai by code point range
+    private static func scriptName(for scalar: Unicode.Scalar) -> String? {
+        if scalar.properties.isIdeographic {
+            return "Hans"
+        }
+
+        let cp = scalar.value
+
+        // Hiragana (3040–309F) and Katakana (30A0–30FF, 31F0–31FF, FF65–FF9F)
+        if (0x3040...0x309F).contains(cp) || (0x30A0...0x30FF).contains(cp)
+            || (0x31F0...0x31FF).contains(cp) || (0xFF65...0xFF9F).contains(cp) {
+            return "Jpan"
+        }
+
+        // Hangul Syllables (AC00–D7AF), Jamo (1100–11FF), Compatibility Jamo (3130–318F)
+        if (0xAC00...0xD7AF).contains(cp) || (0x1100...0x11FF).contains(cp)
+            || (0x3130...0x318F).contains(cp) {
+            return "Kore"
+        }
+
+        // Basic Latin + Latin Extended-A/B + Latin Extended Additional
+        if (0x0041...0x024F).contains(cp) || (0x1E00...0x1EFF).contains(cp) {
+            return "Latn"
+        }
+
+        // Cyrillic + Cyrillic Supplement + Extended-A/B
+        if (0x0400...0x052F).contains(cp) || (0x2DE0...0x2DFF).contains(cp)
+            || (0xA640...0xA69F).contains(cp) {
+            return "Cyrl"
+        }
+
+        // Arabic + Arabic Supplement
+        if (0x0600...0x06FF).contains(cp) || (0x0750...0x077F).contains(cp) {
+            return "Arab"
+        }
+
+        // Devanagari
+        if (0x0900...0x097F).contains(cp) {
+            return "Deva"
+        }
+
+        // Thai
+        if (0x0E00...0x0E7F).contains(cp) {
+            return "Thai"
+        }
+
+        return nil
+    }
+
+    // MARK: - Mixed Text Helpers
 
     private static func observedScriptCounts(in text: String) -> (chinese: Int, english: Int) {
         var chineseCount = 0

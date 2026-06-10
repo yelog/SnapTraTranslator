@@ -8022,6 +8022,40 @@
         }
       }
     },
+    "Unsupported for current language" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsupported for current language"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在の言語ペア非対応"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "현재 언어 조합 미지원"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不支持当前语言对"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不支援當前語言對"
+          }
+        }
+      }
+    },
     "Used first for English word lookups. Translation still uses Apple Translation." : {
       "extractionState" : "stale",
       "localizations" : {

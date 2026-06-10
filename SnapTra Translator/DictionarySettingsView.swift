@@ -444,6 +444,8 @@ struct DictionarySettingsView: View {
                 IntegratedDictionaryRow(
                     source: source,
                     downloadState: downloadState(for: source.wrappedValue.type),
+                    sourceLanguage: model.settings.sourceLanguage,
+                    targetLanguage: model.settings.targetLanguage,
                     onToggle: { updateSources() },
                     onDownloadComplete: { handleDownloadComplete(for: source.wrappedValue.type) },
                     onDelete: {
@@ -991,6 +993,8 @@ extension NSView {
 struct IntegratedDictionaryRow: View {
     @Binding var source: DictionarySource
     var downloadState: DownloadState?
+    var sourceLanguage: String
+    var targetLanguage: String
     var onToggle: () -> Void
     var onDownloadComplete: () -> Void
     var onDelete: () -> Void
@@ -999,6 +1003,13 @@ struct IntegratedDictionaryRow: View {
     var onRetry: () -> Void
 
     @State private var previousState: DownloadState?
+
+    private var isSupportedForCurrentLanguagePair: Bool {
+        source.type.supportsLookup(
+            sourceIdentifier: sourceLanguage,
+            targetIdentifier: targetLanguage
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1022,8 +1033,8 @@ struct IntegratedDictionaryRow: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
 
-                    if !source.type.badges.isEmpty {
-                        HStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        if !source.type.badges.isEmpty {
                             ForEach(source.type.badges, id: \.self) { badge in
                                 Text(badge)
                                     .font(.system(size: 10, weight: .semibold))
@@ -1035,6 +1046,18 @@ struct IntegratedDictionaryRow: View {
                                             .fill(Color.secondary.opacity(0.1))
                                     )
                             }
+                        }
+
+                        if source.isEnabled && !isSupportedForCurrentLanguagePair {
+                            Text(L("Unsupported for current language"))
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.orange)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.orange.opacity(0.15))
+                                )
                         }
                     }
                 }

@@ -196,4 +196,159 @@ final class OCRTokenClassifierTests: XCTestCase {
 
         XCTAssertEqual(result, pair)
     }
+
+    // MARK: - Russian ↔ Chinese Bidirectional Tests
+
+    func testBidirectionalResolverReversesRussianChineseForChineseText() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "ru", targetIdentifier: "zh-Hans")
+
+        let result = LookupLanguagePairResolver.resolve(
+            configuredPair: pair,
+            observedText: "物品",
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertEqual(
+            result,
+            LookupLanguagePair.fixed(sourceIdentifier: "zh-Hans", targetIdentifier: "ru")
+        )
+    }
+
+    func testBidirectionalResolverKeepsRussianChineseForCyrillicText() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "ru", targetIdentifier: "zh-Hans")
+
+        let result = LookupLanguagePairResolver.resolve(
+            configuredPair: pair,
+            observedText: "привет",
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertEqual(result, pair)
+    }
+
+    func testBidirectionalResolverReversesChineseRussianForCyrillicText() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "zh-Hans", targetIdentifier: "ru")
+
+        let result = LookupLanguagePairResolver.resolve(
+            configuredPair: pair,
+            observedText: "привет",
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertEqual(
+            result,
+            LookupLanguagePair.fixed(sourceIdentifier: "ru", targetIdentifier: "zh-Hans")
+        )
+    }
+
+    func testSupportsBidirectionalDetectionForRussianChinese() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "ru", targetIdentifier: "zh-Hans")
+        XCTAssertTrue(LookupLanguagePairResolver.supportsBidirectionalDetection(for: pair))
+    }
+
+    func testSupportsBidirectionalDetectionForEnglishChinese() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
+        XCTAssertTrue(LookupLanguagePairResolver.supportsBidirectionalDetection(for: pair))
+    }
+
+    func testSupportsBidirectionalDetectionReturnsFalseForSameScript() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "fr")
+        XCTAssertFalse(LookupLanguagePairResolver.supportsBidirectionalDetection(for: pair))
+    }
+
+    // MARK: - Script Family Detection Tests
+
+    func testScriptFamilyForEnglish() {
+        XCTAssertEqual(LookupLanguagePairResolver.scriptFamily(for: "en"), "Latn")
+    }
+
+    func testScriptFamilyForRussian() {
+        XCTAssertEqual(LookupLanguagePairResolver.scriptFamily(for: "ru"), "Cyrl")
+    }
+
+    func testScriptFamilyForChineseSimplified() {
+        XCTAssertEqual(LookupLanguagePairResolver.scriptFamily(for: "zh-Hans"), "Hans")
+    }
+
+    func testScriptFamilyForChineseTraditional() {
+        XCTAssertEqual(LookupLanguagePairResolver.scriptFamily(for: "zh-Hant"), "Hant")
+    }
+
+    func testScriptFamilyForJapanese() {
+        XCTAssertEqual(LookupLanguagePairResolver.scriptFamily(for: "ja"), "Jpan")
+    }
+
+    func testScriptFamilyForKorean() {
+        XCTAssertEqual(LookupLanguagePairResolver.scriptFamily(for: "ko"), "Kore")
+    }
+
+    func testObservedScriptFamilyForChinese() {
+        XCTAssertEqual(LookupLanguagePairResolver.observedScriptFamily(for: "物品"), "Hans")
+    }
+
+    func testObservedScriptFamilyForCyrillic() {
+        XCTAssertEqual(LookupLanguagePairResolver.observedScriptFamily(for: "привет"), "Cyrl")
+    }
+
+    func testObservedScriptFamilyForLatin() {
+        XCTAssertEqual(LookupLanguagePairResolver.observedScriptFamily(for: "hello"), "Latn")
+    }
+
+    // MARK: - Japanese ↔ Chinese Bidirectional Tests
+
+    func testBidirectionalResolverReversesJapaneseChineseForChineseText() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "ja", targetIdentifier: "zh-Hans")
+
+        let result = LookupLanguagePairResolver.resolve(
+            configuredPair: pair,
+            observedText: "物品",
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertEqual(
+            result,
+            LookupLanguagePair.fixed(sourceIdentifier: "zh-Hans", targetIdentifier: "ja")
+        )
+    }
+
+    func testBidirectionalResolverKeepsJapaneseChineseForKanaText() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "ja", targetIdentifier: "zh-Hans")
+
+        let result = LookupLanguagePairResolver.resolve(
+            configuredPair: pair,
+            observedText: "こんにちは",
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertEqual(result, pair)
+    }
+
+    // MARK: - Korean ↔ Chinese Bidirectional Tests
+
+    func testBidirectionalResolverReversesKoreanChineseForChineseText() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "ko", targetIdentifier: "zh-Hans")
+
+        let result = LookupLanguagePairResolver.resolve(
+            configuredPair: pair,
+            observedText: "物品",
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertEqual(
+            result,
+            LookupLanguagePair.fixed(sourceIdentifier: "zh-Hans", targetIdentifier: "ko")
+        )
+    }
+
+    func testBidirectionalResolverKeepsKoreanChineseForHangulText() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "ko", targetIdentifier: "zh-Hans")
+
+        let result = LookupLanguagePairResolver.resolve(
+            configuredPair: pair,
+            observedText: "안녕하세요",
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertEqual(result, pair)
+    }
 }
