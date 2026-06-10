@@ -876,13 +876,25 @@ final class DictionaryService {
         return PlainTextMeaning(meaning: englishPart, translation: cleanedTranslation.isEmpty ? nil : cleanedTranslation)
     }
 
+    /// Cleans a plain-text Chinese translation while preserving English proper nouns
+    /// and meaningful mixed-language content (e.g. “苹果公司（Apple Inc.）制造 Mac、iPhone”).
+    ///
+    /// Only removes obvious noise: guillemet/angle-bracket quotes, dictionary metadata
+    /// markers, and isolated part-of-speech abbreviations. Latin text that appears
+    /// adjacent to Chinese characters is preserved.
     private static func sanitizePlainTextTranslation(_ text: String) -> String {
         var result = text
-        let latinPattern = "[A-Za-z\\u00C0-\\u024F\\u1E00-\\u1EFF]+"
+        // Remove guillemet/angle-bracket quoted segments (dictionary metadata)
         result = result.replacingOccurrences(of: "«[^»]*»", with: "", options: .regularExpression)
         result = result.replacingOccurrences(of: "‹[^›]*›", with: "", options: .regularExpression)
-        result = result.replacingOccurrences(of: "\\([^\\)]*[A-Za-z\\u00C0-\\u024F\\u1E00-\\u1EFF][^\\)]*\\)", with: "", options: .regularExpression)
-        result = result.replacingOccurrences(of: latinPattern, with: "", options: .regularExpression)
+        // Remove parenthetical segments that are purely Latin/metadata
+        // (e.g. "(n.)", "(pl. ~s)"), but keep mixed-content ones like "(Apple Inc.)"
+        result = result.replacingOccurrences(
+            of: "\\(\\s*(?:pl\\.|n\\.|v\\.|adj\\.|adv\\.|prep\\.|sing\\.|usu\\.|esp\\.|etc\\.)\\s*(?:~[a-z]*\\s*)?\\)",
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        // Collapse whitespace
         result = result.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }

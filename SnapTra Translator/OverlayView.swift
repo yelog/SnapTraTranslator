@@ -471,18 +471,45 @@ struct OverlayView: View {
         content: ParagraphOverlayContent,
         isCompact: Bool = false
     ) -> some View {
-        if let selectedIdentifier = content.selectedTargetLanguageIdentifier {
-            HStack(spacing: isCompact ? 1 : 2) {
-                ForEach(content.languageOptions) { option in
-                    paragraphLanguageOptionButton(
-                        option: option,
-                        isSelected: Locale.Language(identifier: option.identifier).minimalIdentifier == Locale.Language(identifier: selectedIdentifier).minimalIdentifier,
-                        isCompact: isCompact
-                    )
+        if let selectedTargetIdentifier = content.selectedTargetLanguageIdentifier,
+           let sourceLanguageIdentifier = content.sourceLanguageIdentifier,
+           content.languageOptions.count == 2 {
+            let sourceMinimalID = Locale.Language(identifier: sourceLanguageIdentifier).minimalIdentifier
+            let targetMinimalID = Locale.Language(identifier: selectedTargetIdentifier).minimalIdentifier
+
+            let sourceName = content.languageOptions.first {
+                Locale.Language(identifier: $0.identifier).minimalIdentifier == sourceMinimalID
+            }?.displayName ?? ""
+
+            let targetName = content.languageOptions.first {
+                Locale.Language(identifier: $0.identifier).minimalIdentifier == targetMinimalID
+            }?.displayName ?? ""
+
+            Button {
+                model.translateParagraphOriginal(to: sourceLanguageIdentifier)
+            } label: {
+                HStack(spacing: 4) {
+                    Text(sourceName)
+                        .font(.system(size: isCompact ? 10.5 : 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: isCompact ? 8 : 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+
+                    Text(targetName)
+                        .font(.system(size: isCompact ? 10.5 : 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
                 }
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, isCompact ? 8 : 10)
+                .padding(.vertical, isCompact ? 3 : 5)
             }
-            .fixedSize(horizontal: true, vertical: false)
+            .buttonStyle(.plain)
             .layoutPriority(1)
+            .accessibilityLabel(Text(L("Toggle translation direction")))
             .padding(isCompact ? 1 : 2)
             .background(
                 Capsule(style: .continuous)
@@ -493,35 +520,6 @@ struct OverlayView: View {
                     .stroke(Color.secondary.opacity(0.12), lineWidth: 0.5)
             )
         }
-    }
-
-    private func paragraphLanguageOptionButton(
-        option: ParagraphTranslationLanguageOption,
-        isSelected: Bool,
-        isCompact: Bool = false
-    ) -> some View {
-        Button {
-            model.translateParagraphOriginal(to: option.identifier)
-        } label: {
-            Text(option.displayName)
-                .font(.system(size: isCompact ? 10.5 : 11, weight: isSelected ? .semibold : .medium, design: .rounded))
-                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, isCompact ? 8 : 10)
-                .padding(.vertical, isCompact ? 3 : 4)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(isSelected ? selectedParagraphLanguageOptionBackground : Color.clear)
-                )
-        }
-        .buttonStyle(.plain)
-        .disabled(isSelected)
-        .accessibilityLabel(Text(L("Translate to") + " " + option.displayName))
-    }
-
-    private var selectedParagraphLanguageOptionBackground: Color {
-        colorScheme == .dark ? Color.white.opacity(0.16) : Color.white.opacity(0.9)
     }
 
     @ViewBuilder
@@ -1318,14 +1316,16 @@ struct OverlayView: View {
                 grouped[key]?.translations.appendIfMissing(translation)
             }
 
-            if includeSupplementaryDetails {
-                let meaning = normalizedDictionaryText(definition.meaning)
-                let examples = definition.examples.compactMap(normalizedDictionaryText)
+            // Always show meanings that differ from translations (e.g. English definitions
+            // when target is Chinese), so users can see full context including proper nouns.
+            let meaning = normalizedDictionaryText(definition.meaning)
+            if let meaning,
+               meaning.caseInsensitiveCompare(translation ?? "") != .orderedSame {
+                grouped[key]?.meanings.appendIfMissing(meaning)
+            }
 
-                if let meaning,
-                   meaning.caseInsensitiveCompare(translation ?? "") != .orderedSame {
-                    grouped[key]?.meanings.appendIfMissing(meaning)
-                }
+            if includeSupplementaryDetails {
+                let examples = definition.examples.compactMap(normalizedDictionaryText)
                 for example in examples {
                     grouped[key]?.examples.appendIfMissing(example)
                 }

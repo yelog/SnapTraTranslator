@@ -122,41 +122,100 @@ final class OfflineDictionaryService {
     ///
     /// translation format: "n. 苹果；苹果公司\nvt. 捏"
     /// definition format:  "n. A common round fruit produced by the tree..."
+    ///
+    /// When both columns are present, merges them by matching POS+index:
+    /// Chinese text → translation, English text → meaning.
     private func buildDefinitions(translation: String?, definition: String?) -> [DictionaryEntry.Definition] {
-        var result: [DictionaryEntry.Definition] = []
+        let chineseLines = parseDefinitionLines(translation)
+        let englishLines = parseDefinitionLines(definition)
 
-        if let translation, !translation.isEmpty {
-            for line in translation.components(separatedBy: "\n") {
-                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { continue }
-                let (pos, field, meaning) = extractPOSFieldAndMeaning(trimmed)
-                guard !meaning.isEmpty else { continue }
-                result.append(DictionaryEntry.Definition(
-                    partOfSpeech: pos,
-                    field: field.isEmpty ? nil : field,
-                    meaning: meaning,
-                    translation: meaning,
-                    examples: []
-                ))
-            }
+        if !chineseLines.isEmpty {
+            return mergeDefinitions(
+                primary: chineseLines,
+                secondary: englishLines,
+                secondaryAsMeaning: true
+            )
         }
 
         // Fall back to English definition if no Chinese translation is available
-        if result.isEmpty, let definition, !definition.isEmpty {
-            for line in definition.components(separatedBy: "\n").prefix(3) {
-                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { continue }
-                let (pos, field, meaning) = extractPOSFieldAndMeaning(trimmed)
-                guard !meaning.isEmpty else { continue }
-                result.append(DictionaryEntry.Definition(
-                    partOfSpeech: pos,
-                    field: field.isEmpty ? nil : field,
-                    meaning: meaning,
+        if !englishLines.isEmpty {
+            return englishLines.prefix(3).map { line in
+                DictionaryEntry.Definition(
+                    partOfSpeech: line.pos,
+                    field: line.field.isEmpty ? nil : line.field,
+                    meaning: line.meaning,
                     translation: nil,
                     examples: []
-                ))
+                )
             }
         }
+
+        return []
+    }
+
+    private struct ParsedLine {
+        let pos: String
+        let field: String
+        let meaning: String
+    }
+
+    private func parseDefinitionLines(_ text: String?) -> [ParsedLine] {
+        guard let text, !text.isEmpty else { return [] }
+        var result: [ParsedLine] = []
+        for line in text.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let (pos, field, meaning) = extractPOSFieldAndMeaning(trimmed)
+            guard !meaning.isEmpty else { continue }
+            result.append(ParsedLine(pos: pos, field: field, meaning: meaning))
+        }
+        return result
+    }
+
+    /// Merges primary lines (Chinese translations) with secondary lines (English definitions).
+    /// Matching is by POS+field key, then by occurrence index within that key.
+    private func mergeDefinitions(
+        primary: [ParsedLine],
+        secondary: [ParsedLine],
+        secondaryAsMeaning: Bool
+    ) -> [DictionaryEntry.Definition] {
+        // Group secondary lines by POS|field key for index-based matching
+        var secondaryByKey: [String: [String]] = [:]
+        for line in secondary {
+            let key = "\(line.pos)|\(line.field)"
+            secondaryByKey[key, default: []].append(line.meaning)
+        }
+        var consumedByKey: [String: Int] = [:]
+
+        var result: [DictionaryEntry.Definition] = []
+        for line in primary {
+            let key = "\(line.pos)|\(line.field)"
+            let englishMeaning: String?
+            if let candidates = secondaryByKey[key] {
+                let idx = consumedByKey[key, default: 0]
+                if idx < candidates.count {
+                    englishMeaning = candidates[idx]
+                    consumedByKey[key] = idx + 1
+                } else {
+                    englishMeaning = candidates.first
+                }
+            } else if !secondary.isEmpty {
+                // Fallback: match by overall index across all secondary lines
+                let totalConsumed = consumedByKey.values.reduce(0, +)
+                englishMeaning = totalConsumed < secondary.count ? secondary[totalConsumed].meaning : nil
+            } else {
+                englishMeaning = nil
+            }
+
+            result.append(DictionaryEntry.Definition(
+                partOfSpeech: line.pos,
+                field: line.field.isEmpty ? nil : line.field,
+                meaning: secondaryAsMeaning ? (englishMeaning ?? line.meaning) : line.meaning,
+                translation: line.meaning,
+                examples: []
+            ))
+        }
+
         return result
     }
 
