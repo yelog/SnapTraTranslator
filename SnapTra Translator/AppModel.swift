@@ -97,6 +97,7 @@ struct ParagraphOverlayContent: Equatable {
     var languageOptions: [ParagraphTranslationLanguageOption]
     var sourceLanguageIdentifier: String?
     var selectedTargetLanguageIdentifier: String?
+    var isRetranslating: Bool
 
     init(
         originalText: String? = nil,
@@ -106,7 +107,8 @@ struct ParagraphOverlayContent: Equatable {
         useFixedFontSize: Bool = false,
         languageOptions: [ParagraphTranslationLanguageOption] = [],
         sourceLanguageIdentifier: String? = nil,
-        selectedTargetLanguageIdentifier: String? = nil
+        selectedTargetLanguageIdentifier: String? = nil,
+        isRetranslating: Bool = false
     ) {
         self.originalText = originalText
         self.translationState = translationState
@@ -116,6 +118,7 @@ struct ParagraphOverlayContent: Equatable {
         self.languageOptions = languageOptions
         self.sourceLanguageIdentifier = sourceLanguageIdentifier
         self.selectedTargetLanguageIdentifier = selectedTargetLanguageIdentifier
+        self.isRetranslating = isRetranslating
     }
 }
 
@@ -1363,6 +1366,7 @@ final class AppModel: ObservableObject {
     ) {
         updateParagraphOverlayContent(for: lookupID, anchor: anchor) { content in
             content.translationState = state
+            content.isRetranslating = false
         }
     }
 
@@ -1434,7 +1438,10 @@ final class AppModel: ObservableObject {
             .filter { $0.isEnabled && !$0.isNative }
 
         updateParagraphOverlayContentIgnoringLookup(anchor: anchor) { content in
-            content.translationState = .loading
+            // Keep existing translationState so the old translation text stays visible
+            // during the direction switch, avoiding window resize jitter.
+            // The text will be replaced in-place when the new translation arrives.
+            content.isRetranslating = true
             content.serviceResults = enabledServices.map { source in
                 ServiceTranslationResult(sourceType: source.type, state: .loading)
             }

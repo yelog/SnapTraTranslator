@@ -337,13 +337,19 @@ struct OverlayView: View {
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(.secondary)
 
+                                if content.isRetranslating {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .scaleEffect(0.7)
+                                }
+
                                 CopyButton(text: translatedText)
                             }
 
                             paragraphTextContent(
                                 text: translatedText,
                                 font: .systemFont(ofSize: translationFontSize, weight: .semibold),
-                                textColor: .labelColor,
+                                textColor: content.isRetranslating ? .secondaryLabelColor : .labelColor,
                                 preferredLineHeight: translationFontSize * 1.5
                             )
                         }
