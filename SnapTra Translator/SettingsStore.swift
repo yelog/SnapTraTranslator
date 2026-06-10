@@ -379,7 +379,7 @@ final class SettingsStore: ObservableObject {
             let playWordPronunciationValue = defaults.object(forKey: AppSettingKey.playWordPronunciation) as? Bool
             let playSentencePronunciationValue = defaults.object(forKey: AppSettingKey.playSentencePronunciation) as? Bool
             playWordPronunciation = playWordPronunciationValue ?? true
-            playSentencePronunciation = playSentencePronunciationValue ?? true
+            playSentencePronunciation = playSentencePronunciationValue ?? false
         }
 
         let copyWordValue = defaults.object(forKey: AppSettingKey.copyWord) as? Bool
