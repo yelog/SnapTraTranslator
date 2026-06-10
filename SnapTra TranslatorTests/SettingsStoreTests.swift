@@ -801,6 +801,38 @@ final class DictionaryServiceSystemParserTests: XCTestCase {
         )
         XCTAssertNil(entry.definitions.first?.translation)
     }
+
+    func testSystemDictionaryChineseTranslationStripsInlinePinyinSequences() {
+        let html = "pull | BrE pʊl, AmE pʊl | A. transitive verb ① (tug) 拉 lā▸ ⑤ informal (complete successfully) 进行…得逞 jìnxíng… déchěng ‹raid, burglary›▸ ⑥ (steer) 使…转向 shǐ… zhuǎnxiàng ‹vehicle›▸ pull through 挺过来 tǐng guolai"
+
+        let entry = DictionaryService.parseSystemDictionaryHTML(
+            html,
+            word: "pull",
+            sourceLanguage: "en",
+            targetLanguage: "zh-Hans"
+        )
+
+        XCTAssertEqual(
+            entry.definitions.map(\.translation),
+            ["拉", "进行…得逞", "使…转向"]
+        )
+    }
+
+    func testSystemDictionaryChineseTranslationPreservesEmbeddedEnglishWords() {
+        let html = "pull | BrE pʊl, AmE pʊl | A. transitive verb ① (criticize) 抨击 pēngjī ; 诋毁 dǐhuǐ pull away intransitive verb▸ ② (computer) Mac 电脑; Apple Inc. 产品"
+
+        let entry = DictionaryService.parseSystemDictionaryHTML(
+            html,
+            word: "pull",
+            sourceLanguage: "en",
+            targetLanguage: "zh-Hans"
+        )
+
+        XCTAssertEqual(
+            entry.definitions.map(\.translation),
+            ["抨击; 诋毁 pull away intransitive verb", "Mac 电脑; Apple Inc. 产品"]
+        )
+    }
 }
 
 final class DictionaryDefinitionTranslationDecisionTests: XCTestCase {

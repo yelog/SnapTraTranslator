@@ -951,7 +951,7 @@ final class DictionaryService {
     /// markers, and isolated part-of-speech abbreviations. Latin text that appears
     /// adjacent to Chinese characters is preserved.
     private static func sanitizePlainTextTranslation(_ text: String) -> String {
-        var result = text
+        var result = stripInlinePinyinAnnotations(from: text)
         // Remove guillemet/angle-bracket quoted segments (dictionary metadata)
         result = result.replacingOccurrences(of: "«[^»]*»", with: "", options: .regularExpression)
         result = result.replacingOccurrences(of: "‹[^›]*›", with: "", options: .regularExpression)
@@ -965,6 +965,98 @@ final class DictionaryService {
         // Collapse whitespace
         result = result.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func stripInlinePinyinAnnotations(from text: String) -> String {
+        let normalized = text.precomposedStringWithCanonicalMapping
+        let pattern = "([\\p{Han}\\)\\]）】])\\s+([A-Za-z'’üÜ:\\u00C0-\\u024F\\u1E00-\\u1EFF\\u0300-\\u036F]+)"
+
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return text
+        }
+
+        var result = normalized
+        var searchStart = result.startIndex
+        while searchStart < result.endIndex,
+              let match = regex.firstMatch(in: result, options: [], range: NSRange(searchStart..<result.endIndex, in: result)),
+              match.numberOfRanges == 3,
+              let tokenRange = Range(match.range(at: 2), in: result) {
+            let token = String(result[tokenRange])
+            guard isToneMarkedPinyinToken(token) else {
+                searchStart = tokenRange.upperBound
+                continue
+            }
+
+            var removalEnd = tokenRange.upperBound
+            var scanIndex = removalEnd
+            while let next = nextLatinToken(in: result, from: scanIndex), isPlainPinyinToken(next.token) {
+                removalEnd = next.range.upperBound
+                scanIndex = removalEnd
+            }
+
+            result.replaceSubrange(tokenRange.lowerBound..<removalEnd, with: "")
+            searchStart = tokenRange.lowerBound
+        }
+
+        result = result.replacingOccurrences(of: "\\s+([;；,，])", with: "$1", options: .regularExpression)
+        result = result.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func nextLatinToken(
+        in text: String,
+        from startIndex: String.Index
+    ) -> (token: String, range: Range<String.Index>)? {
+        var index = startIndex
+        while index < text.endIndex {
+            let character = text[index]
+            if character.isWhitespace || character == "…" || character == "·" || character == "-" {
+                index = text.index(after: index)
+            } else {
+                break
+            }
+        }
+
+        let tokenStart = index
+        while index < text.endIndex, isPinyinTokenCharacter(text[index]) {
+            index = text.index(after: index)
+        }
+
+        guard tokenStart < index else { return nil }
+        return (String(text[tokenStart..<index]), tokenStart..<index)
+    }
+
+    private static func isToneMarkedPinyinToken(_ token: String) -> Bool {
+        token.unicodeScalars.contains { scalar in
+            (0x00C0...0x024F).contains(Int(scalar.value))
+                || (0x1E00...0x1EFF).contains(Int(scalar.value))
+                || (0x0300...0x036F).contains(Int(scalar.value))
+        }
+    }
+
+    private static func isPlainPinyinToken(_ token: String) -> Bool {
+        let lowercased = token
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .replacingOccurrences(of: "ü", with: "v")
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: "’", with: "")
+            .replacingOccurrences(of: ":", with: "")
+        guard lowercased.range(of: "^[a-zv]+$", options: .regularExpression) != nil else {
+            return false
+        }
+        return lowercased.range(
+            of: "^(?:(?:[zcs]h|[bpmfdtnlgkhjqxrzcsyw])?(?:a|ai|an|ang|ao|e|ei|en|eng|er|i|ia|ian|iang|iao|ie|in|ing|iong|iu|o|ong|ou|u|ua|uai|uan|uang|ue|ui|un|uo|v|ve))+$",
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static func isPinyinTokenCharacter(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { scalar in
+            CharacterSet.letters.contains(scalar)
+                || scalar == Unicode.Scalar("'")
+                || scalar == Unicode.Scalar("’")
+                || scalar == Unicode.Scalar(":")
+        }
     }
 
     private static func parsePOSLabel(in text: String, from startIndex: String.Index) -> (String, String.Index) {
