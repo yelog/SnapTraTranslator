@@ -411,7 +411,7 @@ final class SettingsStore: ObservableObject {
         bidirectionalTranslationEnabled = Self.loadBidirectionalTranslationEnabled(defaults: defaults)
         debugShowOcrRegion = debugShowOcrRegionValue ?? false
         continuousTranslation = continuousTranslationValue ?? true
-        keepWordOverlayAfterTap = keepWordOverlayAfterTapValue ?? false
+        keepWordOverlayAfterTap = keepWordOverlayAfterTapValue ?? true
 
         // Load or migrate dictionary sources
         dictionarySources = Self.loadOrMigrateDictionarySources(defaults: defaults)

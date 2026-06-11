@@ -11,7 +11,7 @@ Issue #18 asks for an optional mode where the translation bubble can stay visibl
 
 ## Design
 
-Add a new setting, `keepWordOverlayAfterTap`, defaulting to off so existing users keep the current behavior. When enabled, a short tap release keeps a word lookup overlay alive and interactive instead of cancelling it. Long press release keeps the current auto-dismiss behavior.
+Add a new setting, `keepWordOverlayAfterTap`, defaulting to on so the word lookup behavior matches the existing double-tap persistent overlay semantics. When enabled, a short tap release keeps a word lookup overlay alive and interactive instead of cancelling it. Long press release keeps the current auto-dismiss behavior.
 
 The kept overlay dismisses on meaningful mouse movement. Movement into the overlay frame is protected so users can still click copy or close without instantly dismissing the bubble. The existing close button and `dismissOverlay()` path remain the explicit dismissal route.
 
@@ -25,7 +25,7 @@ The kept overlay dismisses on meaningful mouse movement. Movement into the overl
 
 ## UX Rules
 
-- Default behavior remains unchanged.
+- Tap-keep is enabled by default and can be turned off in Settings.
 - Continuous translation remains hold-and-hover.
 - Tap-keep applies only to short tap release.
 - A kept overlay becomes interactive and shows copy/close controls.

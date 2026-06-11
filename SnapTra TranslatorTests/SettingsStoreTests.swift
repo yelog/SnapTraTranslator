@@ -287,15 +287,15 @@ final class SettingsStoreMigrationTests: XCTestCase {
         XCTAssertTrue(settings.hideOriginalTextInSentenceOverlay)
     }
 
-    func testKeepWordOverlayAfterTapDefaultsToDisabled() {
+    func testKeepWordOverlayAfterTapDefaultsToEnabled() {
         let defaults = makeDefaults()
 
         let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
 
-        XCTAssertFalse(settings.keepWordOverlayAfterTap)
+        XCTAssertTrue(settings.keepWordOverlayAfterTap)
         XCTAssertEqual(
             defaults.object(forKey: AppSettingKey.keepWordOverlayAfterTap) as? Bool,
-            false
+            true
         )
     }
 

@@ -43,7 +43,7 @@ Expected: PASS for the new focused tests.
 
 - [ ] **Step 1: Write failing settings tests**
 
-Assert the new setting defaults to `false`, persists to `UserDefaults`, and loads a stored `true` value.
+Assert the new setting defaults to `true`, persists to `UserDefaults`, and loads a stored `true` value.
 
 - [ ] **Step 2: Run settings tests**
 
