@@ -51,6 +51,17 @@ struct OverlayView: View {
         !model.settings.continuousTranslation || model.isTapKeptOverlayPresented
     }
 
+    private var useSelectableWordText: Bool {
+        WordOverlayTextSelectionPolicy.usesSelectableText(
+            isWordOverlayMode: isWordOverlayMode,
+            showsWordOverlayControls: showsWordOverlayControls
+        )
+    }
+
+    private var isWordOverlayMode: Bool {
+        !isParagraphOverlayMode
+    }
+
     private var isParagraphOverlayMode: Bool {
         switch model.overlayState {
         case .paragraphLoading, .paragraphResult:
@@ -686,6 +697,26 @@ struct OverlayView: View {
     }
 
     @ViewBuilder
+    private func wordSelectableText(
+        _ text: String,
+        font: NSFont,
+        textColor: NSColor = .labelColor,
+        preferredLineHeight: CGFloat
+    ) -> some View {
+        if useSelectableWordText {
+            SelectableTextView(
+                text: text,
+                font: font,
+                textColor: textColor,
+                preferredLineHeight: preferredLineHeight
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Text(text)
+        }
+    }
+
+    @ViewBuilder
     private func paragraphErrorContent(message: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.circle")
@@ -1025,10 +1056,18 @@ struct OverlayView: View {
         VStack(alignment: .leading, spacing: 8) {
             // Word title with phonetic, copy button and close button
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(content.word)
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
-                    .tracking(0.3)
+                if useSelectableWordText {
+                    wordSelectableText(
+                        content.word,
+                        font: .systemFont(ofSize: 22, weight: .bold),
+                        preferredLineHeight: 28
+                    )
+                } else {
+                    Text(content.word)
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .tracking(0.3)
+                }
 
                 // Phonetic tag placed right after the word
                 if let phonetic = content.phonetic, !phonetic.isEmpty {
@@ -1104,33 +1143,52 @@ struct OverlayView: View {
                     if !shouldHideReadyTranslation {
                         HStack(spacing: 8) {
                             if usesCompactStyle {
-                                Text(translation)
-                                    .font(.system(size: 17, weight: .medium, design: .rounded))
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            colors: colorScheme == .dark
-                                                ? [
-                                                    Color(red: 0.2, green: 0.6, blue: 1.0),
-                                                    Color(red: 0.5, green: 0.5, blue: 0.95),
-                                                ]
-                                                : [
-                                                    Color(red: 0.1, green: 0.4, blue: 0.85),
-                                                    Color(red: 0.35, green: 0.3, blue: 0.8),
-                                                ],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
+                                if useSelectableWordText {
+                                    wordSelectableText(
+                                        translation,
+                                        font: .systemFont(ofSize: 17, weight: .medium),
+                                        textColor: colorScheme == .dark
+                                            ? NSColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1)
+                                            : NSColor(red: 0.1, green: 0.4, blue: 0.85, alpha: 1),
+                                        preferredLineHeight: 22
                                     )
-                                    .tracking(0.3)
+                                } else {
+                                    Text(translation)
+                                        .font(.system(size: 17, weight: .medium, design: .rounded))
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: colorScheme == .dark
+                                                    ? [
+                                                        Color(red: 0.2, green: 0.6, blue: 1.0),
+                                                        Color(red: 0.5, green: 0.5, blue: 0.95),
+                                                    ]
+                                                    : [
+                                                        Color(red: 0.1, green: 0.4, blue: 0.85),
+                                                        Color(red: 0.35, green: 0.3, blue: 0.8),
+                                                    ],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                        .tracking(0.3)
+                                }
 
                                 if showsWordOverlayControls {
                                     CopyButton(text: translation)
                                 }
                             } else {
-                                Text(translation)
-                                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.primary)
-                                    .tracking(0.2)
+                                if useSelectableWordText {
+                                    wordSelectableText(
+                                        translation,
+                                        font: .systemFont(ofSize: 24, weight: .bold),
+                                        preferredLineHeight: 30
+                                    )
+                                } else {
+                                    Text(translation)
+                                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.primary)
+                                        .tracking(0.2)
+                                }
 
                                 if showsWordOverlayControls {
                                     CopyButton(text: translation)
@@ -1229,35 +1287,62 @@ struct OverlayView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 if !group.translations.isEmpty {
-                    Text(group.translations.joined(separator: "；"))
-                        .font(.system(size: 14, weight: .regular, design: .rounded))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if useSelectableWordText {
+                        wordSelectableText(
+                            group.translations.joined(separator: "；"),
+                            font: .systemFont(ofSize: 14, weight: .regular),
+                            preferredLineHeight: 19
+                        )
+                    } else {
+                        Text(group.translations.joined(separator: "；"))
+                            .font(.system(size: 14, weight: .regular, design: .rounded))
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
 
                 if !group.meanings.isEmpty {
-                    Text(group.meanings.joined(separator: "\n"))
-                        .font(.system(size: 12, weight: .regular, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if useSelectableWordText {
+                        wordSelectableText(
+                            group.meanings.joined(separator: "\n"),
+                            font: .systemFont(ofSize: 12, weight: .regular),
+                            textColor: .secondaryLabelColor,
+                            preferredLineHeight: 16
+                        )
+                    } else {
+                        Text(group.meanings.joined(separator: "\n"))
+                            .font(.system(size: 12, weight: .regular, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
 
                 if !group.examples.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(group.examples.prefix(2)), id: \.self) { example in
-                            HStack(alignment: .top, spacing: 6) {
-                                Text("•")
-                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(.secondary)
+                    if useSelectableWordText {
+                        wordSelectableText(
+                            group.examples.prefix(2).map { "• \($0)" }.joined(separator: "\n"),
+                            font: .systemFont(ofSize: 12, weight: .regular),
+                            textColor: .secondaryLabelColor,
+                            preferredLineHeight: 16
+                        )
+                        .padding(.top, 2)
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(group.examples.prefix(2)), id: \.self) { example in
+                                HStack(alignment: .top, spacing: 6) {
+                                    Text("•")
+                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(.secondary)
 
-                                Text(example)
-                                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                    Text(example)
+                                        .font(.system(size: 12, weight: .regular, design: .rounded))
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                             }
                         }
+                        .padding(.top, 2)
                     }
-                    .padding(.top, 2)
                 }
             }
         }
@@ -1273,10 +1358,19 @@ struct OverlayView: View {
                     .foregroundStyle(.secondary)
                     .padding(.top, 2)
 
-                Text(displayedSynonyms.joined(separator: " · "))
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if useSelectableWordText {
+                    wordSelectableText(
+                        displayedSynonyms.joined(separator: " · "),
+                        font: .systemFont(ofSize: 12, weight: .regular),
+                        textColor: .secondaryLabelColor,
+                        preferredLineHeight: 16
+                    )
+                } else {
+                    Text(displayedSynonyms.joined(separator: " · "))
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(.top, 2)
         }
@@ -1540,6 +1634,15 @@ enum ParagraphOriginalVisibilityPolicy {
             showsOriginalEditorToggle: showsOriginalEditorToggle,
             hidesOriginalTextRegion: hidesOriginalTextSetting && !showsOriginalTextRegion
         )
+    }
+}
+
+enum WordOverlayTextSelectionPolicy {
+    static func usesSelectableText(
+        isWordOverlayMode: Bool,
+        showsWordOverlayControls: Bool
+    ) -> Bool {
+        isWordOverlayMode && showsWordOverlayControls
     }
 }
 

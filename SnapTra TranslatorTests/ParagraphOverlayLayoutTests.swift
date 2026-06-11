@@ -301,6 +301,23 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         ))
     }
 
+    func testWordOverlayTextSelectionPolicyUsesSelectableTextOnlyWhenInteractive() {
+        XCTAssertTrue(WordOverlayTextSelectionPolicy.usesSelectableText(
+            isWordOverlayMode: true,
+            showsWordOverlayControls: true
+        ))
+
+        XCTAssertFalse(WordOverlayTextSelectionPolicy.usesSelectableText(
+            isWordOverlayMode: true,
+            showsWordOverlayControls: false
+        ))
+
+        XCTAssertFalse(WordOverlayTextSelectionPolicy.usesSelectableText(
+            isWordOverlayMode: false,
+            showsWordOverlayControls: true
+        ))
+    }
+
     func testOriginalVisibilityShowsEditableOriginalWhenHideSettingIsOffAndOverlayIsPinned() {
         let decision = ParagraphOriginalVisibilityPolicy.resolve(
             hasOriginalText: true,
