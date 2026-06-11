@@ -265,6 +265,17 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         XCTAssertFalse(shouldDismiss)
     }
 
+    func testWordOverlayPersistenceKeepsVerticalMovementTowardOffsetOverlay() {
+        let shouldDismiss = WordOverlayPersistencePolicy.shouldDismissOnMouseMove(
+            startLocation: CGPoint(x: 100, y: 100),
+            currentLocation: CGPoint(x: 100, y: 84),
+            overlayFrame: CGRect(x: 112, y: 20, width: 180, height: 80),
+            movementThreshold: 16
+        )
+
+        XCTAssertFalse(shouldDismiss)
+    }
+
     func testOriginalVisibilityShowsEditableOriginalWhenHideSettingIsOffAndOverlayIsPinned() {
         let decision = ParagraphOriginalVisibilityPolicy.resolve(
             hasOriginalText: true,

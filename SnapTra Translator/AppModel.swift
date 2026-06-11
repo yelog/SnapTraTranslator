@@ -237,7 +237,7 @@ enum ParagraphOutsideClickDismissalPolicy {
 }
 
 enum WordOverlayPersistencePolicy {
-    private static let protectedInset: CGFloat = 8
+    private static let protectedInset: CGFloat = 16
 
     static func shouldKeepAfterTap(
         isEnabled: Bool,
