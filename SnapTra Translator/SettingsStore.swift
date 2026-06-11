@@ -449,7 +449,7 @@ final class SettingsStore: ObservableObject {
         ocrSentenceTranslationEnabled = sentenceTranslationSettings.ocrSentenceTranslationEnabled
         selectedTextTranslationEnabled = sentenceTranslationSettings.selectedTextTranslationEnabled
         let hideOriginalTextValue = defaults.object(forKey: AppSettingKey.hideOriginalTextInSentenceOverlay) as? Bool
-        hideOriginalTextInSentenceOverlay = hideOriginalTextValue ?? false
+        hideOriginalTextInSentenceOverlay = hideOriginalTextValue ?? true
 
         // Load auto update settings
         let autoCheckUpdatesValue = defaults.object(forKey: AppSettingKey.autoCheckUpdates) as? Bool
@@ -649,7 +649,7 @@ final class SettingsStore: ObservableObject {
     }
 
     static func loadBidirectionalTranslationEnabled(defaults: UserDefaults) -> Bool {
-        defaults.object(forKey: AppSettingKey.bidirectionalTranslationEnabled) as? Bool ?? false
+        defaults.object(forKey: AppSettingKey.bidirectionalTranslationEnabled) as? Bool ?? true
     }
 
     private static func makeDictionarySource(

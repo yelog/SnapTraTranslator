@@ -231,12 +231,12 @@ final class SettingsStoreMigrationTests: XCTestCase {
         XCTAssertTrue(settings.selectedTextTranslationEnabled)
     }
 
-    func testBidirectionalTranslationDefaultsToDisabled() {
+    func testBidirectionalTranslationDefaultsToEnabled() {
         let defaults = makeDefaults()
 
         let isEnabled = SettingsStore.loadBidirectionalTranslationEnabled(defaults: defaults)
 
-        XCTAssertFalse(isEnabled)
+        XCTAssertTrue(isEnabled)
     }
 
     func testMenuBarIconStyleDefaultsToAuto() {
@@ -265,15 +265,15 @@ final class SettingsStoreMigrationTests: XCTestCase {
         XCTAssertTrue(isEnabled)
     }
 
-    func testHideOriginalTextInSentenceOverlayDefaultsToDisabled() {
+    func testHideOriginalTextInSentenceOverlayDefaultsToEnabled() {
         let defaults = makeDefaults()
 
         let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
 
-        XCTAssertFalse(settings.hideOriginalTextInSentenceOverlay)
+        XCTAssertTrue(settings.hideOriginalTextInSentenceOverlay)
         XCTAssertEqual(
             defaults.object(forKey: AppSettingKey.hideOriginalTextInSentenceOverlay) as? Bool,
-            false
+            true
         )
     }
 
