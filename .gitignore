@@ -1,6 +1,7 @@
 # Agent directories
 .agent/
 .agents/
+.claude/
 
 # CodeGraph
 .codegraph/
