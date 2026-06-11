@@ -3460,6 +3460,40 @@
         }
       }
     },
+    "Keep Word Bubble After Tap" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Word Bubble After Tap"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タップ後に単語バブルを保持"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "탭 후 단어 풍선 유지"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "短按后保留单词气泡"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "短按後保留單詞氣泡"
+          }
+        }
+      }
+    },
     "Korean" : {
       "comment" : "Language name - use native name",
       "extractionState" : "stale",
@@ -5337,6 +5371,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新整理狀態"
+          }
+        }
+      }
+    },
+    "Release the hotkey after one lookup; move the mouse to dismiss" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release the hotkey after one lookup; move the mouse to dismiss"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1回検索したらホットキーを離し、マウス移動で閉じます"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "한 번 조회한 뒤 단축키를 놓고, 마우스를 움직이면 닫습니다"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查询一次后可松开快捷键；移动鼠标即可关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查詢一次後可鬆開快捷鍵；移動滑鼠即可關閉"
           }
         }
       }

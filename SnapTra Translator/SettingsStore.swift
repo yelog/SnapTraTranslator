@@ -287,6 +287,9 @@ final class SettingsStore: ObservableObject {
     @Published var continuousTranslation: Bool {
         didSet { defaults.set(continuousTranslation, forKey: AppSettingKey.continuousTranslation) }
     }
+    @Published var keepWordOverlayAfterTap: Bool {
+        didSet { defaults.set(keepWordOverlayAfterTap, forKey: AppSettingKey.keepWordOverlayAfterTap) }
+    }
     @Published var dictionarySources: [DictionarySource] {
         didSet {
             saveDictionarySources()
@@ -395,6 +398,7 @@ final class SettingsStore: ObservableObject {
         let singleKeyValue = defaults.string(forKey: AppSettingKey.singleKey)
         let debugShowOcrRegionValue = defaults.object(forKey: AppSettingKey.debugShowOcrRegion) as? Bool
         let continuousTranslationValue = defaults.object(forKey: AppSettingKey.continuousTranslation) as? Bool
+        let keepWordOverlayAfterTapValue = defaults.object(forKey: AppSettingKey.keepWordOverlayAfterTap) as? Bool
 
         launchAtLogin = launchAtLoginValue ?? loginStatus
         showMenuBarIcon = showMenuBarIconValue ?? true
@@ -407,6 +411,7 @@ final class SettingsStore: ObservableObject {
         bidirectionalTranslationEnabled = Self.loadBidirectionalTranslationEnabled(defaults: defaults)
         debugShowOcrRegion = debugShowOcrRegionValue ?? false
         continuousTranslation = continuousTranslationValue ?? true
+        keepWordOverlayAfterTap = keepWordOverlayAfterTapValue ?? false
 
         // Load or migrate dictionary sources
         dictionarySources = Self.loadOrMigrateDictionarySources(defaults: defaults)
@@ -493,6 +498,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(bidirectionalTranslationEnabled, forKey: AppSettingKey.bidirectionalTranslationEnabled)
         defaults.set(debugShowOcrRegion, forKey: AppSettingKey.debugShowOcrRegion)
         defaults.set(continuousTranslation, forKey: AppSettingKey.continuousTranslation)
+        defaults.set(keepWordOverlayAfterTap, forKey: AppSettingKey.keepWordOverlayAfterTap)
         defaults.set(wordTTSProvider.rawValue, forKey: AppSettingKey.wordTTSProvider)
         defaults.set(sentenceTTSProvider.rawValue, forKey: AppSettingKey.sentenceTTSProvider)
         defaults.set(appLanguage.rawValue, forKey: AppSettingKey.appLanguage)

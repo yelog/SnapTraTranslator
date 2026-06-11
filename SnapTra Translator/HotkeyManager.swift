@@ -7,10 +7,15 @@ enum HotkeyGestureEvent: Equatable {
     case doubleTap
 }
 
+enum HotkeyReleaseKind: Equatable {
+    case tap
+    case hold
+}
+
 enum HotkeyReleaseResolution: Equatable {
     case none
-    case immediate
-    case delayed(TimeInterval)
+    case immediate(HotkeyReleaseKind)
+    case delayed(TimeInterval, HotkeyReleaseKind)
     case persistent
 }
 
@@ -83,7 +88,7 @@ struct HotkeyGestureStateMachine {
             // 如果按住超过阈值，返回 .immediate 让用户可以松开关闭面板
             // 如果快速释放，返回 .persistent 保持面板一直显示并切换为常驻态
             if pressDuration > doubleTapHoldThreshold {
-                return .immediate  // 触发 onRelease，支持松开关闭
+                return .immediate(.hold)  // 触发 onRelease，支持松开关闭
             } else {
                 return .persistent
             }
@@ -91,11 +96,11 @@ struct HotkeyGestureStateMachine {
 
         if pressDuration <= tapMaxDuration {
             lastEligibleTapReleaseAt = now
-            return .delayed(doubleTapInterval)
+            return .delayed(doubleTapInterval, .tap)
         }
 
         lastEligibleTapReleaseAt = nil
-        return .immediate
+        return .immediate(.hold)
     }
 
     mutating func finalizePendingTapRelease() -> Bool {
@@ -118,6 +123,7 @@ struct HotkeyGestureStateMachine {
 final class HotkeyManager {
     var onTrigger: (() -> Void)?
     var onRelease: (() -> Void)?
+    var onTapRelease: (() -> Void)?
     var onDoubleTap: (() -> Void)?
     var onPersistentRelease: (() -> Void)?
 
@@ -226,10 +232,10 @@ final class HotkeyManager {
         switch resolution {
         case .none:
             return
-        case .immediate:
-            scheduleReleaseCallback(after: releaseConfirmationDelay, targetFlag: targetFlag)
-        case .delayed(let interval):
-            scheduleReleaseCallback(after: interval, targetFlag: targetFlag, consumesTapWindow: true)
+        case .immediate(let kind):
+            scheduleReleaseCallback(after: releaseConfirmationDelay, targetFlag: targetFlag, releaseKind: kind)
+        case .delayed(let interval, let kind):
+            scheduleReleaseCallback(after: interval, targetFlag: targetFlag, consumesTapWindow: true, releaseKind: kind)
         case .persistent:
             onPersistentRelease?()
         }
@@ -238,7 +244,8 @@ final class HotkeyManager {
     private func scheduleReleaseCallback(
         after delay: TimeInterval,
         targetFlag: NSEvent.ModifierFlags,
-        consumesTapWindow: Bool = false
+        consumesTapWindow: Bool = false,
+        releaseKind: HotkeyReleaseKind
     ) {
         let delayedRelease = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -249,7 +256,16 @@ final class HotkeyManager {
                 return
             }
 
-            self.onRelease?()
+            switch releaseKind {
+            case .tap:
+                if let onTapRelease = self.onTapRelease {
+                    onTapRelease()
+                } else {
+                    self.onRelease?()
+                }
+            case .hold:
+                self.onRelease?()
+            }
         }
 
         pendingRelease?.cancel()

@@ -47,6 +47,10 @@ struct OverlayView: View {
         }
     }
 
+    private var showsWordOverlayControls: Bool {
+        !model.settings.continuousTranslation || model.isWordOverlayKeptAfterTap
+    }
+
     private var isParagraphOverlayMode: Bool {
         switch model.overlayState {
         case .paragraphLoading, .paragraphResult:
@@ -1039,15 +1043,15 @@ struct OverlayView: View {
                         )
                 }
 
-                // 非持续模式下显示复制按钮
-                if !model.settings.continuousTranslation {
+                // 非持续模式或短按保持模式下显示复制按钮
+                if showsWordOverlayControls {
                     CopyButton(text: content.word)
                 }
 
                 Spacer()
 
-                // 非持续模式下显示关闭按钮
-                if !model.settings.continuousTranslation {
+                // 非持续模式或短按保持模式下显示关闭按钮
+                if showsWordOverlayControls {
                     Button {
                         model.dismissOverlay()
                     } label: {
@@ -1115,7 +1119,7 @@ struct OverlayView: View {
                                     )
                                     .tracking(0.3)
 
-                                if !model.settings.continuousTranslation {
+                                if showsWordOverlayControls {
                                     CopyButton(text: translation)
                                 }
                             } else {
@@ -1124,7 +1128,7 @@ struct OverlayView: View {
                                     .foregroundStyle(.primary)
                                     .tracking(0.2)
 
-                                if !model.settings.continuousTranslation {
+                                if showsWordOverlayControls {
                                     CopyButton(text: translation)
                                 }
                             }

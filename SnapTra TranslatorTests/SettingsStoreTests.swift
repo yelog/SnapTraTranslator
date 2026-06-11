@@ -39,6 +39,7 @@ final class SettingsStoreMigrationTests: XCTestCase {
         AppSettingKey.bidirectionalTranslationEnabled,
         AppSettingKey.debugShowOcrRegion,
         AppSettingKey.continuousTranslation,
+        AppSettingKey.keepWordOverlayAfterTap,
         AppSettingKey.wordTTSProvider,
         AppSettingKey.sentenceTTSProvider,
         AppSettingKey.appLanguage,
@@ -284,6 +285,27 @@ final class SettingsStoreMigrationTests: XCTestCase {
         let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
 
         XCTAssertTrue(settings.hideOriginalTextInSentenceOverlay)
+    }
+
+    func testKeepWordOverlayAfterTapDefaultsToDisabled() {
+        let defaults = makeDefaults()
+
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertFalse(settings.keepWordOverlayAfterTap)
+        XCTAssertEqual(
+            defaults.object(forKey: AppSettingKey.keepWordOverlayAfterTap) as? Bool,
+            false
+        )
+    }
+
+    func testLoadsPersistedKeepWordOverlayAfterTapSetting() {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: AppSettingKey.keepWordOverlayAfterTap)
+
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertTrue(settings.keepWordOverlayAfterTap)
     }
 }
 

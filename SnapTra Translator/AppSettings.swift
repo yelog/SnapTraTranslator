@@ -150,6 +150,7 @@ enum AppSettingKey {
     static let bidirectionalTranslationEnabled = "bidirectionalTranslationEnabled"
     static let debugShowOcrRegion = "debugShowOcrRegion"
     static let continuousTranslation = "continuousTranslation"
+    static let keepWordOverlayAfterTap = "keepWordOverlayAfterTap"
     static let lastScreenRecordingStatus = "lastScreenRecordingStatus"
     static let hasCompletedInitialSetup = "hasCompletedInitialSetup"
     static let ttsProvider = "ttsProvider"

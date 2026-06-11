@@ -17,7 +17,7 @@ final class HotkeyManagerTests: XCTestCase {
         _ = stateMachine.handlePress(now: start)
         let resolution = stateMachine.handleRelease(now: start.addingTimeInterval(0.08))
 
-        XCTAssertEqual(resolution, .delayed(0.25))
+        XCTAssertEqual(resolution, .delayed(0.25, .tap))
     }
 
     func testSecondPressWithinWindowEmitsDoubleTapWithoutNewTrigger() {
@@ -63,7 +63,7 @@ final class HotkeyManagerTests: XCTestCase {
         _ = stateMachine.handlePress(now: start.addingTimeInterval(0.16))
         let resolution = stateMachine.handleRelease(now: start.addingTimeInterval(1.30))
 
-        XCTAssertEqual(resolution, .immediate)
+        XCTAssertEqual(resolution, .immediate(.hold))
     }
 
     func testLongPressReleaseEmitsImmediateRelease() {
@@ -73,7 +73,7 @@ final class HotkeyManagerTests: XCTestCase {
         _ = stateMachine.handlePress(now: start)
         let resolution = stateMachine.handleRelease(now: start.addingTimeInterval(0.30))
 
-        XCTAssertEqual(resolution, .immediate)
+        XCTAssertEqual(resolution, .immediate(.hold))
     }
 
     func testResetAllowsFreshPressAfterLostRelease() {

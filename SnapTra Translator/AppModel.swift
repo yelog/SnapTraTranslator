@@ -236,6 +236,39 @@ enum ParagraphOutsideClickDismissalPolicy {
     }
 }
 
+enum WordOverlayPersistencePolicy {
+    private static let protectedInset: CGFloat = 8
+
+    static func shouldKeepAfterTap(
+        isEnabled: Bool,
+        isWordLookup: Bool
+    ) -> Bool {
+        isEnabled && isWordLookup
+    }
+
+    static func shouldDismissOnMouseMove(
+        startLocation: CGPoint?,
+        currentLocation: CGPoint,
+        overlayFrame: CGRect?,
+        movementThreshold: CGFloat
+    ) -> Bool {
+        if let overlayFrame,
+           !overlayFrame.isNull,
+           !overlayFrame.isEmpty,
+           overlayFrame.insetBy(dx: -protectedInset, dy: -protectedInset).contains(currentLocation) {
+            return false
+        }
+
+        guard let startLocation else {
+            return false
+        }
+
+        let dx = currentLocation.x - startLocation.x
+        let dy = currentLocation.y - startLocation.y
+        return hypot(dx, dy) >= movementThreshold
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published var overlayState: OverlayState = .idle
@@ -243,6 +276,7 @@ final class AppModel: ObservableObject {
     var activeParagraphRect: CGRect? = nil
     @Published var overlayPreferredWidth: CGFloat? = nil
     @Published var isParagraphOverlayPinned: Bool = false
+    @Published var isWordOverlayKeptAfterTap: Bool = false
 
     @Published var settings: SettingsStore
     let permissions: PermissionManager
@@ -283,11 +317,13 @@ final class AppModel: ObservableObject {
     private var debounceWorkItem: DispatchWorkItem?
     private var overlayLayoutRefreshWorkItem: DispatchWorkItem?
     private var lastOcrPosition: CGPoint?
+    private var wordOverlayTapReleaseLocation: CGPoint?
     private var translationServiceInitialized = false
     private var isParagraphRegionInteractionActive = false
     private let debounceInterval: TimeInterval = 0.1
     private let overlayLayoutRefreshInterval: TimeInterval = 0.04
     private let positionThreshold: CGFloat = 10.0
+    private let tapKeptOverlayMovementThreshold: CGFloat = 16.0
 
     private let debugOverlayWindowController = DebugOverlayWindowController()
     private let paragraphHighlightWindowController = ParagraphHighlightWindowController()
@@ -354,6 +390,9 @@ final class AppModel: ObservableObject {
         hotkeyManager.onRelease = { [weak self] in
             self?.handleHotkeyRelease()
         }
+        hotkeyManager.onTapRelease = { [weak self] in
+            self?.handleHotkeyTapRelease()
+        }
         hotkeyManager.onDoubleTap = { [weak self] in
             self?.handleHotkeyDoubleTap()
         }
@@ -383,6 +422,8 @@ final class AppModel: ObservableObject {
         isHotkeyActive = true
         activeLookupMode = .word
         isParagraphOverlayPinned = false
+        isWordOverlayKeptAfterTap = false
+        wordOverlayTapReleaseLocation = nil
         stopParagraphEscapeMonitoring()
         paragraphHighlightWindowController.hide()
         let mouseLocation = NSEvent.mouseLocation
@@ -394,19 +435,38 @@ final class AppModel: ObservableObject {
     }
 
     func handleHotkeyRelease() {
+        finishHotkeyRelease(allowWordOverlayPersistence: false)
+    }
+
+    func handleHotkeyTapRelease() {
+        finishHotkeyRelease(allowWordOverlayPersistence: true)
+    }
+
+    private func finishHotkeyRelease(allowWordOverlayPersistence: Bool) {
         let shouldKeepSentenceOverlayVisible = isParagraphOverlayPinned && isParagraphOverlayPresented
+        let shouldKeepWordOverlayVisible = allowWordOverlayPersistence
+            && WordOverlayPersistencePolicy.shouldKeepAfterTap(
+                isEnabled: settings.keepWordOverlayAfterTap,
+                isWordLookup: activeLookupMode == .word
+            )
 
         isHotkeyActive = false
-        stopMouseTracking()
         debugOverlayWindowController.hide()
         paragraphHighlightWindowController.hide()
 
         if shouldKeepSentenceOverlayVisible {
+            stopMouseTracking()
             overlayWindowController.setInteractive(true)
             syncParagraphEscapeMonitoring()
             return
         }
 
+        if shouldKeepWordOverlayVisible {
+            keepWordOverlayAfterTap()
+            return
+        }
+
+        stopMouseTracking()
         activeLookupMode = .word
         cancelActiveLookupWork()
         hideOverlay()
@@ -414,6 +474,8 @@ final class AppModel: ObservableObject {
 
     func handlePersistentSentenceOverlayRelease() {
         isHotkeyActive = false
+        isWordOverlayKeptAfterTap = false
+        wordOverlayTapReleaseLocation = nil
         stopMouseTracking()
         debugOverlayWindowController.hide()
         paragraphHighlightWindowController.hide()
@@ -455,9 +517,21 @@ final class AppModel: ObservableObject {
     func dismissOverlay() {
         activeLookupMode = .word
         isHotkeyActive = false
+        isWordOverlayKeptAfterTap = false
+        wordOverlayTapReleaseLocation = nil
+        stopMouseTracking()
         stopParagraphEscapeMonitoring()
         cancelActiveLookupWork()
         hideOverlay()
+    }
+
+    private func keepWordOverlayAfterTap() {
+        isWordOverlayKeptAfterTap = true
+        wordOverlayTapReleaseLocation = NSEvent.mouseLocation
+        debounceWorkItem?.cancel()
+        debounceWorkItem = nil
+        lastOcrPosition = nil
+        overlayWindowController.setInteractive(true)
     }
 
     func toggleParagraphOverlayPin() {
@@ -516,6 +590,11 @@ final class AppModel: ObservableObject {
     }
     
     private func handleMouseMoved() {
+        if isWordOverlayKeptAfterTap {
+            handleWordOverlayMouseMovedAfterTap()
+            return
+        }
+
         guard isHotkeyActive else { return }
         guard activeLookupMode == .word else { return }
 
@@ -551,6 +630,18 @@ final class AppModel: ObservableObject {
         debounceWorkItem = workItem
 
         DispatchQueue.main.asyncAfter(deadline: .now() + debounceInterval, execute: workItem)
+    }
+
+    private func handleWordOverlayMouseMovedAfterTap() {
+        let shouldDismiss = WordOverlayPersistencePolicy.shouldDismissOnMouseMove(
+            startLocation: wordOverlayTapReleaseLocation,
+            currentLocation: NSEvent.mouseLocation,
+            overlayFrame: overlayWindowController.visibleFrame,
+            movementThreshold: tapKeptOverlayMovementThreshold
+        )
+
+        guard shouldDismiss else { return }
+        dismissOverlay()
     }
 
     private func startLookup() {
@@ -1768,7 +1859,7 @@ final class AppModel: ObservableObject {
     }
 
     func updateOverlay(state: OverlayState, anchor: CGPoint? = nil) {
-        guard isHotkeyActive || isParagraphOverlayPresented || !settings.continuousTranslation else { return }
+        guard isHotkeyActive || isParagraphOverlayPresented || isWordOverlayKeptAfterTap || !settings.continuousTranslation else { return }
 
         if let anchor {
             setOverlayAnchor(anchor)
@@ -1798,7 +1889,7 @@ final class AppModel: ObservableObject {
             } else {
                 overlayWindowController.show(at: overlayAnchor, makeKey: isParagraphOverlayPresented)
             }
-            if activeLookupMode == .ocrSentence || !settings.continuousTranslation {
+            if activeLookupMode == .ocrSentence || isWordOverlayKeptAfterTap || !settings.continuousTranslation {
                 overlayWindowController.setInteractive(true)
             }
         default:
@@ -2471,6 +2562,8 @@ final class AppModel: ObservableObject {
         activeLookupMode = .word
         isParagraphOverlayPinned = false
         isParagraphRegionInteractionActive = false
+        isWordOverlayKeptAfterTap = false
+        wordOverlayTapReleaseLocation = nil
         stopParagraphEscapeMonitoring()
         cancelPendingOverlayLayoutRefresh()
         speechService.stopSpeaking()

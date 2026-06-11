@@ -226,6 +226,45 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         ))
     }
 
+    func testWordOverlayPersistenceOnlyKeepsEnabledWordLookupAfterTap() {
+        XCTAssertTrue(WordOverlayPersistencePolicy.shouldKeepAfterTap(
+            isEnabled: true,
+            isWordLookup: true
+        ))
+
+        XCTAssertFalse(WordOverlayPersistencePolicy.shouldKeepAfterTap(
+            isEnabled: false,
+            isWordLookup: true
+        ))
+
+        XCTAssertFalse(WordOverlayPersistencePolicy.shouldKeepAfterTap(
+            isEnabled: true,
+            isWordLookup: false
+        ))
+    }
+
+    func testWordOverlayPersistenceDismissesAfterThresholdMovementOutsideOverlay() {
+        let shouldDismiss = WordOverlayPersistencePolicy.shouldDismissOnMouseMove(
+            startLocation: CGPoint(x: 100, y: 100),
+            currentLocation: CGPoint(x: 140, y: 100),
+            overlayFrame: CGRect(x: 200, y: 200, width: 180, height: 120),
+            movementThreshold: 16
+        )
+
+        XCTAssertTrue(shouldDismiss)
+    }
+
+    func testWordOverlayPersistenceKeepsMovementInsideOverlayFrame() {
+        let shouldDismiss = WordOverlayPersistencePolicy.shouldDismissOnMouseMove(
+            startLocation: CGPoint(x: 100, y: 100),
+            currentLocation: CGPoint(x: 220, y: 220),
+            overlayFrame: CGRect(x: 200, y: 200, width: 180, height: 120),
+            movementThreshold: 16
+        )
+
+        XCTAssertFalse(shouldDismiss)
+    }
+
     func testOriginalVisibilityShowsEditableOriginalWhenHideSettingIsOffAndOverlayIsPinned() {
         let decision = ParagraphOriginalVisibilityPolicy.resolve(
             hasOriginalText: true,

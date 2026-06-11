@@ -56,6 +56,15 @@ struct SettingsView: View {
                         Divider()
                             .opacity(0.5)
 
+                        SettingsToggleRow(
+                            title: L("Keep Word Bubble After Tap"),
+                            subtitle: L("Release the hotkey after one lookup; move the mouse to dismiss"),
+                            isOn: $model.settings.keepWordOverlayAfterTap
+                        )
+
+                        Divider()
+                            .opacity(0.5)
+
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(L("Pronunciation"))

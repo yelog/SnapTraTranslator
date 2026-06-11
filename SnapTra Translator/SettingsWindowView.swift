@@ -531,6 +531,16 @@ struct GeneralSettingsView: View {
                         .opacity(0.5)
 
                     ToggleRow(
+                        title: L("Keep Word Bubble After Tap"),
+                        subtitle: L("Release the hotkey after one lookup; move the mouse to dismiss"),
+                        isOn: $model.settings.keepWordOverlayAfterTap
+                    )
+
+                    Divider()
+                        .padding(.horizontal, 14)
+                        .opacity(0.5)
+
+                    ToggleRow(
                         title: L("Double-tap OCR Sentence Translation"),
                         isOn: $model.settings.ocrSentenceTranslationEnabled
                     )
