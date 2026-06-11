@@ -3460,36 +3460,36 @@
         }
       }
     },
-    "Keep Word Bubble After Tap" : {
+    "Keep Translation Bubble After Tap" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Keep Word Bubble After Tap"
+            "value" : "Keep Translation Bubble After Tap"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "タップ後に単語バブルを保持"
+            "value" : "タップ後に翻訳バブルを保持"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "탭 후 단어 풍선 유지"
+            "value" : "탭 후 번역 풍선 유지"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "短按后保留单词气泡"
+            "value" : "短按后保留翻译气泡"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "短按後保留單詞氣泡"
+            "value" : "短按後保留翻譯氣泡"
           }
         }
       }

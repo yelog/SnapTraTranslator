@@ -48,7 +48,7 @@ struct OverlayView: View {
     }
 
     private var showsWordOverlayControls: Bool {
-        !model.settings.continuousTranslation || model.isWordOverlayKeptAfterTap
+        !model.settings.continuousTranslation || model.isTapKeptOverlayPresented
     }
 
     private var isParagraphOverlayMode: Bool {
@@ -61,7 +61,11 @@ struct OverlayView: View {
     }
 
     private var showsParagraphOverlayPinButton: Bool {
-        isParagraphOverlayMode && !model.isParagraphOverlayPinned
+        ParagraphOverlayControlPolicy.showsPinButton(
+            isParagraphOverlayMode: isParagraphOverlayMode,
+            isParagraphOverlayPinned: model.isParagraphOverlayPinned,
+            isTapKeptOverlay: model.isTapKeptOverlayPresented
+        )
     }
 
     private var canDragPinnedParagraphOverlay: Bool {

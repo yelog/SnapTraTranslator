@@ -16,7 +16,7 @@ A lightweight macOS menu bar app that instantly translates words under your curs
 ### Translation Modes
 - **Continuous translation** - Keep translating as you move the mouse while holding the hotkey
 - **Single lookup mode** - One translation per hotkey press with interactive bubble (copy, close buttons)
-- **Tap-to-keep bubble** - Optionally release the hotkey after one lookup and move the mouse to dismiss
+- **Tap-to-keep bubble** - Optionally release the hotkey after a word or selected-text lookup and move the mouse to dismiss
 - **Sentence translation** - Select text in any app, press the hotkey with cursor inside selection to translate the sentence
 - **Paragraph translation** - Double-tap the hotkey to OCR and translate an entire paragraph under the cursor
 

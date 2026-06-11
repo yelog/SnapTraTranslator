@@ -226,25 +226,30 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         ))
     }
 
-    func testWordOverlayPersistenceOnlyKeepsEnabledWordLookupAfterTap() {
-        XCTAssertTrue(WordOverlayPersistencePolicy.shouldKeepAfterTap(
+    func testTapKeptOverlayPersistenceKeepsSupportedSingleLookupsAfterTap() {
+        XCTAssertTrue(TapKeptOverlayPersistencePolicy.shouldKeepAfterTap(
             isEnabled: true,
-            isWordLookup: true
+            lookupKind: .word
         ))
 
-        XCTAssertFalse(WordOverlayPersistencePolicy.shouldKeepAfterTap(
+        XCTAssertTrue(TapKeptOverlayPersistencePolicy.shouldKeepAfterTap(
+            isEnabled: true,
+            lookupKind: .selectedTextSentence
+        ))
+
+        XCTAssertFalse(TapKeptOverlayPersistencePolicy.shouldKeepAfterTap(
             isEnabled: false,
-            isWordLookup: true
+            lookupKind: .selectedTextSentence
         ))
 
-        XCTAssertFalse(WordOverlayPersistencePolicy.shouldKeepAfterTap(
+        XCTAssertFalse(TapKeptOverlayPersistencePolicy.shouldKeepAfterTap(
             isEnabled: true,
-            isWordLookup: false
+            lookupKind: .ocrSentence
         ))
     }
 
-    func testWordOverlayPersistenceDismissesAfterThresholdMovementOutsideOverlay() {
-        let shouldDismiss = WordOverlayPersistencePolicy.shouldDismissOnMouseMove(
+    func testTapKeptOverlayPersistenceDismissesAfterThresholdMovementOutsideOverlay() {
+        let shouldDismiss = TapKeptOverlayPersistencePolicy.shouldDismissOnMouseMove(
             startLocation: CGPoint(x: 100, y: 100),
             currentLocation: CGPoint(x: 140, y: 100),
             overlayFrame: CGRect(x: 200, y: 200, width: 180, height: 120),
@@ -254,8 +259,8 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         XCTAssertTrue(shouldDismiss)
     }
 
-    func testWordOverlayPersistenceKeepsMovementInsideOverlayFrame() {
-        let shouldDismiss = WordOverlayPersistencePolicy.shouldDismissOnMouseMove(
+    func testTapKeptOverlayPersistenceKeepsMovementInsideOverlayFrame() {
+        let shouldDismiss = TapKeptOverlayPersistencePolicy.shouldDismissOnMouseMove(
             startLocation: CGPoint(x: 100, y: 100),
             currentLocation: CGPoint(x: 220, y: 220),
             overlayFrame: CGRect(x: 200, y: 200, width: 180, height: 120),
@@ -265,8 +270,8 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         XCTAssertFalse(shouldDismiss)
     }
 
-    func testWordOverlayPersistenceKeepsVerticalMovementTowardOffsetOverlay() {
-        let shouldDismiss = WordOverlayPersistencePolicy.shouldDismissOnMouseMove(
+    func testTapKeptOverlayPersistenceKeepsVerticalMovementTowardOffsetOverlay() {
+        let shouldDismiss = TapKeptOverlayPersistencePolicy.shouldDismissOnMouseMove(
             startLocation: CGPoint(x: 100, y: 100),
             currentLocation: CGPoint(x: 100, y: 84),
             overlayFrame: CGRect(x: 112, y: 20, width: 180, height: 80),
@@ -274,6 +279,26 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         )
 
         XCTAssertFalse(shouldDismiss)
+    }
+
+    func testParagraphOverlayControlPolicyShowsCloseForTapKeptOverlay() {
+        XCTAssertTrue(ParagraphOverlayControlPolicy.showsPinButton(
+            isParagraphOverlayMode: true,
+            isParagraphOverlayPinned: false,
+            isTapKeptOverlay: false
+        ))
+
+        XCTAssertFalse(ParagraphOverlayControlPolicy.showsPinButton(
+            isParagraphOverlayMode: true,
+            isParagraphOverlayPinned: false,
+            isTapKeptOverlay: true
+        ))
+
+        XCTAssertFalse(ParagraphOverlayControlPolicy.showsPinButton(
+            isParagraphOverlayMode: true,
+            isParagraphOverlayPinned: true,
+            isTapKeptOverlay: false
+        ))
     }
 
     func testOriginalVisibilityShowsEditableOriginalWhenHideSettingIsOffAndOverlayIsPinned() {

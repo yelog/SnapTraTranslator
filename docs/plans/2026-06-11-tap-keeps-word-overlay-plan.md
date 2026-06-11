@@ -1,10 +1,10 @@
-# Tap Keeps Word Overlay Implementation Plan
+# Tap Keeps Translation Overlay Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an optional mode that keeps a word translation bubble visible after a short hotkey tap and dismisses it when the mouse moves away.
+**Goal:** Add an optional mode that keeps a single-lookup translation bubble visible after a short hotkey tap and dismisses it when the mouse moves away.
 
-**Architecture:** Split the feature between gesture classification, persisted settings, and overlay lifecycle. Keep mouse-dismiss behavior in a small pure policy type so tests can cover threshold and protected-frame decisions without AppKit event synthesis.
+**Architecture:** Split the feature between gesture classification, persisted settings, and overlay lifecycle. Keep tap-keep and mouse-dismiss behavior in a small pure policy type so tests can cover lookup kind, threshold, and protected-frame decisions without AppKit event synthesis.
 
 **Tech Stack:** Swift, SwiftUI, AppKit `NSEvent`, XCTest, Xcode build system.
 
@@ -18,7 +18,7 @@
 
 - [ ] **Step 1: Write failing tests**
 
-Add tests that expect a short tap release to be identifiable separately from a long hold and expect mouse movement outside the overlay to dismiss only after crossing the threshold.
+Add tests that expect a short tap release to be identifiable separately from a long hold, expect selected-text sentence lookup to be eligible for tap-keep, and expect mouse movement outside the overlay to dismiss only after crossing the threshold.
 
 - [ ] **Step 2: Run focused tests**
 
@@ -28,7 +28,7 @@ Expected: FAIL because the new tap release kind and word overlay policy do not e
 
 - [ ] **Step 3: Implement gesture and policy**
 
-Add a tap-release callback in `HotkeyManager` and add `WordOverlayPersistencePolicy` near the other overlay policies in `AppModel.swift`.
+Add a tap-release callback in `HotkeyManager` and add `TapKeptOverlayPersistencePolicy` near the other overlay policies in `AppModel.swift`.
 
 - [ ] **Step 4: Re-run focused tests**
 
@@ -73,7 +73,7 @@ Expected: PASS for settings tests.
 
 - [ ] **Step 1: Wire AppModel**
 
-Use the tap-release callback to keep word overlays alive when enabled. Keep lookup tasks running so late translation and dictionary results can still update the bubble.
+Use the tap-release callback to keep OCR word and selected-text sentence overlays alive when enabled. Keep lookup tasks running so late translation and dictionary results can still update the bubble.
 
 - [ ] **Step 2: Wire UI**
 

@@ -531,7 +531,7 @@ struct GeneralSettingsView: View {
                         .opacity(0.5)
 
                     ToggleRow(
-                        title: L("Keep Word Bubble After Tap"),
+                        title: L("Keep Translation Bubble After Tap"),
                         subtitle: L("Release the hotkey after one lookup; move the mouse to dismiss"),
                         isOn: $model.settings.keepWordOverlayAfterTap
                     )
