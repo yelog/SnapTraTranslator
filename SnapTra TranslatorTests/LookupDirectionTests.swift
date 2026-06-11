@@ -352,3 +352,73 @@ final class OCRTokenClassifierTests: XCTestCase {
         XCTAssertEqual(result, pair)
     }
 }
+
+final class OverlayPrimaryTranslationStateTests: XCTestCase {
+    func testDictionaryUpdateKeepsPrimaryTranslationLoadingWhileNativeTranslationPending() {
+        let sections = [
+            OverlayDictionarySection(
+                sourceType: .system,
+                state: .ready(Self.dictionaryEntry(translation: "管理者"))
+            ),
+        ]
+
+        let state = AppModel.primaryTranslationStateAfterDictionaryUpdate(
+            currentState: .loading,
+            dictionarySections: sections
+        )
+
+        XCTAssertEqual(state, .loading)
+    }
+
+    func testFailedPrimaryTranslationUsesDictionaryFallback() {
+        let sections = [
+            OverlayDictionarySection(
+                sourceType: .system,
+                state: .ready(Self.dictionaryEntry(translation: "管理者"))
+            ),
+        ]
+
+        let state = AppModel.primaryTranslationStateAfterPrimaryTranslationUpdate(
+            incomingState: .failed("Translation failed"),
+            currentState: .loading,
+            dictionarySections: sections
+        )
+
+        XCTAssertEqual(state, .ready("管理者", isFallback: true))
+    }
+
+    func testReadyPrimaryTranslationReplacesDictionaryFallback() {
+        let sections = [
+            OverlayDictionarySection(
+                sourceType: .system,
+                state: .ready(Self.dictionaryEntry(translation: "管理者"))
+            ),
+        ]
+
+        let state = AppModel.primaryTranslationStateAfterPrimaryTranslationUpdate(
+            incomingState: .ready("管理员", isFallback: false),
+            currentState: .ready("管理者", isFallback: true),
+            dictionarySections: sections
+        )
+
+        XCTAssertEqual(state, .ready("管理员", isFallback: false))
+    }
+
+    private static func dictionaryEntry(translation: String) -> DictionaryEntry {
+        DictionaryEntry(
+            word: "Administrator",
+            phonetic: nil,
+            definitions: [
+                DictionaryEntry.Definition(
+                    partOfSpeech: "n.",
+                    field: nil,
+                    meaning: "a person responsible for running a business",
+                    translation: translation,
+                    examples: []
+                ),
+            ],
+            source: .systemDictionary,
+            synonyms: []
+        )
+    }
+}

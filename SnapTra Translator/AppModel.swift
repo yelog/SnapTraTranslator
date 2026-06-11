@@ -1340,22 +1340,34 @@ final class AppModel: ObservableObject {
                 content.primaryTranslationState = state
             case .loading:
                 content.primaryTranslationState = .loading
-            case .empty:
-                if case .ready(_, let isFallback) = content.primaryTranslationState, isFallback {
-                    break
-                }
-                content.primaryTranslationState = .empty
-            case .failed:
-                if case .ready(_, let isFallback) = content.primaryTranslationState, isFallback {
-                    break
-                }
-                content.primaryTranslationState = state
+            case .empty, .failed:
+                content.primaryTranslationState = Self.primaryTranslationStateAfterPrimaryTranslationUpdate(
+                    incomingState: state,
+                    currentState: content.primaryTranslationState,
+                    dictionarySections: content.dictionarySections
+                )
             }
             updatedContent = content
         }
 
         if let updatedContent {
             updateLearningDefinition(from: updatedContent)
+        }
+    }
+
+    nonisolated static func primaryTranslationStateAfterPrimaryTranslationUpdate(
+        incomingState: OverlayPrimaryTranslationState,
+        currentState: OverlayPrimaryTranslationState,
+        dictionarySections: [OverlayDictionarySection]
+    ) -> OverlayPrimaryTranslationState {
+        switch incomingState {
+        case .ready, .loading:
+            return incomingState
+        case .empty, .failed:
+            if case .ready(_, let isFallback) = currentState, isFallback {
+                return currentState
+            }
+            return fallbackPrimaryTranslationState(from: dictionarySections) ?? incomingState
         }
     }
 
@@ -1624,21 +1636,10 @@ final class AppModel: ObservableObject {
                 content.phonetic = phonetic
             }
 
-            guard case .ready(_, let isFallback) = content.primaryTranslationState else {
-                if case .loading = content.primaryTranslationState {
-                    updateFallbackPrimaryTranslation(for: &content)
-                } else if case .empty = content.primaryTranslationState {
-                    updateFallbackPrimaryTranslation(for: &content)
-                } else if case .failed = content.primaryTranslationState {
-                    updateFallbackPrimaryTranslation(for: &content)
-                }
-                updatedContent = content
-                return
-            }
-
-            if isFallback {
-                updateFallbackPrimaryTranslation(for: &content)
-            }
+            content.primaryTranslationState = Self.primaryTranslationStateAfterDictionaryUpdate(
+                currentState: content.primaryTranslationState,
+                dictionarySections: content.dictionarySections
+            )
             updatedContent = content
         }
 
@@ -1704,11 +1705,36 @@ final class AppModel: ObservableObject {
         updateOverlay(state: .result(content), anchor: anchor)
     }
 
-    private func updateFallbackPrimaryTranslation(for content: inout OverlayContent) {
-        guard let fallback = content.dictionarySections.lazy.compactMap(\.entry).compactMap(\.primaryTranslation).first else {
-            return
+    nonisolated static func primaryTranslationStateAfterDictionaryUpdate(
+        currentState: OverlayPrimaryTranslationState,
+        dictionarySections: [OverlayDictionarySection]
+    ) -> OverlayPrimaryTranslationState {
+        switch currentState {
+        case .loading:
+            return .loading
+        case .ready(_, let isFallback):
+            guard isFallback else { return currentState }
+            return fallbackPrimaryTranslationState(from: dictionarySections) ?? currentState
+        case .empty, .failed:
+            return fallbackPrimaryTranslationState(from: dictionarySections) ?? currentState
         }
-        content.primaryTranslationState = .ready(fallback, isFallback: true)
+    }
+
+    nonisolated private static func fallbackPrimaryTranslationState(
+        from dictionarySections: [OverlayDictionarySection]
+    ) -> OverlayPrimaryTranslationState? {
+        for section in dictionarySections {
+            guard case .ready(let entry) = section.state,
+                  let primaryTranslation = entry.definitions.first?.translation else {
+                continue
+            }
+
+            let fallback = primaryTranslation.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !fallback.isEmpty else { continue }
+            return .ready(fallback, isFallback: true)
+        }
+
+        return nil
     }
 
     private func updateParagraphOverlayContent(
