@@ -2,6 +2,70 @@ import XCTest
 @testable import SnapTra_Translator
 
 final class ParagraphOverlayLayoutTests: XCTestCase {
+    func testParagraphHighlightResizeGeometryUsesStableScreenDeltaForAllCorners() {
+        let startFrame = CGRect(x: 100, y: 200, width: 240, height: 80)
+        let minimumSize = CGSize(width: 80, height: 24)
+        let screenFrame = CGRect(x: 0, y: 0, width: 800, height: 600)
+        let delta = CGSize(width: 30, height: 20)
+
+        XCTAssertEqual(
+            ParagraphHighlightResizeGeometry.resizedFrame(
+                from: startFrame,
+                corner: .topLeft,
+                screenDelta: delta,
+                minimumSize: minimumSize,
+                screenFrame: screenFrame
+            ),
+            CGRect(x: 130, y: 200, width: 210, height: 100)
+        )
+        XCTAssertEqual(
+            ParagraphHighlightResizeGeometry.resizedFrame(
+                from: startFrame,
+                corner: .topRight,
+                screenDelta: delta,
+                minimumSize: minimumSize,
+                screenFrame: screenFrame
+            ),
+            CGRect(x: 100, y: 200, width: 270, height: 100)
+        )
+        XCTAssertEqual(
+            ParagraphHighlightResizeGeometry.resizedFrame(
+                from: startFrame,
+                corner: .bottomLeft,
+                screenDelta: delta,
+                minimumSize: minimumSize,
+                screenFrame: screenFrame
+            ),
+            CGRect(x: 130, y: 220, width: 210, height: 60)
+        )
+        XCTAssertEqual(
+            ParagraphHighlightResizeGeometry.resizedFrame(
+                from: startFrame,
+                corner: .bottomRight,
+                screenDelta: delta,
+                minimumSize: minimumSize,
+                screenFrame: screenFrame
+            ),
+            CGRect(x: 100, y: 220, width: 270, height: 60)
+        )
+    }
+
+    func testParagraphHighlightResizeGeometryPreservesOppositeCornerAtMinimumSize() {
+        let startFrame = CGRect(x: 100, y: 200, width: 120, height: 60)
+        let minimumSize = CGSize(width: 80, height: 24)
+        let screenFrame = CGRect(x: 0, y: 0, width: 800, height: 600)
+
+        let frame = ParagraphHighlightResizeGeometry.resizedFrame(
+            from: startFrame,
+            corner: .topLeft,
+            screenDelta: CGSize(width: 100, height: 100),
+            minimumSize: minimumSize,
+            screenFrame: screenFrame
+        )
+
+        XCTAssertEqual(frame, CGRect(x: 140, y: 200, width: 80, height: 160))
+    }
+
     func testResolveKeepsPanelBelowWhenBelowSideFitsNaturalHeight() {
         let result = ParagraphOverlayLayout.resolve(
             naturalPanelHeight: 240,

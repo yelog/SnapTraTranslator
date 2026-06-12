@@ -94,7 +94,7 @@ final class ParagraphHighlightViewModel: ObservableObject {
     @Published var isActive = false
 }
 
-private enum ParagraphHighlightResizeCorner: CaseIterable {
+enum ParagraphHighlightResizeCorner: CaseIterable {
     case topLeft
     case topRight
     case bottomLeft
@@ -117,12 +117,76 @@ private enum ParagraphHighlightResizeCorner: CaseIterable {
     }
 }
 
+enum ParagraphHighlightResizeGeometry {
+    nonisolated static func resizedFrame(
+        from frame: CGRect,
+        corner: ParagraphHighlightResizeCorner,
+        screenDelta: CGSize,
+        minimumSize: CGSize,
+        screenFrame: CGRect?
+    ) -> CGRect {
+        var minX = frame.minX
+        var maxX = frame.maxX
+        var minY = frame.minY
+        var maxY = frame.maxY
+
+        switch corner {
+        case .topLeft:
+            minX += screenDelta.width
+            maxY += screenDelta.height
+        case .topRight:
+            maxX += screenDelta.width
+            maxY += screenDelta.height
+        case .bottomLeft:
+            minX += screenDelta.width
+            minY += screenDelta.height
+        case .bottomRight:
+            maxX += screenDelta.width
+            minY += screenDelta.height
+        }
+
+        if maxX - minX < minimumSize.width {
+            switch corner {
+            case .topLeft, .bottomLeft:
+                minX = maxX - minimumSize.width
+            case .topRight, .bottomRight:
+                maxX = minX + minimumSize.width
+            }
+        }
+
+        if maxY - minY < minimumSize.height {
+            switch corner {
+            case .topLeft, .topRight:
+                maxY = minY + minimumSize.height
+            case .bottomLeft, .bottomRight:
+                minY = maxY - minimumSize.height
+            }
+        }
+
+        let rect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        guard let screenFrame else { return rect }
+        return clamp(rect, to: screenFrame, minimumSize: minimumSize)
+    }
+
+    nonisolated private static func clamp(
+        _ rect: CGRect,
+        to bounds: CGRect,
+        minimumSize: CGSize
+    ) -> CGRect {
+        let width = min(max(rect.width, minimumSize.width), bounds.width)
+        let height = min(max(rect.height, minimumSize.height), bounds.height)
+        let x = min(max(rect.minX, bounds.minX), bounds.maxX - width)
+        let y = min(max(rect.minY, bounds.minY), bounds.maxY - height)
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
+}
+
 // MARK: - Paragraph Highlight View
 
 private struct ParagraphHighlightView: View {
     @ObservedObject var model: ParagraphHighlightViewModel
-    var onResizeChanged: (ParagraphHighlightResizeCorner, CGSize) -> Void
-    var onResizeEnded: (ParagraphHighlightResizeCorner, CGSize) -> Void
+    var onResizeChanged: (ParagraphHighlightResizeCorner, CGPoint) -> Void
+    var onResizeEnded: (ParagraphHighlightResizeCorner, CGPoint) -> Void
     private let accentColor = Color(red: 0.18, green: 0.88, blue: 0.42)
     private let lineWidth: CGFloat = 2.5
     private let handleSize: CGFloat = 28
@@ -192,11 +256,11 @@ private struct ParagraphHighlightView: View {
             .position(handlePosition(for: corner, in: size))
             .gesture(
                 DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        onResizeChanged(corner, value.translation)
+                    .onChanged { _ in
+                        onResizeChanged(corner, NSEvent.mouseLocation)
                     }
-                    .onEnded { value in
-                        onResizeEnded(corner, value.translation)
+                    .onEnded { _ in
+                        onResizeEnded(corner, NSEvent.mouseLocation)
                     }
             )
             .onHover { isHovering in
@@ -314,6 +378,7 @@ final class ParagraphHighlightWindowController: NSWindowController {
     private let model = ParagraphHighlightViewModel()
     private let hostingView: NSHostingView<AnyView>
     private var resizeStartFrame: CGRect?
+    private var resizeStartMouseLocation: CGPoint?
     private let minimumResizeSize = CGSize(width: 80, height: 24)
 
     var onResizeBegan: (() -> Void)?
@@ -357,11 +422,11 @@ final class ParagraphHighlightWindowController: NSWindowController {
 
         hostingView.rootView = AnyView(ParagraphHighlightView(
             model: model,
-            onResizeChanged: { [weak self] corner, translation in
-                self?.updateResize(corner: corner, translation: translation)
+            onResizeChanged: { [weak self] corner, mouseLocation in
+                self?.updateResize(corner: corner, mouseLocation: mouseLocation)
             },
-            onResizeEnded: { [weak self] corner, translation in
-                self?.completeResize(corner: corner, translation: translation)
+            onResizeEnded: { [weak self] corner, mouseLocation in
+                self?.completeResize(corner: corner, mouseLocation: mouseLocation)
             }
         ))
         model.isActive = true
@@ -373,6 +438,7 @@ final class ParagraphHighlightWindowController: NSWindowController {
     func hide() {
         model.isActive = false
         resizeStartFrame = nil
+        resizeStartMouseLocation = nil
         hostingView.rootView = AnyView(EmptyView())
         window?.orderOut(nil)
     }
@@ -382,22 +448,40 @@ final class ParagraphHighlightWindowController: NSWindowController {
         return window.frame
     }
 
-    private func updateResize(corner: ParagraphHighlightResizeCorner, translation: CGSize) {
+    private func updateResize(corner: ParagraphHighlightResizeCorner, mouseLocation: CGPoint) {
         guard let window else { return }
         if resizeStartFrame == nil {
             resizeStartFrame = window.frame
+            resizeStartMouseLocation = mouseLocation
+            model.isActive = false
             onResizeBegan?()
         }
-        guard let resizeStartFrame else { return }
+        guard let resizeStartFrame, let resizeStartMouseLocation else { return }
         corner.cursor.set()
-        window.setFrame(resizedFrame(from: resizeStartFrame, corner: corner, translation: translation), display: true)
+        window.setFrame(
+            resizedFrame(
+                from: resizeStartFrame,
+                corner: corner,
+                startMouseLocation: resizeStartMouseLocation,
+                currentMouseLocation: mouseLocation
+            ),
+            display: true
+        )
     }
 
-    private func completeResize(corner: ParagraphHighlightResizeCorner, translation: CGSize) {
+    private func completeResize(corner: ParagraphHighlightResizeCorner, mouseLocation: CGPoint) {
         guard let window else { return }
         let startFrame = resizeStartFrame ?? window.frame
-        let finalFrame = resizedFrame(from: startFrame, corner: corner, translation: translation)
+        let startMouseLocation = resizeStartMouseLocation ?? mouseLocation
+        let finalFrame = resizedFrame(
+            from: startFrame,
+            corner: corner,
+            startMouseLocation: startMouseLocation,
+            currentMouseLocation: mouseLocation
+        )
         resizeStartFrame = nil
+        resizeStartMouseLocation = nil
+        model.isActive = true
         window.setFrame(finalFrame, display: true)
         onResizeCompleted?(finalFrame)
     }
@@ -405,59 +489,26 @@ final class ParagraphHighlightWindowController: NSWindowController {
     private func resizedFrame(
         from frame: CGRect,
         corner: ParagraphHighlightResizeCorner,
-        translation: CGSize
+        startMouseLocation: CGPoint,
+        currentMouseLocation: CGPoint
     ) -> CGRect {
-        var minX = frame.minX
-        var maxX = frame.maxX
-        var minY = frame.minY
-        var maxY = frame.maxY
-
-        switch corner {
-        case .topLeft:
-            minX += translation.width
-            maxY -= translation.height
-        case .topRight:
-            maxX += translation.width
-            maxY -= translation.height
-        case .bottomLeft:
-            minX += translation.width
-            minY -= translation.height
-        case .bottomRight:
-            maxX += translation.width
-            minY -= translation.height
-        }
-
-        if maxX - minX < minimumResizeSize.width {
-            switch corner {
-            case .topLeft, .bottomLeft:
-                minX = maxX - minimumResizeSize.width
-            case .topRight, .bottomRight:
-                maxX = minX + minimumResizeSize.width
-            }
-        }
-
-        if maxY - minY < minimumResizeSize.height {
-            switch corner {
-            case .topLeft, .topRight:
-                maxY = minY + minimumResizeSize.height
-            case .bottomLeft, .bottomRight:
-                minY = maxY - minimumResizeSize.height
-            }
-        }
-
-        var rect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-        if let screenFrame = NSScreen.screens.first(where: { $0.frame.intersects(rect) })?.frame {
-            rect = clamp(rect, to: screenFrame)
-        }
-        return rect
+        let screenDelta = CGSize(
+            width: currentMouseLocation.x - startMouseLocation.x,
+            height: currentMouseLocation.y - startMouseLocation.y
+        )
+        return ParagraphHighlightResizeGeometry.resizedFrame(
+            from: frame,
+            corner: corner,
+            screenDelta: screenDelta,
+            minimumSize: minimumResizeSize,
+            screenFrame: screenFrame(for: frame)
+        )
     }
 
-    private func clamp(_ rect: CGRect, to bounds: CGRect) -> CGRect {
-        let width = min(max(rect.width, minimumResizeSize.width), bounds.width)
-        let height = min(max(rect.height, minimumResizeSize.height), bounds.height)
-        let x = min(max(rect.minX, bounds.minX), bounds.maxX - width)
-        let y = min(max(rect.minY, bounds.minY), bounds.maxY - height)
-        return CGRect(x: x, y: y, width: width, height: height)
+    private func screenFrame(for frame: CGRect) -> CGRect? {
+        let midpoint = CGPoint(x: frame.midX, y: frame.midY)
+        return NSScreen.screens.first(where: { NSMouseInRect(midpoint, $0.frame, false) })?.frame
+            ?? NSScreen.screens.first(where: { $0.frame.intersects(frame) })?.frame
     }
 }
 
