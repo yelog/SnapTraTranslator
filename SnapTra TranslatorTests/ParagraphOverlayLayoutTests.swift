@@ -66,6 +66,142 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         XCTAssertEqual(frame, CGRect(x: 140, y: 200, width: 80, height: 160))
     }
 
+    func testParagraphHighlightCornerFeedbackStrengthensHoverAffordance() {
+        let normal = ParagraphHighlightCornerFeedback.resolve(
+            corner: .topLeft,
+            hoveredCorner: nil,
+            activeCorner: nil
+        )
+        let hovered = ParagraphHighlightCornerFeedback.resolve(
+            corner: .topLeft,
+            hoveredCorner: .topLeft,
+            activeCorner: nil
+        )
+
+        XCTAssertEqual(normal.lineWidth, 2.5, accuracy: 0.001)
+        XCTAssertFalse(normal.showsGrip)
+        XCTAssertEqual(hovered.lineWidth, 3.5, accuracy: 0.001)
+        XCTAssertTrue(hovered.showsGrip)
+        XCTAssertGreaterThan(hovered.opacity, normal.opacity)
+    }
+
+    func testParagraphHighlightCornerFeedbackKeepsDraggingCornerProminent() {
+        let feedback = ParagraphHighlightCornerFeedback.resolve(
+            corner: .topLeft,
+            hoveredCorner: .bottomRight,
+            activeCorner: .topLeft
+        )
+
+        XCTAssertEqual(feedback.lineWidth, 4, accuracy: 0.001)
+        XCTAssertEqual(feedback.gripDiameter, 7, accuracy: 0.001)
+        XCTAssertTrue(feedback.showsGrip)
+    }
+
+    func testParagraphHighlightResizeHitTestingResolvesAllCornerHoverPoints() {
+        let size = CGSize(width: 240, height: 80)
+        let handleSize: CGFloat = 36
+
+        XCTAssertEqual(
+            ParagraphHighlightResizeHitTesting.corner(
+                at: CGPoint(x: 1, y: 1),
+                in: size,
+                handleSize: handleSize
+            ),
+            .topLeft
+        )
+        XCTAssertEqual(
+            ParagraphHighlightResizeHitTesting.corner(
+                at: CGPoint(x: 239, y: 1),
+                in: size,
+                handleSize: handleSize
+            ),
+            .topRight
+        )
+        XCTAssertEqual(
+            ParagraphHighlightResizeHitTesting.corner(
+                at: CGPoint(x: 1, y: 79),
+                in: size,
+                handleSize: handleSize
+            ),
+            .bottomLeft
+        )
+        XCTAssertEqual(
+            ParagraphHighlightResizeHitTesting.corner(
+                at: CGPoint(x: 239, y: 79),
+                in: size,
+                handleSize: handleSize
+            ),
+            .bottomRight
+        )
+        XCTAssertNil(
+            ParagraphHighlightResizeHitTesting.corner(
+                at: CGPoint(x: 120, y: 40),
+                in: size,
+                handleSize: handleSize
+            )
+        )
+    }
+
+    func testParagraphHighlightResizeHitTestingClampsCornerRectsInsideOverlay() {
+        let size = CGSize(width: 240, height: 80)
+        let handleSize: CGFloat = 36
+
+        XCTAssertEqual(
+            ParagraphHighlightResizeHitTesting.handleRect(
+                for: .topLeft,
+                in: size,
+                handleSize: handleSize
+            ),
+            CGRect(x: 0, y: 0, width: 36, height: 36)
+        )
+        XCTAssertEqual(
+            ParagraphHighlightResizeHitTesting.handleRect(
+                for: .bottomRight,
+                in: size,
+                handleSize: handleSize
+            ),
+            CGRect(x: 204, y: 44, width: 36, height: 36)
+        )
+    }
+
+    func testParagraphHighlightResizeHitTestingChoosesNearestCornerWhenHotZonesOverlap() {
+        let size = CGSize(width: 80, height: 24)
+        let handleSize: CGFloat = 36
+
+        XCTAssertEqual(
+            ParagraphHighlightResizeHitTesting.corner(
+                at: CGPoint(x: 1, y: 1),
+                in: size,
+                handleSize: handleSize
+            ),
+            .topLeft
+        )
+        XCTAssertEqual(
+            ParagraphHighlightResizeHitTesting.corner(
+                at: CGPoint(x: 1, y: 23),
+                in: size,
+                handleSize: handleSize
+            ),
+            .bottomLeft
+        )
+        XCTAssertEqual(
+            ParagraphHighlightResizeHitTesting.corner(
+                at: CGPoint(x: 79, y: 1),
+                in: size,
+                handleSize: handleSize
+            ),
+            .topRight
+        )
+        XCTAssertEqual(
+            ParagraphHighlightResizeHitTesting.corner(
+                at: CGPoint(x: 79, y: 23),
+                in: size,
+                handleSize: handleSize
+            ),
+            .bottomRight
+        )
+    }
+
     func testResolveKeepsPanelBelowWhenBelowSideFitsNaturalHeight() {
         let result = ParagraphOverlayLayout.resolve(
             naturalPanelHeight: 240,

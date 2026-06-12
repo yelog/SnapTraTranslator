@@ -94,26 +94,185 @@ final class ParagraphHighlightViewModel: ObservableObject {
     @Published var isActive = false
 }
 
-enum ParagraphHighlightResizeCorner: CaseIterable {
+enum ParagraphHighlightResizeCorner: CaseIterable, Equatable {
     case topLeft
     case topRight
     case bottomLeft
     case bottomRight
 
     var cursor: NSCursor {
-        let symbolName: String
-        switch self {
-        case .topLeft, .bottomRight:
-            symbolName = "arrow.up.left.and.down.right"
-        case .topRight, .bottomLeft:
-            symbolName = "arrow.up.right.and.down.left"
+        ParagraphHighlightResizeCursorFactory.cursor(for: self)
+    }
+}
+
+struct ParagraphHighlightCornerFeedback: Equatable {
+    let lineWidth: CGFloat
+    let opacity: Double
+    let showsGrip: Bool
+    let gripDiameter: CGFloat
+
+    nonisolated static func resolve(
+        corner: ParagraphHighlightResizeCorner,
+        hoveredCorner: ParagraphHighlightResizeCorner?,
+        activeCorner: ParagraphHighlightResizeCorner?
+    ) -> ParagraphHighlightCornerFeedback {
+        if activeCorner == corner {
+            return ParagraphHighlightCornerFeedback(
+                lineWidth: 4,
+                opacity: 1,
+                showsGrip: true,
+                gripDiameter: 7
+            )
         }
 
-        guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) else {
-            return .arrow
+        if hoveredCorner == corner {
+            return ParagraphHighlightCornerFeedback(
+                lineWidth: 3.5,
+                opacity: 1,
+                showsGrip: true,
+                gripDiameter: 6
+            )
         }
-        image.size = CGSize(width: 18, height: 18)
-        return NSCursor(image: image, hotSpot: CGPoint(x: 9, y: 9))
+
+        return ParagraphHighlightCornerFeedback(
+            lineWidth: 2.5,
+            opacity: 0.85,
+            showsGrip: false,
+            gripDiameter: 0
+        )
+    }
+}
+
+enum ParagraphHighlightResizeHitTesting {
+    nonisolated static func corner(
+        at point: CGPoint,
+        in size: CGSize,
+        handleSize: CGFloat
+    ) -> ParagraphHighlightResizeCorner? {
+        let bounds = CGRect(origin: .zero, size: size)
+        guard bounds.contains(point) else { return nil }
+
+        var nearestCorner: ParagraphHighlightResizeCorner?
+        var nearestDistance = CGFloat.greatestFiniteMagnitude
+        for corner in ParagraphHighlightResizeCorner.allCases {
+            guard handleRect(for: corner, in: size, handleSize: handleSize).contains(point) else {
+                continue
+            }
+
+            let center = handleCenter(for: corner, in: size)
+            let distance = pow(point.x - center.x, 2) + pow(point.y - center.y, 2)
+            if distance < nearestDistance {
+                nearestDistance = distance
+                nearestCorner = corner
+            }
+        }
+
+        return nearestCorner
+    }
+
+    nonisolated static func handleRect(
+        for corner: ParagraphHighlightResizeCorner,
+        in size: CGSize,
+        handleSize: CGFloat
+    ) -> CGRect {
+        guard size.width > 0, size.height > 0, handleSize > 0 else { return .zero }
+
+        let width = min(handleSize, size.width)
+        let height = min(handleSize, size.height)
+
+        switch corner {
+        case .topLeft:
+            return CGRect(x: 0, y: 0, width: width, height: height)
+        case .topRight:
+            return CGRect(x: size.width - width, y: 0, width: width, height: height)
+        case .bottomLeft:
+            return CGRect(x: 0, y: size.height - height, width: width, height: height)
+        case .bottomRight:
+            return CGRect(x: size.width - width, y: size.height - height, width: width, height: height)
+        }
+    }
+
+    nonisolated private static func handleCenter(
+        for corner: ParagraphHighlightResizeCorner,
+        in size: CGSize
+    ) -> CGPoint {
+        switch corner {
+        case .topLeft:
+            return CGPoint(x: 0, y: 0)
+        case .topRight:
+            return CGPoint(x: size.width, y: 0)
+        case .bottomLeft:
+            return CGPoint(x: 0, y: size.height)
+        case .bottomRight:
+            return CGPoint(x: size.width, y: size.height)
+        }
+    }
+}
+
+private enum ParagraphHighlightResizeCursorFactory {
+    private static let topLeftBottomRightCursor = makeCursor(
+        start: CGPoint(x: 8, y: 24),
+        end: CGPoint(x: 24, y: 8)
+    )
+    private static let topRightBottomLeftCursor = makeCursor(
+        start: CGPoint(x: 24, y: 24),
+        end: CGPoint(x: 8, y: 8)
+    )
+
+    static func cursor(for corner: ParagraphHighlightResizeCorner) -> NSCursor {
+        switch corner {
+        case .topLeft, .bottomRight:
+            return topLeftBottomRightCursor
+        case .topRight, .bottomLeft:
+            return topRightBottomLeftCursor
+        }
+    }
+
+    private static func makeCursor(start: CGPoint, end: CGPoint) -> NSCursor {
+        let imageSize = CGSize(width: 32, height: 32)
+        let image = NSImage(size: imageSize)
+
+        image.lockFocus()
+        drawCursorPath(start: start, end: end, color: .white, lineWidth: 5.5)
+        drawCursorPath(start: start, end: end, color: .black, lineWidth: 2.4)
+        image.unlockFocus()
+
+        return NSCursor(image: image, hotSpot: CGPoint(x: imageSize.width / 2, y: imageSize.height / 2))
+    }
+
+    private static func drawCursorPath(start: CGPoint, end: CGPoint, color: NSColor, lineWidth: CGFloat) {
+        let path = cursorPath(start: start, end: end)
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        path.lineWidth = lineWidth
+        color.setStroke()
+        path.stroke()
+    }
+
+    private static func cursorPath(start: CGPoint, end: CGPoint) -> NSBezierPath {
+        let path = NSBezierPath()
+        path.move(to: start)
+        path.line(to: end)
+        appendArrowhead(to: start, from: end, path: path)
+        appendArrowhead(to: end, from: start, path: path)
+        return path
+    }
+
+    private static func appendArrowhead(to tip: CGPoint, from body: CGPoint, path: NSBezierPath) {
+        let dx = tip.x - body.x
+        let dy = tip.y - body.y
+        let length = hypot(dx, dy)
+        guard length > 0 else { return }
+
+        let unit = CGPoint(x: dx / length, y: dy / length)
+        let normal = CGPoint(x: -unit.y, y: unit.x)
+        let base = CGPoint(x: tip.x - unit.x * 7, y: tip.y - unit.y * 7)
+        let first = CGPoint(x: base.x + normal.x * 4.5, y: base.y + normal.y * 4.5)
+        let second = CGPoint(x: base.x - normal.x * 4.5, y: base.y - normal.y * 4.5)
+
+        path.move(to: first)
+        path.line(to: tip)
+        path.line(to: second)
     }
 }
 
@@ -188,8 +347,7 @@ private struct ParagraphHighlightView: View {
     var onResizeChanged: (ParagraphHighlightResizeCorner, CGPoint) -> Void
     var onResizeEnded: (ParagraphHighlightResizeCorner, CGPoint) -> Void
     private let accentColor = Color(red: 0.18, green: 0.88, blue: 0.42)
-    private let lineWidth: CGFloat = 2.5
-    private let handleSize: CGFloat = 28
+    private let handleSize: CGFloat = 36
     /// Half-width of the soft gradient halo on each side of the beam core
     private let beamHaloHalf: CGFloat = 28
     /// Width of the hard bright core line
@@ -199,6 +357,8 @@ private struct ParagraphHighlightView: View {
 
     @State private var appeared = false
     @State private var startDate: Date = .now
+    @State private var hoveredCorner: ParagraphHighlightResizeCorner?
+    @State private var activeResizeCorner: ParagraphHighlightResizeCorner?
 
     var body: some View {
         GeometryReader { geometry in
@@ -222,15 +382,22 @@ private struct ParagraphHighlightView: View {
                 }
 
                 // Layer 3 — corner brackets
-                cornerBrackets(size: size, cornerLength: cornerLength)
-                    .stroke(
-                        accentColor,
-                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
-                    )
-
                 ForEach(ParagraphHighlightResizeCorner.allCases, id: \.self) { corner in
-                    resizeHandle(for: corner, in: size)
+                    cornerFeedback(for: corner, in: size, cornerLength: cornerLength)
                 }
+
+                ParagraphHighlightResizeInteractionView(
+                    handleSize: handleSize,
+                    onHoverChanged: { corner in
+                        hoveredCorner = corner
+                    },
+                    onActiveCornerChanged: { corner in
+                        activeResizeCorner = corner
+                    },
+                    onResizeChanged: onResizeChanged,
+                    onResizeEnded: onResizeEnded
+                )
+                .frame(width: size.width, height: size.height)
             }
             .opacity(appeared ? 1 : 0)
             .scaleEffect(appeared ? 1 : 0.97)
@@ -245,48 +412,9 @@ private struct ParagraphHighlightView: View {
                     startDate = .now
                 }
             }
+            .animation(.easeOut(duration: 0.12), value: hoveredCorner)
+            .animation(.easeOut(duration: 0.12), value: activeResizeCorner)
         }
-    }
-
-    private func resizeHandle(for corner: ParagraphHighlightResizeCorner, in size: CGSize) -> some View {
-        Rectangle()
-            .fill(Color.clear)
-            .contentShape(Rectangle())
-            .frame(width: handleSize, height: handleSize)
-            .position(handlePosition(for: corner, in: size))
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        onResizeChanged(corner, NSEvent.mouseLocation)
-                    }
-                    .onEnded { _ in
-                        onResizeEnded(corner, NSEvent.mouseLocation)
-                    }
-            )
-            .onHover { isHovering in
-                if isHovering {
-                    cursor(for: corner).push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-    }
-
-    private func handlePosition(for corner: ParagraphHighlightResizeCorner, in size: CGSize) -> CGPoint {
-        switch corner {
-        case .topLeft:
-            return CGPoint(x: 0, y: 0)
-        case .topRight:
-            return CGPoint(x: size.width, y: 0)
-        case .bottomLeft:
-            return CGPoint(x: 0, y: size.height)
-        case .bottomRight:
-            return CGPoint(x: size.width, y: size.height)
-        }
-    }
-
-    private func cursor(for corner: ParagraphHighlightResizeCorner) -> NSCursor {
-        corner.cursor
     }
 
     // MARK: - Beam position
@@ -351,26 +479,285 @@ private struct ParagraphHighlightView: View {
 
     // MARK: - Corner brackets
 
-    private func cornerBrackets(size: CGSize, cornerLength: CGFloat) -> Path {
+    @ViewBuilder
+    private func cornerFeedback(
+        for corner: ParagraphHighlightResizeCorner,
+        in size: CGSize,
+        cornerLength: CGFloat
+    ) -> some View {
+        let feedback = ParagraphHighlightCornerFeedback.resolve(
+            corner: corner,
+            hoveredCorner: hoveredCorner,
+            activeCorner: activeResizeCorner
+        )
+
+        cornerBracket(for: corner, size: size, cornerLength: cornerLength)
+            .stroke(
+                accentColor.opacity(feedback.opacity),
+                style: StrokeStyle(lineWidth: feedback.lineWidth, lineCap: .round, lineJoin: .round)
+            )
+
+        if feedback.showsGrip {
+            Circle()
+                .fill(accentColor.opacity(feedback.opacity))
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.8), lineWidth: 1)
+                )
+                .frame(width: feedback.gripDiameter, height: feedback.gripDiameter)
+                .position(gripPosition(for: corner, in: size))
+        }
+    }
+
+    private func cornerBracket(for corner: ParagraphHighlightResizeCorner, size: CGSize, cornerLength: CGFloat) -> Path {
         Path { path in
             let rect = CGRect(origin: .zero, size: size)
 
-            path.move(to: CGPoint(x: rect.minX, y: rect.maxY - cornerLength))
-            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-            path.addLine(to: CGPoint(x: rect.minX + cornerLength, y: rect.maxY))
-
-            path.move(to: CGPoint(x: rect.maxX - cornerLength, y: rect.maxY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - cornerLength))
-
-            path.move(to: CGPoint(x: rect.minX, y: rect.minY + cornerLength))
-            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.minX + cornerLength, y: rect.minY))
-
-            path.move(to: CGPoint(x: rect.maxX - cornerLength, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + cornerLength))
+            switch corner {
+            case .topLeft:
+                path.move(to: CGPoint(x: rect.minX, y: rect.minY + cornerLength))
+                path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
+                path.addLine(to: CGPoint(x: rect.minX + cornerLength, y: rect.minY))
+            case .topRight:
+                path.move(to: CGPoint(x: rect.maxX - cornerLength, y: rect.minY))
+                path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+                path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + cornerLength))
+            case .bottomLeft:
+                path.move(to: CGPoint(x: rect.minX, y: rect.maxY - cornerLength))
+                path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+                path.addLine(to: CGPoint(x: rect.minX + cornerLength, y: rect.maxY))
+            case .bottomRight:
+                path.move(to: CGPoint(x: rect.maxX - cornerLength, y: rect.maxY))
+                path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+                path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - cornerLength))
+            }
         }
+    }
+
+    private func gripPosition(for corner: ParagraphHighlightResizeCorner, in size: CGSize) -> CGPoint {
+        let inset: CGFloat = 6
+        switch corner {
+        case .topLeft:
+            return CGPoint(x: inset, y: inset)
+        case .topRight:
+            return CGPoint(x: size.width - inset, y: inset)
+        case .bottomLeft:
+            return CGPoint(x: inset, y: size.height - inset)
+        case .bottomRight:
+            return CGPoint(x: size.width - inset, y: size.height - inset)
+        }
+    }
+}
+
+private struct ParagraphHighlightResizeInteractionView: NSViewRepresentable {
+    let handleSize: CGFloat
+    var onHoverChanged: (ParagraphHighlightResizeCorner?) -> Void
+    var onActiveCornerChanged: (ParagraphHighlightResizeCorner?) -> Void
+    var onResizeChanged: (ParagraphHighlightResizeCorner, CGPoint) -> Void
+    var onResizeEnded: (ParagraphHighlightResizeCorner, CGPoint) -> Void
+
+    func makeNSView(context: Context) -> ParagraphHighlightResizeInteractionNSView {
+        let view = ParagraphHighlightResizeInteractionNSView()
+        view.update(
+            handleSize: handleSize,
+            onHoverChanged: onHoverChanged,
+            onActiveCornerChanged: onActiveCornerChanged,
+            onResizeChanged: onResizeChanged,
+            onResizeEnded: onResizeEnded
+        )
+        return view
+    }
+
+    func updateNSView(_ nsView: ParagraphHighlightResizeInteractionNSView, context: Context) {
+        nsView.update(
+            handleSize: handleSize,
+            onHoverChanged: onHoverChanged,
+            onActiveCornerChanged: onActiveCornerChanged,
+            onResizeChanged: onResizeChanged,
+            onResizeEnded: onResizeEnded
+        )
+    }
+}
+
+private final class ParagraphHighlightResizeInteractionNSView: NSView {
+    private var handleSize: CGFloat = 36
+    private var trackingArea: NSTrackingArea?
+    private var hoveredCorner: ParagraphHighlightResizeCorner?
+    private var activeCorner: ParagraphHighlightResizeCorner?
+    private var onHoverChanged: (ParagraphHighlightResizeCorner?) -> Void = { _ in }
+    private var onActiveCornerChanged: (ParagraphHighlightResizeCorner?) -> Void = { _ in }
+    private var onResizeChanged: (ParagraphHighlightResizeCorner, CGPoint) -> Void = { _, _ in }
+    private var onResizeEnded: (ParagraphHighlightResizeCorner, CGPoint) -> Void = { _, _ in }
+
+    override var isFlipped: Bool { true }
+    override var isOpaque: Bool { false }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard corner(at: point) != nil else { return nil }
+        return self
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+
+        let options: NSTrackingArea.Options = [
+            .activeAlways,
+            .cursorUpdate,
+            .inVisibleRect,
+            .mouseEnteredAndExited,
+            .mouseMoved,
+        ]
+        let trackingArea = NSTrackingArea(rect: .zero, options: options, owner: self, userInfo: nil)
+        addTrackingArea(trackingArea)
+        self.trackingArea = trackingArea
+        invalidateCursorRects()
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+
+        for corner in ParagraphHighlightResizeCorner.allCases {
+            addCursorRect(
+                ParagraphHighlightResizeHitTesting.handleRect(
+                    for: corner,
+                    in: bounds.size,
+                    handleSize: handleSize
+                ),
+                cursor: corner.cursor
+            )
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.acceptsMouseMovedEvents = true
+        invalidateCursorRects()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        invalidateCursorRects()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        updateHover(with: event)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateHover(with: event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setHoveredCorner(nil)
+        NSCursor.arrow.set()
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        guard let corner = corner(for: event) else {
+            NSCursor.arrow.set()
+            return
+        }
+        corner.cursor.set()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let corner = corner(for: event) else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        activeCorner = corner
+        onActiveCornerChanged(corner)
+        setHoveredCorner(corner)
+        corner.cursor.set()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let activeCorner else {
+            super.mouseDragged(with: event)
+            return
+        }
+
+        activeCorner.cursor.set()
+        onResizeChanged(activeCorner, NSEvent.mouseLocation)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let activeCorner else {
+            super.mouseUp(with: event)
+            return
+        }
+
+        self.activeCorner = nil
+        onActiveCornerChanged(nil)
+        onResizeEnded(activeCorner, NSEvent.mouseLocation)
+        updateHover(with: event)
+    }
+
+    func update(
+        handleSize: CGFloat,
+        onHoverChanged: @escaping (ParagraphHighlightResizeCorner?) -> Void,
+        onActiveCornerChanged: @escaping (ParagraphHighlightResizeCorner?) -> Void,
+        onResizeChanged: @escaping (ParagraphHighlightResizeCorner, CGPoint) -> Void,
+        onResizeEnded: @escaping (ParagraphHighlightResizeCorner, CGPoint) -> Void
+    ) {
+        self.handleSize = handleSize
+        self.onHoverChanged = onHoverChanged
+        self.onActiveCornerChanged = onActiveCornerChanged
+        self.onResizeChanged = onResizeChanged
+        self.onResizeEnded = onResizeEnded
+        invalidateCursorRects()
+    }
+
+    private func updateHover(with event: NSEvent) {
+        let corner = corner(for: event)
+        setHoveredCorner(corner)
+        if let corner {
+            corner.cursor.set()
+        } else {
+            NSCursor.arrow.set()
+        }
+    }
+
+    private func setHoveredCorner(_ corner: ParagraphHighlightResizeCorner?) {
+        guard hoveredCorner != corner else { return }
+        hoveredCorner = corner
+        onHoverChanged(corner)
+    }
+
+    private func corner(for event: NSEvent) -> ParagraphHighlightResizeCorner? {
+        corner(at: convert(event.locationInWindow, from: nil))
+    }
+
+    private func corner(at point: CGPoint) -> ParagraphHighlightResizeCorner? {
+        ParagraphHighlightResizeHitTesting.corner(
+            at: point,
+            in: bounds.size,
+            handleSize: handleSize
+        )
+    }
+
+    private func invalidateCursorRects() {
+        window?.invalidateCursorRects(for: self)
     }
 }
 
@@ -401,6 +788,7 @@ final class ParagraphHighlightWindowController: NSWindowController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.ignoresMouseEvents = false
         panel.isMovableByWindowBackground = false
+        panel.acceptsMouseMovedEvents = true
         super.init(window: panel)
         CaptureExclusionRegistry.shared.register(panel)
     }
