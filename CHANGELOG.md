@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.9] - 2026-06-15
+
+### Added
+- keep selected text bubble after tap for quick re-reference
+- add outside tap dismissal and hide original text option for overlays
+- add resizable OCR sentence regions with drag handles
+- edit pinned sentence source text directly
+- add paragraph target language selector in sentence view
+- add streaming LLM translation for faster response
+- add Zhipu LLM provider for sentence translation
+- add plain text word export for learning lists
+- track word source languages in learning data
+- export words for Anki flashcards
+- add menu bar icon style setting
+- show language pack download status in language pickers
+- default bidirectional translation and hide original text to enabled
+
+### Changed
+- improve paragraph highlight resize interaction
+- refine sentence overlay visuals
+- default sentence pronunciation to off
+- generalize bidirectional detection and show provider language support
+- reduce LLM reasoning latency
+
+### Fixed
+- stabilize OCR region resize drag
+- allow selecting kept word text
+- keep tap-kept bubble reachable below cursor
+- keep primary word translation stable during updates
+- strip inline pinyin annotations from system dictionary translations
+- prefer bilingual content and suppress redundant English for en→zh lookups
+- prevent window jitter on language direction toggle
+- preserve English content in ECDICT definitions and translations
+- relax selected text bounds routing for better word selection
+- normalize LLM OCR line breaks
+- refine hidden original sentence overlay behavior
+- translate non-English text lines correctly
+- stabilize language pack status indicators
+- recover skipped mixed-text words during OCR
+- focus editable paragraph input properly
+- switch paragraph direction on target language change
+- resolve word list pagination never loading remaining data
+- improve responsive settings layout
+- skip target-language words without bidirectional mode
+- emit hotkey release event when shortcut is lifted
+- exclude only overlay windows from screen capture
+- recover hotkey after system wake
+- improve export toolbar layout in learning view
+- align system picker layout in settings
+- optimize word list scrolling performance
+
 ## [1.3.9-beta.5] - 2026-05-18
 
 ### Added
