@@ -7,6 +7,15 @@
         <language>en</language>
         <sparkle:edPublicKey>OJo/oEqSjtmok1HYx+XgFHLq1FkUAJs8hsDms0+Uv98=</sparkle:edPublicKey>
         <item>
+            <title>Version 1.3.10-beta.0</title>
+            <pubDate>Tue, 16 Jun 2026 06:28:39 +0000</pubDate>
+            <sparkle:version>131000</sparkle:version>
+            <sparkle:shortVersionString>1.3.10-beta.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description>&lt;h2&gt;SnapTra Translator 1.3.10-beta.0&lt;/h2&gt;&lt;h4&gt;Added&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;keep word bubble after tap for quick re-reference&lt;/li&gt;&lt;li&gt;keep selected text bubble after tap&lt;/li&gt;&lt;li&gt;default bidirectional translation and hide original text to enabled&lt;/li&gt;&lt;li&gt;show language pack download status in language pickers&lt;/li&gt;&lt;li&gt;add streaming LLM translation for faster response&lt;/li&gt;&lt;li&gt;add Zhipu LLM provider for sentence translation&lt;/li&gt;&lt;li&gt;add plain text word export for learning lists&lt;/li&gt;&lt;li&gt;track word source languages in learning data&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Changed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;improve paragraph highlight resize interaction&lt;/li&gt;&lt;li&gt;generalize bidirectional detection and show provider language support&lt;/li&gt;&lt;li&gt;reduce LLM reasoning latency&lt;/li&gt;&lt;li&gt;enable tap-kept word bubble by default&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Fixed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;improve Chinese word lookup segmentation&lt;/li&gt;&lt;li&gt;dismiss kept word overlay with escape&lt;/li&gt;&lt;li&gt;stabilize OCR region resize drag&lt;/li&gt;&lt;li&gt;allow selecting kept word text&lt;/li&gt;&lt;li&gt;keep tap-kept bubble reachable below cursor&lt;/li&gt;&lt;li&gt;keep primary word translation stable&lt;/li&gt;&lt;li&gt;strip inline pinyin annotations from system dictionary translations&lt;/li&gt;&lt;li&gt;prefer bilingual content and suppress redundant English for en→zh lookups&lt;/li&gt;&lt;li&gt;prevent window jitter on language direction toggle&lt;/li&gt;&lt;li&gt;preserve English content in ECDICT definitions and translations&lt;/li&gt;&lt;li&gt;relax selected text bounds routing&lt;/li&gt;&lt;li&gt;normalize LLM OCR line breaks&lt;/li&gt;&lt;li&gt;refine hidden original sentence overlay&lt;/li&gt;&lt;li&gt;translate non-English text lines&lt;/li&gt;&lt;li&gt;stabilize language pack status indicators&lt;/li&gt;&lt;li&gt;recover skipped mixed-text words&lt;/li&gt;&lt;/ul&gt;</description>
+            <enclosure url="https://github.com/yelog/SnapTraTranslator/releases/download/v1.3.10-beta.0/SnapTra-Translator-1.3.10-beta.0.dmg" length="5711084" type="application/octet-stream" sparkle:edSignature="8C79s2G4p2w0LHDYVjGHp0LUkKg6jGztkBNqGi6kMpc87Ek+ZLyUEgCCbfHcY3IpOznJaCuQMXaNFOXljghyBQ==" />
+        </item>
+        <item>
             <title>Version 1.3.9</title>
             <pubDate>Mon, 15 Jun 2026 06:30:23 +0000</pubDate>
             <sparkle:version>13999</sparkle:version>
