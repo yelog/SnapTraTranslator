@@ -12,44 +12,63 @@ struct OverlayContent: Equatable {
     var primaryTranslationState: OverlayPrimaryTranslationState
     var usesCompactPrimaryTranslationStyle: Bool
     var dictionarySections: [OverlayDictionarySection]
+    var sourceLanguageIdentifier: String?
 
     init(
         word: String,
         phonetic: String?,
         primaryTranslationState: OverlayPrimaryTranslationState,
         usesCompactPrimaryTranslationStyle: Bool,
-        dictionarySections: [OverlayDictionarySection] = []
+        dictionarySections: [OverlayDictionarySection] = [],
+        sourceLanguageIdentifier: String? = nil
     ) {
         self.word = word
         self.phonetic = phonetic
         self.primaryTranslationState = primaryTranslationState
         self.usesCompactPrimaryTranslationStyle = usesCompactPrimaryTranslationStyle
         self.dictionarySections = dictionarySections
+        self.sourceLanguageIdentifier = sourceLanguageIdentifier
     }
 
-    var translation: String {
+    nonisolated var translation: String {
         if case .ready(let text, _) = primaryTranslationState {
             return text
         }
         return word
     }
 
-    var dictionaryEntries: [DictionaryEntry] {
+    nonisolated var dictionaryEntries: [DictionaryEntry] {
         dictionarySections.compactMap(\.entry)
     }
 
-    var hasReadyDictionaryEntries: Bool {
+    nonisolated var visibleDictionarySections: [OverlayDictionarySection] {
+        dictionarySections.filter { section in
+            guard sourceLanguageIdentifier.map(Self.isChineseLanguageIdentifier) == true,
+                  section.sourceType == .system,
+                  case .empty = section.state else {
+                return true
+            }
+
+            return false
+        }
+    }
+
+    nonisolated var hasReadyDictionaryEntries: Bool {
         !dictionaryEntries.isEmpty
     }
 
     /// Backward compatibility: returns definitions from first dictionary entry
-    var definitions: [DictionaryEntry.Definition] {
+    nonisolated var definitions: [DictionaryEntry.Definition] {
         dictionaryEntries.first?.definitions ?? []
     }
 
     /// Backward compatibility: returns source from first dictionary entry
-    var dictionarySource: DictionaryEntry.Source? {
+    nonisolated var dictionarySource: DictionaryEntry.Source? {
         dictionaryEntries.first?.source
+    }
+
+    nonisolated private static func isChineseLanguageIdentifier(_ identifier: String) -> Bool {
+        Locale.Language(identifier: identifier).minimalIdentifier == "zh"
     }
 }
 
@@ -856,7 +875,8 @@ final class AppModel: ObservableObject {
                 sources: supportedDictionarySources,
                 primaryTranslationState: languagePair.isSameLanguage
                     ? .ready(selected.text, isFallback: false)
-                    : .loading
+                    : .loading,
+                sourceLanguageIdentifier: languagePair.sourceIdentifier
             )
             updateOverlay(state: .result(initialContent), anchor: mouseLocation)
 
@@ -1369,7 +1389,8 @@ final class AppModel: ObservableObject {
     private func makeInitialOverlayContent(
         word: String,
         sources: [DictionarySource],
-        primaryTranslationState: OverlayPrimaryTranslationState
+        primaryTranslationState: OverlayPrimaryTranslationState,
+        sourceLanguageIdentifier: String
     ) -> OverlayContent {
         let enabledSources = sources.filter(\.isEnabled)
 
@@ -1380,7 +1401,8 @@ final class AppModel: ObservableObject {
             usesCompactPrimaryTranslationStyle: !enabledSources.isEmpty,
             dictionarySections: enabledSources.map {
                 OverlayDictionarySection(sourceType: $0.type, state: .loading)
-            }
+            },
+            sourceLanguageIdentifier: sourceLanguageIdentifier
         )
     }
 

@@ -235,8 +235,8 @@ struct OverlayView: View {
             primaryTranslationSection(content: content)
 
             // Dictionary sections (one per dictionary source)
-            if !content.dictionarySections.isEmpty {
-                dictionarySectionsView(sections: content.dictionarySections)
+            if !content.visibleDictionarySections.isEmpty {
+                dictionarySectionsView(sections: content.visibleDictionarySections)
             }
         }
     }

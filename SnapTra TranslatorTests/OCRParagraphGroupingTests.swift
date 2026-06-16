@@ -28,6 +28,27 @@ final class OCRParagraphGroupingTests: XCTestCase {
         XCTAssertTrue(tokens.contains("部署"))
     }
 
+    func testTokenTextsUsesChineseWordBoundariesForProductFeatureLabels() {
+        let labels = [
+            "用户登录": ["用户", "登录"],
+            "权限管理": ["权限", "管理"],
+            "审计日志管理": ["审计", "日志", "管理"],
+            "多数据源管理": ["多", "数据", "源", "管理"],
+        ]
+
+        for (label, expectedTokens) in labels {
+            let tokens = OCRService.tokenTexts(in: label, language: "zh-Hans")
+
+            XCTAssertFalse(tokens.contains(label), "Expected '\(label)' to be split into word tokens")
+            for expectedToken in expectedTokens {
+                XCTAssertTrue(
+                    tokens.contains(expectedToken),
+                    "Expected '\(label)' tokens \(tokens) to contain '\(expectedToken)'"
+                )
+            }
+        }
+    }
+
     func testTokenTextsRecoversEnglishWordSkippedByTokenizerInMixedText() {
         let tokens = OCRService.tokenTexts(in: "1.词典选择：Apple Dictionary，原词典内容：", language: "zh-Hans")
 

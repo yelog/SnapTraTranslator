@@ -422,3 +422,71 @@ final class OverlayPrimaryTranslationStateTests: XCTestCase {
         )
     }
 }
+
+final class OverlayDictionarySectionDisplayTests: XCTestCase {
+    func testChineseSourceHidesEmptySystemDictionarySection() {
+        let content = OverlayContent(
+            word: "权限",
+            phonetic: nil,
+            primaryTranslationState: .ready("permission", isFallback: false),
+            usesCompactPrimaryTranslationStyle: true,
+            dictionarySections: [
+                OverlayDictionarySection(sourceType: .system, state: .empty),
+            ],
+            sourceLanguageIdentifier: "zh-Hans"
+        )
+
+        XCTAssertTrue(content.visibleDictionarySections.isEmpty)
+    }
+
+    func testChineseSourceKeepsReadySystemDictionarySection() {
+        let content = OverlayContent(
+            word: "权限",
+            phonetic: nil,
+            primaryTranslationState: .ready("permission", isFallback: false),
+            usesCompactPrimaryTranslationStyle: true,
+            dictionarySections: [
+                OverlayDictionarySection(
+                    sourceType: .system,
+                    state: .ready(Self.dictionaryEntry(translation: "permission"))
+                ),
+            ],
+            sourceLanguageIdentifier: "zh-Hans"
+        )
+
+        XCTAssertEqual(content.visibleDictionarySections.count, 1)
+    }
+
+    func testEnglishSourceKeepsEmptySystemDictionarySection() {
+        let content = OverlayContent(
+            word: "permission",
+            phonetic: nil,
+            primaryTranslationState: .ready("权限", isFallback: false),
+            usesCompactPrimaryTranslationStyle: true,
+            dictionarySections: [
+                OverlayDictionarySection(sourceType: .system, state: .empty),
+            ],
+            sourceLanguageIdentifier: "en"
+        )
+
+        XCTAssertEqual(content.visibleDictionarySections.count, 1)
+    }
+
+    private static func dictionaryEntry(translation: String) -> DictionaryEntry {
+        DictionaryEntry(
+            word: "权限",
+            phonetic: nil,
+            definitions: [
+                .init(
+                    partOfSpeech: "",
+                    field: nil,
+                    meaning: translation,
+                    translation: translation,
+                    examples: []
+                ),
+            ],
+            source: .systemDictionary,
+            synonyms: []
+        )
+    }
+}
