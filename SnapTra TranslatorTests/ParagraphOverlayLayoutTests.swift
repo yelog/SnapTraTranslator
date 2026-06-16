@@ -481,6 +481,23 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         XCTAssertFalse(shouldDismiss)
     }
 
+    func testEscapeMonitoringPolicyCoversPersistentParagraphAndTapKeptOverlays() {
+        XCTAssertTrue(OverlayEscapeDismissalPolicy.shouldMonitor(
+            isParagraphOverlayPresented: true,
+            isTapKeptOverlayPresented: false
+        ))
+
+        XCTAssertTrue(OverlayEscapeDismissalPolicy.shouldMonitor(
+            isParagraphOverlayPresented: false,
+            isTapKeptOverlayPresented: true
+        ))
+
+        XCTAssertFalse(OverlayEscapeDismissalPolicy.shouldMonitor(
+            isParagraphOverlayPresented: false,
+            isTapKeptOverlayPresented: false
+        ))
+    }
+
     func testParagraphOverlayControlPolicyShowsCloseForTapKeptOverlay() {
         XCTAssertTrue(ParagraphOverlayControlPolicy.showsPinButton(
             isParagraphOverlayMode: true,
