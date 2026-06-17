@@ -179,49 +179,12 @@ final class DictionaryService {
                 )
             }
 
-            // When the target is Chinese but the default dictionary returned
-            // English-only content (e.g. an encyclopedia entry), iterate
-            // through all installed dictionaries to find a bilingual result.
-            // DCSCopyTextDefinition(nil, …) picks the first match which may
-            // resolve to a monolingual encyclopedia instead of a bilingual
-            // dictionary.
-            if let dictionaries = DCSCopyAvailableDictionaries()?.takeRetainedValue() as? [DCSDictionary] {
-                #if DEBUG
-                print("[DictionaryService] Searching \(dictionaries.count) available dictionaries for Chinese result for '\(word)'...")
-                #endif
-                for dictionary in dictionaries {
-                    guard let candidate = DCSCopyTextDefinition(dictionary, cfWord, range) else {
-                        continue
-                    }
-                    let candidateHTML = candidate.takeRetainedValue() as String
-                    let candidateStripped = stripHTML(candidateHTML)
-                    let candidateHasChinese = candidateStripped.range(
-                        of: "\\p{Han}", options: .regularExpression
-                    ) != nil
-
-                    #if DEBUG
-                    let name = (DCSDictionaryGetName(dictionary)?.takeRetainedValue() as String?) ?? "unknown"
-                    print("[DictionaryService]   dict='\(name)' hasChinese=\(candidateHasChinese) len=\(candidateHTML.count)")
-                    #endif
-
-                    if candidateHasChinese {
-                        return parseSystemDictionaryHTML(
-                            candidateHTML,
-                            word: word,
-                            sourceLanguage: sourceLanguage,
-                            targetLanguage: targetLanguage,
-                            preferEnglish: preferEnglish
-                        )
-                    }
-                }
-            }
-
-            // No bilingual dictionary entry found.  Still return the
-            // English-only result so the translation pipeline can translate
-            // it to Chinese.  The overlay layer will hide the English meaning
-            // once a Chinese translation is available (Fix 2).
+            // The default dictionary returned English-only content. Keep that
+            // public result and let the translation pipeline translate it to
+            // Chinese instead of enumerating installed dictionaries with
+            // private Dictionary Services APIs.
             #if DEBUG
-            print("[DictionaryService] No Chinese-containing dictionary found for '\(word)', falling through to translation pipeline")
+            print("[DictionaryService] Default system dictionary result for '\(word)' has no Chinese content; falling through to translation pipeline")
             #endif
             return parseSystemDictionaryHTML(
                 html,
@@ -940,8 +903,37 @@ final class DictionaryService {
         guard !englishPart.isEmpty else {
             return PlainTextMeaning(meaning: trimmed, translation: nil)
         }
-        let cleanedTranslation = sanitizePlainTextTranslation(chinesePart)
+        let translationPrefix = mixedLanguageTranslationPrefix(from: englishPart)
+        let translationText = [translationPrefix, chinesePart]
+            .compactMap { $0 }
+            .joined(separator: " ")
+        let cleanedTranslation = sanitizePlainTextTranslation(translationText)
         return PlainTextMeaning(meaning: englishPart, translation: cleanedTranslation.isEmpty ? nil : cleanedTranslation)
+    }
+
+    private static func mixedLanguageTranslationPrefix(from englishPart: String) -> String? {
+        var candidate = englishPart
+        candidate = candidate.replacingOccurrences(
+            of: "^\\s*[①②③④⑤⑥⑦⑧⑨⑩\\d]+\\s*",
+            with: "",
+            options: .regularExpression
+        )
+        candidate = candidate.replacingOccurrences(
+            of: "\\([^)]*\\)",
+            with: " ",
+            options: .regularExpression
+        )
+        candidate = candidate.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        candidate = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !candidate.isEmpty,
+              candidate.range(of: "\\p{Han}", options: .regularExpression) == nil,
+              candidate.range(of: "[A-Z]", options: .regularExpression) != nil,
+              candidate.range(of: "^(?:[A-Z][A-Za-z0-9]*(?:\\.|'|’)?)(?:\\s+[A-Z][A-Za-z0-9]*(?:\\.|'|’)?)*$", options: .regularExpression) != nil else {
+            return nil
+        }
+
+        return candidate
     }
 
     /// Cleans a plain-text Chinese translation while preserving English proper nouns
