@@ -1673,7 +1673,6 @@ final class AppModel: ObservableObject {
             // during the direction switch, avoiding window resize jitter.
             // The text will be replaced in-place when the new translation arrives.
             content.isRetranslating = true
-            content.isManualInputFallback = false
             content.serviceResults = enabledServices.map { source in
                 ServiceTranslationResult(sourceType: source.type, state: .loading)
             }
