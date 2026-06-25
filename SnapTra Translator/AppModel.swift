@@ -404,6 +404,7 @@ final class AppModel: ObservableObject {
 
     private let debugOverlayWindowController = DebugOverlayWindowController()
     private let paragraphHighlightWindowController = ParagraphHighlightWindowController()
+    private let manualRegionSelectionWindowController = ManualRegionSelectionWindowController()
     lazy var overlayWindowController = OverlayWindowController(model: self)
     private let startupLanguageAvailabilityRetryDelays: [UInt64] = [
         1_000_000_000,
@@ -634,6 +635,46 @@ final class AppModel: ObservableObject {
         guard isParagraphOverlayPresented, isParagraphOverlayPinned else { return }
         overlayWindowController.endManualPositioning()
         refreshParagraphOverlayLayoutImmediately()
+    }
+
+    func beginManualParagraphRegionSelection() {
+        guard isParagraphOverlayPresented else { return }
+        guard permissions.status.screenRecording else {
+            updateOverlay(state: .error(L("Enable Screen Recording")), anchor: overlayAnchor)
+            return
+        }
+
+        isParagraphRegionInteractionActive = true
+        overlayWindowController.hideWindowOnly()
+        paragraphHighlightWindowController.hide()
+        debugOverlayWindowController.hide()
+
+        manualRegionSelectionWindowController.begin(
+            onComplete: { [weak self] rect in
+                Task { @MainActor in
+                    self?.handleManualParagraphRegionSelectionCompleted(rect)
+                }
+            },
+            onCancel: { [weak self] in
+                Task { @MainActor in
+                    self?.handleManualParagraphRegionSelectionCancelled()
+                }
+            }
+        )
+    }
+
+    private func handleManualParagraphRegionSelectionCompleted(_ rect: CGRect) {
+        isParagraphRegionInteractionActive = false
+        handleParagraphRegionResizeCompleted(rect)
+    }
+
+    private func handleManualParagraphRegionSelectionCancelled() {
+        isParagraphRegionInteractionActive = false
+        if isParagraphOverlayPresented {
+            overlayWindowController.show(at: overlayAnchor, makeKey: true)
+            overlayWindowController.setInteractive(true)
+        }
+        syncOverlayDismissalMonitoring()
     }
     
     private func startMouseTracking() {

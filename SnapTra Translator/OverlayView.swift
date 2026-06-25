@@ -750,6 +750,8 @@ struct OverlayView: View {
                     paragraphOriginalEditorToggleButton(isExpanded: originalVisibility.usesEditableOriginalText)
                 }
 
+                paragraphRegionSelectionButton()
+
                 paragraphOverlayControlButton()
             }
         }
@@ -778,6 +780,8 @@ struct OverlayView: View {
                 paragraphOriginalEditorToggleButton(isExpanded: originalVisibility.usesEditableOriginalText)
             }
 
+            paragraphRegionSelectionButton()
+
             paragraphHeaderDragArea()
 
             paragraphOverlayControlButton()
@@ -796,6 +800,17 @@ struct OverlayView: View {
             helpText: isExpanded ? L("Hide Original Text") : L("Edit Original Text"),
             action: { isParagraphOriginalEditorExpanded.toggle() }
         )
+    }
+
+    @ViewBuilder
+    private func paragraphRegionSelectionButton() -> some View {
+        if isParagraphOverlayMode {
+            paragraphOverlayControlButton(
+                systemImage: "crop",
+                helpText: L("Reselect Region"),
+                action: { model.beginManualParagraphRegionSelection() }
+            )
+        }
     }
 
     @ViewBuilder

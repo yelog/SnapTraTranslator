@@ -7,6 +7,11 @@ private final class OverlayPanel: NSPanel {
     override var canBecomeMain: Bool { true }
 }
 
+private final class ManualRegionSelectionPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 // MARK: - Debug OCR Border View
 
 struct DebugOCRBorderView: View {
@@ -84,6 +89,180 @@ final class DebugOverlayWindowController: NSWindowController {
     func hide() {
         hostingView.rootView = AnyView(EmptyView())
         window?.orderOut(nil)
+    }
+}
+
+// MARK: - Manual OCR Region Selection
+
+private final class ManualRegionSelectionView: NSView {
+    var onComplete: (CGRect) -> Void = { _ in }
+    var onCancel: () -> Void = {}
+
+    private var dragStart: CGPoint?
+    private var dragCurrent: CGPoint?
+    private let minimumSelectionSize = CGSize(width: 12, height: 12)
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.makeFirstResponder(self)
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .crosshair)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        NSColor.black.withAlphaComponent(0.28).setFill()
+        bounds.fill()
+
+        if let selectionRect {
+            NSColor.controlAccentColor.withAlphaComponent(0.16).setFill()
+            selectionRect.fill()
+
+            NSColor.controlAccentColor.setStroke()
+            let path = NSBezierPath(roundedRect: selectionRect, xRadius: 3, yRadius: 3)
+            path.lineWidth = 2
+            path.stroke()
+        }
+
+        drawHint()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        dragStart = event.locationInWindow
+        dragCurrent = event.locationInWindow
+        needsDisplay = true
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        dragCurrent = event.locationInWindow
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragCurrent = event.locationInWindow
+        guard let selectionRect,
+              selectionRect.width >= minimumSelectionSize.width,
+              selectionRect.height >= minimumSelectionSize.height,
+              let window else {
+            resetSelection()
+            return
+        }
+
+        let screenRect = window.convertToScreen(selectionRect)
+        resetSelection()
+        onComplete(screenRect)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {
+            resetSelection()
+            onCancel()
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    private var selectionRect: CGRect? {
+        guard let dragStart, let dragCurrent else { return nil }
+        return CGRect(
+            x: min(dragStart.x, dragCurrent.x),
+            y: min(dragStart.y, dragCurrent.y),
+            width: abs(dragStart.x - dragCurrent.x),
+            height: abs(dragStart.y - dragCurrent.y)
+        )
+    }
+
+    private func resetSelection() {
+        dragStart = nil
+        dragCurrent = nil
+        needsDisplay = true
+    }
+
+    private func drawHint() {
+        let text = L("Drag to select a region to translate · Esc to cancel")
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .foregroundColor: NSColor.white.withAlphaComponent(0.92),
+            .backgroundColor: NSColor.black.withAlphaComponent(0.35),
+        ]
+        let attributed = NSAttributedString(string: "  \(text)  ", attributes: attributes)
+        let size = attributed.size()
+        let rect = CGRect(
+            x: bounds.midX - size.width / 2,
+            y: bounds.maxY - size.height - 28,
+            width: size.width,
+            height: size.height
+        )
+        attributed.draw(in: rect)
+    }
+}
+
+final class ManualRegionSelectionWindowController {
+    private var panels: [NSPanel] = []
+    private var didFinish = false
+
+    func begin(onComplete: @escaping (CGRect) -> Void, onCancel: @escaping () -> Void) {
+        hide()
+        didFinish = false
+
+        NSApp.activate(ignoringOtherApps: true)
+
+        for screen in NSScreen.screens {
+            let selectionView = ManualRegionSelectionView(frame: CGRect(origin: .zero, size: screen.frame.size))
+            selectionView.autoresizingMask = [.width, .height]
+            let panel = ManualRegionSelectionPanel(
+                contentRect: screen.frame,
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.contentView = selectionView
+            panel.isReleasedWhenClosed = false
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = false
+            panel.isFloatingPanel = true
+            panel.hidesOnDeactivate = false
+            panel.worksWhenModal = true
+            panel.level = .screenSaver
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            panel.ignoresMouseEvents = false
+            panel.acceptsMouseMovedEvents = true
+
+            selectionView.onComplete = { [weak self] rect in
+                guard let self, !self.didFinish else { return }
+                self.didFinish = true
+                self.hide()
+                onComplete(rect)
+            }
+            selectionView.onCancel = { [weak self] in
+                guard let self, !self.didFinish else { return }
+                self.didFinish = true
+                self.hide()
+                onCancel()
+            }
+
+            CaptureExclusionRegistry.shared.register(panel)
+            panels.append(panel)
+            panel.setFrame(screen.frame, display: true)
+            panel.orderFrontRegardless()
+            panel.makeKeyAndOrderFront(nil)
+            panel.makeFirstResponder(selectionView)
+            selectionView.needsDisplay = true
+            panel.displayIfNeeded()
+        }
+    }
+
+    func hide() {
+        for panel in panels {
+            panel.orderOut(nil)
+        }
+        panels.removeAll()
     }
 }
 
