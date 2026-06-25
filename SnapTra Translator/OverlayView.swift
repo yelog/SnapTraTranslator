@@ -276,7 +276,8 @@ struct OverlayView: View {
             hasOriginalText: hasOriginalText,
             isParagraphOverlayPinned: model.isParagraphOverlayPinned,
             hidesOriginalTextSetting: model.settings.hideOriginalTextInSentenceOverlay,
-            isOriginalEditorExpanded: isParagraphOriginalEditorExpanded
+            isOriginalEditorExpanded: isParagraphOriginalEditorExpanded,
+            isManualInputFallback: content.isManualInputFallback
         )
         let showsAutoDismissFailure = !hasOriginalText && content.serviceResults.isEmpty && !originalVisibility.showsOriginalTextRegion
         let originalFontSize: CGFloat = if content.useFixedFontSize {
@@ -1630,14 +1631,15 @@ enum ParagraphOriginalVisibilityPolicy {
         hasOriginalText: Bool,
         isParagraphOverlayPinned: Bool,
         hidesOriginalTextSetting: Bool,
-        isOriginalEditorExpanded: Bool
+        isOriginalEditorExpanded: Bool,
+        isManualInputFallback: Bool = false
     ) -> Decision {
         let canEditOriginalText = isParagraphOverlayPinned
         let showsEditableFallback = canEditOriginalText && !hasOriginalText
-        let showsOriginalEditorToggle = canEditOriginalText && hidesOriginalTextSetting && hasOriginalText
+        let showsOriginalEditorToggle = canEditOriginalText && hidesOriginalTextSetting && hasOriginalText && !isManualInputFallback
 
         let showsOriginalTextRegion: Bool = if hidesOriginalTextSetting {
-            showsEditableFallback || (canEditOriginalText && isOriginalEditorExpanded)
+            showsEditableFallback || isManualInputFallback || (canEditOriginalText && isOriginalEditorExpanded)
         } else {
             hasOriginalText || canEditOriginalText
         }

@@ -540,7 +540,8 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
             hasOriginalText: true,
             isParagraphOverlayPinned: true,
             hidesOriginalTextSetting: false,
-            isOriginalEditorExpanded: false
+            isOriginalEditorExpanded: false,
+            isManualInputFallback: false
         )
 
         XCTAssertTrue(decision.showsOriginalTextRegion)
@@ -554,7 +555,8 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
             hasOriginalText: true,
             isParagraphOverlayPinned: true,
             hidesOriginalTextSetting: true,
-            isOriginalEditorExpanded: false
+            isOriginalEditorExpanded: false,
+            isManualInputFallback: false
         )
 
         XCTAssertFalse(decision.showsOriginalTextRegion)
@@ -568,7 +570,23 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
             hasOriginalText: false,
             isParagraphOverlayPinned: true,
             hidesOriginalTextSetting: true,
-            isOriginalEditorExpanded: false
+            isOriginalEditorExpanded: false,
+            isManualInputFallback: false
+        )
+
+        XCTAssertTrue(decision.showsOriginalTextRegion)
+        XCTAssertTrue(decision.usesEditableOriginalText)
+        XCTAssertFalse(decision.showsOriginalEditorToggle)
+        XCTAssertFalse(decision.hidesOriginalTextRegion)
+    }
+
+    func testOriginalVisibilityKeepsManualInputFallbackVisibleAfterTextEntry() {
+        let decision = ParagraphOriginalVisibilityPolicy.resolve(
+            hasOriginalText: true,
+            isParagraphOverlayPinned: true,
+            hidesOriginalTextSetting: true,
+            isOriginalEditorExpanded: false,
+            isManualInputFallback: true
         )
 
         XCTAssertTrue(decision.showsOriginalTextRegion)
@@ -582,7 +600,8 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
             hasOriginalText: true,
             isParagraphOverlayPinned: true,
             hidesOriginalTextSetting: true,
-            isOriginalEditorExpanded: true
+            isOriginalEditorExpanded: true,
+            isManualInputFallback: false
         )
 
         XCTAssertTrue(decision.showsOriginalTextRegion)
@@ -596,7 +615,8 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
             hasOriginalText: true,
             isParagraphOverlayPinned: false,
             hidesOriginalTextSetting: true,
-            isOriginalEditorExpanded: true
+            isOriginalEditorExpanded: true,
+            isManualInputFallback: false
         )
 
         XCTAssertFalse(decision.showsOriginalTextRegion)

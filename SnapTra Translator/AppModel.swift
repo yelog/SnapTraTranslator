@@ -117,6 +117,7 @@ struct ParagraphOverlayContent: Equatable {
     var sourceLanguageIdentifier: String?
     var selectedTargetLanguageIdentifier: String?
     var isRetranslating: Bool
+    var isManualInputFallback: Bool
 
     init(
         originalText: String? = nil,
@@ -127,7 +128,8 @@ struct ParagraphOverlayContent: Equatable {
         languageOptions: [ParagraphTranslationLanguageOption] = [],
         sourceLanguageIdentifier: String? = nil,
         selectedTargetLanguageIdentifier: String? = nil,
-        isRetranslating: Bool = false
+        isRetranslating: Bool = false,
+        isManualInputFallback: Bool = false
     ) {
         self.originalText = originalText
         self.translationState = translationState
@@ -138,6 +140,7 @@ struct ParagraphOverlayContent: Equatable {
         self.sourceLanguageIdentifier = sourceLanguageIdentifier
         self.selectedTargetLanguageIdentifier = selectedTargetLanguageIdentifier
         self.isRetranslating = isRetranslating
+        self.isManualInputFallback = isManualInputFallback
     }
 }
 
@@ -1149,7 +1152,8 @@ final class AppModel: ObservableObject {
                 paragraphHighlightWindowController.hide()
                 let content = ParagraphOverlayContent(
                     originalText: nil,
-                    translationState: .failed("No paragraph detected under cursor")
+                    translationState: .failed("No paragraph detected under cursor"),
+                    isManualInputFallback: true
                 )
                 updateOverlay(state: .paragraphResult(content), anchor: mouseLocation)
                 return
@@ -1159,7 +1163,8 @@ final class AppModel: ObservableObject {
                 guard !text.isEmpty else {
                     let content = ParagraphOverlayContent(
                         originalText: nil,
-                        translationState: .failed("No paragraph detected under cursor")
+                        translationState: .failed("No paragraph detected under cursor"),
+                        isManualInputFallback: true
                     )
                     updateOverlay(state: .paragraphResult(content), anchor: mouseLocation)
                     return
@@ -1346,7 +1351,8 @@ final class AppModel: ObservableObject {
             guard !text.isEmpty else {
                 let content = ParagraphOverlayContent(
                     originalText: nil,
-                    translationState: .failed("No text detected in selected region")
+                    translationState: .failed("No text detected in selected region"),
+                    isManualInputFallback: true
                 )
                 updateOverlay(state: .paragraphResult(content), anchor: anchor)
                 return
@@ -1667,6 +1673,7 @@ final class AppModel: ObservableObject {
             // during the direction switch, avoiding window resize jitter.
             // The text will be replaced in-place when the new translation arrives.
             content.isRetranslating = true
+            content.isManualInputFallback = false
             content.serviceResults = enabledServices.map { source in
                 ServiceTranslationResult(sourceType: source.type, state: .loading)
             }
