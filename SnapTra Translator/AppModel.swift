@@ -806,6 +806,7 @@ final class AppModel: ObservableObject {
         activeLookupID = lookupID
         activeParagraphRect = rect
         overlayPreferredWidth = max(320, rect.width)
+        paragraphHighlightWindowController.show(at: rect)
         setOverlayAnchor(CGPoint(x: rect.midX, y: rect.minY))
         updateOverlay(state: .paragraphLoading, anchor: overlayAnchor)
 
