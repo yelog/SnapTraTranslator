@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.10-beta.0] - 2026-06-29
+
+### Added
+- add manual region selection
+- keep selected text bubble after tap
+- keep word bubble after tap
+- default bidirectional translation and hide original text to enabled
+- generalize bidirectional detection and show provider language support
+- show language pack download status in language pickers
+- add plain text word export
+- add Zhipu LLM provider
+- add streaming LLM translation
+- add outside dismissal and hide original option
+- track word source languages
+
+### Changed
+- improve paragraph highlight resize interaction
+- default sentence pronunciation to off
+- reduce LLM reasoning latency
+
+### Fixed
+- show highlight for manual OCR regions
+- keep original text visible after manual input submit
+- keep manual input visible after typing when OCR finds no text
+- remove private dictionary services symbols
+- improve Chinese word lookup segmentation
+- dismiss kept word overlay with escape
+- stabilize OCR region resize drag
+- allow selecting kept word text
+- keep tap-kept bubble reachable below cursor
+- enable tap-kept word bubble by default
+- keep primary word translation stable
+- strip inline pinyin annotations from system dictionary translations
+- prefer bilingual content and suppress redundant English for en→zh lookups
+- prevent window jitter on language direction toggle
+- preserve English content in ECDICT definitions and translations
+- relax selected text bounds routing
+- normalize LLM OCR line breaks
+- refine hidden original sentence overlay
+- translate non-English text lines
+- stabilize language pack status indicators
+- recover skipped mixed-text words
+
 ## [1.3.9] - 2026-06-15
 
 ### Added
