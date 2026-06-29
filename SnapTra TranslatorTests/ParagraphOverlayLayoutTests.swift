@@ -535,6 +535,38 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         ))
     }
 
+    func testWordOverlayHeaderLayoutReservesControlsOutsideIdentityGroup() {
+        let metrics = WordOverlayHeaderLayoutPolicy.resolve(
+            panelWidth: 380,
+            horizontalPadding: 18,
+            controlGroupWidth: 54,
+            gapBetweenIdentityAndControls: 12
+        )
+
+        XCTAssertEqual(metrics.identityGroupMaxWidth, 278, accuracy: 0.001)
+        XCTAssertEqual(metrics.titleMaxWidth, 278, accuracy: 0.001)
+    }
+
+    func testWordOverlayHeaderLayoutKeepsPhoneticBadgeReadable() {
+        let metrics = WordOverlayHeaderLayoutPolicy.resolve(
+            panelWidth: 380,
+            horizontalPadding: 18,
+            controlGroupWidth: 54,
+            gapBetweenIdentityAndControls: 12
+        )
+
+        XCTAssertFalse(metrics.allowsPhoneticBadgeHorizontalCompression)
+    }
+
+    func testWordOverlayHeaderLayoutNormalizesDisplayedPhonetic() {
+        XCTAssertEqual(
+            WordOverlayHeaderLayoutPolicy.displayedPhonetic("  pəˈtɪkjʊlə  "),
+            "pəˈtɪkjʊlə"
+        )
+        XCTAssertNil(WordOverlayHeaderLayoutPolicy.displayedPhonetic(" \n\t "))
+        XCTAssertNil(WordOverlayHeaderLayoutPolicy.displayedPhonetic(nil))
+    }
+
     func testOriginalVisibilityShowsEditableOriginalWhenHideSettingIsOffAndOverlayIsPinned() {
         let decision = ParagraphOriginalVisibilityPolicy.resolve(
             hasOriginalText: true,

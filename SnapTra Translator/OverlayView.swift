@@ -17,6 +17,9 @@ struct OverlayView: View {
     private let paragraphHeaderHeight: CGFloat = 34
     private let compactSectionMinHeight: CGFloat = 28
     private let paragraphTextHorizontalPadding: CGFloat = 18
+    private let wordHeaderHorizontalPadding: CGFloat = 18
+    private let wordHeaderControlGroupWidth: CGFloat = 54
+    private let wordHeaderControlGap: CGFloat = 12
 
     init(
         paragraphOverlayMaxHeightOverride: CGFloat? = nil,
@@ -1069,67 +1072,119 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func headerSection(content: OverlayContent) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Word title with phonetic, copy button and close button
+        let metrics = WordOverlayHeaderLayoutPolicy.resolve(
+            panelWidth: overlayWidth,
+            horizontalPadding: wordHeaderHorizontalPadding,
+            controlGroupWidth: showsWordOverlayControls ? wordHeaderControlGroupWidth : 0,
+            gapBetweenIdentityAndControls: showsWordOverlayControls ? wordHeaderControlGap : 0
+        )
+
+        HStack(alignment: .top, spacing: showsWordOverlayControls ? wordHeaderControlGap : 0) {
+            wordIdentityGroup(content: content, metrics: metrics)
+                .frame(maxWidth: metrics.identityGroupMaxWidth, alignment: .leading)
+
+            Spacer(minLength: 0)
+
+            if showsWordOverlayControls {
+                wordHeaderControlGroup(copyText: content.word)
+                    .frame(width: wordHeaderControlGroupWidth, alignment: .trailing)
+            }
+        }
+        .padding(.horizontal, wordHeaderHorizontalPadding)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
+    }
+
+    @ViewBuilder
+    private func wordIdentityGroup(
+        content: OverlayContent,
+        metrics: WordOverlayHeaderLayoutPolicy.Metrics
+    ) -> some View {
+        let displayedPhonetic = WordOverlayHeaderLayoutPolicy.displayedPhonetic(content.phonetic)
+
+        ViewThatFits(in: .horizontal) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                if useSelectableWordText {
-                    wordSelectableText(
-                        content.word,
-                        font: .systemFont(ofSize: 22, weight: .bold),
-                        preferredLineHeight: 28
+                wordInlineTitleText(content.word)
+
+                if let displayedPhonetic {
+                    phoneticBadge(
+                        displayedPhonetic,
+                        resistsHorizontalCompression: !metrics.allowsPhoneticBadgeHorizontalCompression
                     )
-                } else {
-                    Text(content.word)
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
-                        .foregroundStyle(.primary)
-                        .tracking(0.3)
                 }
+            }
 
-                // Phonetic tag placed right after the word
-                if let phonetic = content.phonetic, !phonetic.isEmpty {
-                    Text(phonetic)
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .strokeBorder(.secondary.opacity(0.25), lineWidth: 0.5)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .fill(.secondary.opacity(0.06))
-                                )
-                        )
-                }
+            VStack(alignment: .leading, spacing: 4) {
+                wordTitleText(content.word, maxWidth: metrics.titleMaxWidth)
 
-                // 非持续模式或短按保持模式下显示复制按钮
-                if showsWordOverlayControls {
-                    CopyButton(text: content.word)
-                }
-
-                Spacer()
-
-                // 非持续模式或短按保持模式下显示关闭按钮
-                if showsWordOverlayControls {
-                    Button {
-                        model.dismissOverlay()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 20, height: 20)
-                            .background(
-                                Circle()
-                                    .fill(.secondary.opacity(0.1))
-                            )
-                    }
-                    .buttonStyle(.plain)
+                if let displayedPhonetic {
+                    phoneticBadge(
+                        displayedPhonetic,
+                        resistsHorizontalCompression: !metrics.allowsPhoneticBadgeHorizontalCompression
+                    )
                 }
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 16)
-        .padding(.bottom, 12)
+    }
+
+    private func wordInlineTitleText(_ word: String) -> some View {
+        Text(word)
+            .font(.system(size: 22, weight: .bold, design: .rounded))
+            .foregroundStyle(.primary)
+            .tracking(0.3)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func wordTitleText(_ word: String, maxWidth: CGFloat) -> some View {
+        Text(word)
+            .font(.system(size: 22, weight: .bold, design: .rounded))
+            .foregroundStyle(.primary)
+            .tracking(0.3)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: maxWidth, alignment: .leading)
+    }
+
+    private func phoneticBadge(
+        _ phonetic: String,
+        resistsHorizontalCompression: Bool
+    ) -> some View {
+        Text(phonetic)
+            .font(.system(size: 11, weight: .regular, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .fixedSize(horizontal: resistsHorizontalCompression, vertical: false)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(.secondary.opacity(0.25), lineWidth: 0.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(.secondary.opacity(0.06))
+                    )
+            )
+    }
+
+    private func wordHeaderControlGroup(copyText: String) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            CopyButton(text: copyText)
+
+            Button {
+                model.dismissOverlay()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .background(
+                        Circle()
+                            .fill(.secondary.opacity(0.1))
+                    )
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     @ViewBuilder
@@ -1660,6 +1715,37 @@ enum WordOverlayTextSelectionPolicy {
         showsWordOverlayControls: Bool
     ) -> Bool {
         isWordOverlayMode && showsWordOverlayControls
+    }
+}
+
+enum WordOverlayHeaderLayoutPolicy {
+    struct Metrics: Equatable {
+        let identityGroupMaxWidth: CGFloat
+        let titleMaxWidth: CGFloat
+        let allowsPhoneticBadgeHorizontalCompression: Bool
+    }
+
+    static func resolve(
+        panelWidth: CGFloat,
+        horizontalPadding: CGFloat,
+        controlGroupWidth: CGFloat,
+        gapBetweenIdentityAndControls: CGFloat
+    ) -> Metrics {
+        let contentWidth = max(0, panelWidth - horizontalPadding * 2)
+        let reservedControlWidth = max(0, controlGroupWidth) + max(0, gapBetweenIdentityAndControls)
+        let identityGroupMaxWidth = max(0, contentWidth - reservedControlWidth)
+
+        return Metrics(
+            identityGroupMaxWidth: identityGroupMaxWidth,
+            titleMaxWidth: identityGroupMaxWidth,
+            allowsPhoneticBadgeHorizontalCompression: false
+        )
+    }
+
+    static func displayedPhonetic(_ phonetic: String?) -> String? {
+        guard let phonetic else { return nil }
+        let trimmed = phonetic.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
