@@ -15,10 +15,16 @@ enum InPlaceTranslationState: Equatable {
     case failed(String)
 }
 
+struct InPlaceTranslationTextFrame: Equatable {
+    var origin: CGPoint
+    var size: CGSize
+}
+
 struct InPlaceTranslationLayoutResult: Equatable {
     let fontSize: CGFloat
     let padding: CGFloat
     let cornerRadius: CGFloat
+    let textFrame: InPlaceTranslationTextFrame
 }
 
 enum InPlaceTranslationLayout {
@@ -27,8 +33,23 @@ enum InPlaceTranslationLayout {
         preferredFontSize: CGFloat,
         translatedText: String
     ) -> InPlaceTranslationLayoutResult {
+        resolve(
+            sourceRect: sourceRect,
+            sourceLineRects: [],
+            preferredFontSize: preferredFontSize,
+            translatedText: translatedText
+        )
+    }
+
+    static func resolve(
+        sourceRect: CGRect,
+        sourceLineRects: [CGRect],
+        preferredFontSize: CGFloat,
+        translatedText: String
+    ) -> InPlaceTranslationLayoutResult {
+        let width = max(sourceRect.width, 1)
         let height = max(sourceRect.height, 1)
-        let area = max(sourceRect.width * sourceRect.height, 1)
+        let area = max(width * height, 1)
         let padding: CGFloat = height < 32 ? 4 : 8
         let cornerRadius: CGFloat = height < 32 ? 4 : 7
 
@@ -45,10 +66,27 @@ enum InPlaceTranslationLayout {
         let sizeByArea = area < 8_000 ? min(sizeByHeight, 13) : sizeByHeight
         let fontSize = max(10, min(22, sizeByArea * lengthPenalty))
 
+        let lineInset = max(2, min(6, height * 0.06))
+        let localLines = sourceLineRects
+            .map { CGRect(x: $0.minX - sourceRect.minX, y: $0.minY - sourceRect.minY, width: $0.width, height: $0.height) }
+            .filter { $0.width > 1 && $0.height > 1 }
+        let anchor = localLines.sorted { $0.minY < $1.minY }.first
+
+        let maxTextWidth = max(20, width - 2 * lineInset)
+        let maxTextHeight = max(16, height - 2 * lineInset)
+        let clampedX = max(lineInset, min((anchor?.minX ?? 0) + lineInset, width - lineInset - maxTextWidth / 2))
+        let clampedY = max(lineInset, min((anchor?.minY ?? 0) + lineInset, height - lineInset - maxTextHeight / 2))
+        let textWidth = max(20, width - clampedX - lineInset)
+        let textHeight = max(16, height - clampedY - lineInset)
+
         return InPlaceTranslationLayoutResult(
             fontSize: fontSize,
             padding: padding,
-            cornerRadius: cornerRadius
+            cornerRadius: cornerRadius,
+            textFrame: InPlaceTranslationTextFrame(
+                origin: CGPoint(x: clampedX, y: clampedY),
+                size: CGSize(width: textWidth, height: textHeight)
+            )
         )
     }
 }
