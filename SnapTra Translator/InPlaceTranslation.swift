@@ -1,6 +1,11 @@
 import AppKit
 import SwiftUI
 
+private final class InPlaceTranslationPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 struct InPlaceTranslationContent: Equatable {
     var originalText: String
     var translationState: InPlaceTranslationState
@@ -239,22 +244,62 @@ struct InPlaceTranslationView: View {
                 )
                 .shadow(color: .black.opacity(0.10), radius: 2, x: 0, y: 1)
 
-            Text(displayText)
-                .font(.system(size: layout.fontSize, weight: .semibold))
-                .foregroundStyle(Color(nsColor: content.style.foregroundColor))
-                .multilineTextAlignment(.leading)
-                .lineLimit(nil)
-                .minimumScaleFactor(0.55)
-                .frame(
-                    width: layout.textFrame.size.width,
-                    height: layout.textFrame.size.height,
-                    alignment: .topLeading
-                )
-                .position(
-                    x: layout.textFrame.origin.x + layout.textFrame.size.width / 2,
-                    y: layout.textFrame.origin.y + layout.textFrame.size.height / 2
-                )
+            InPlaceSelectableTextView(
+                text: displayText,
+                font: .systemFont(ofSize: layout.fontSize, weight: .semibold),
+                textColor: content.style.foregroundColor
+            )
+            .frame(
+                width: layout.textFrame.size.width,
+                height: layout.textFrame.size.height,
+                alignment: .topLeading
+            )
+            .position(
+                x: layout.textFrame.origin.x + layout.textFrame.size.width / 2,
+                y: layout.textFrame.origin.y + layout.textFrame.size.height / 2
+            )
         }
+    }
+}
+
+// MARK: - Selectable Text View
+
+private struct InPlaceSelectableTextView: NSViewRepresentable {
+    let text: String
+    let font: NSFont
+    let textColor: NSColor
+
+    func makeNSView(context: Context) -> NSTextView {
+        let textView = NSTextView()
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
+        textView.focusRingType = .none
+        textView.textContainerInset = .zero
+        textView.autoresizingMask = [.width, .height]
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.lineBreakMode = .byWordWrapping
+        applyContent(textView)
+        return textView
+    }
+
+    func updateNSView(_ textView: NSTextView, context: Context) {
+        applyContent(textView)
+    }
+
+    private func applyContent(_ textView: NSTextView) {
+        textView.textStorage?.setAttributedString(
+            NSAttributedString(
+                string: text,
+                attributes: [.font: font, .foregroundColor: textColor]
+            )
+        )
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextView, context: Context) -> CGSize? {
+        proposal.replacingUnspecifiedDimensions()
     }
 }
 
@@ -264,7 +309,7 @@ final class InPlaceTranslationWindowController: NSWindowController {
 
     init() {
         hostingView = NSHostingView(rootView: AnyView(EmptyView()))
-        let panel = NSPanel(
+        let panel = InPlaceTranslationPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -293,10 +338,24 @@ final class InPlaceTranslationWindowController: NSWindowController {
         hostingView.rootView = AnyView(InPlaceTranslationView(content: content))
         window.setFrame(content.sourceRect, display: true)
         window.orderFrontRegardless()
+        if case .ready = content.translationState {
+            setInteractive(true)
+        } else {
+            setInteractive(false)
+        }
     }
 
     func hide() {
+        setInteractive(false)
         hostingView.rootView = AnyView(EmptyView())
         window?.orderOut(nil)
+    }
+
+    func setInteractive(_ interactive: Bool) {
+        guard let window else { return }
+        window.ignoresMouseEvents = !interactive
+        if interactive {
+            window.makeKey()
+        }
     }
 }
