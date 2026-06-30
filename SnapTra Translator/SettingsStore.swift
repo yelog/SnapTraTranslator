@@ -344,6 +344,9 @@ final class SettingsStore: ObservableObject {
     @Published var selectedTextTranslationEnabled: Bool {
         didSet { defaults.set(selectedTextTranslationEnabled, forKey: AppSettingKey.selectedTextTranslationEnabled) }
     }
+    @Published var selectedTextClipboardFallback: Bool {
+        didSet { defaults.set(selectedTextClipboardFallback, forKey: AppSettingKey.selectedTextClipboardFallback) }
+    }
     @Published var hideOriginalTextInSentenceOverlay: Bool {
         didSet { defaults.set(hideOriginalTextInSentenceOverlay, forKey: AppSettingKey.hideOriginalTextInSentenceOverlay) }
     }
@@ -483,6 +486,8 @@ final class SettingsStore: ObservableObject {
             rawValue: doubleTapModeValue ?? ""
         ) ?? .cursorParagraph
         selectedTextTranslationEnabled = sentenceTranslationSettings.selectedTextTranslationEnabled
+        let clipboardFallbackValue = defaults.object(forKey: AppSettingKey.selectedTextClipboardFallback) as? Bool
+        selectedTextClipboardFallback = clipboardFallbackValue ?? true
         let hideOriginalTextValue = defaults.object(forKey: AppSettingKey.hideOriginalTextInSentenceOverlay) as? Bool
         hideOriginalTextInSentenceOverlay = hideOriginalTextValue ?? true
         let sentencePresentationModeValue = defaults.string(forKey: AppSettingKey.sentenceTranslationPresentationMode)
@@ -543,6 +548,7 @@ final class SettingsStore: ObservableObject {
             forKey: AppSettingKey.doubleTapSentenceTranslationMode
         )
         defaults.set(selectedTextTranslationEnabled, forKey: AppSettingKey.selectedTextTranslationEnabled)
+        defaults.set(selectedTextClipboardFallback, forKey: AppSettingKey.selectedTextClipboardFallback)
         defaults.set(hideOriginalTextInSentenceOverlay, forKey: AppSettingKey.hideOriginalTextInSentenceOverlay)
         defaults.set(
             sentenceTranslationPresentationMode.rawValue,

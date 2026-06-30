@@ -1061,6 +1061,7 @@ final class AppModel: ObservableObject {
             return .ocrWord
         }
 
+        selectedTextService.clipboardFallbackEnabled = settings.selectedTextClipboardFallback
         let selectionSnapshot = selectedTextService.currentSelectionSnapshot(mouseLocation: mouseLocation)
         if let selectionSnapshot {
             debugSelectedTextRoute(

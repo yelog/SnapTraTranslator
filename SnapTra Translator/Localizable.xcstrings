@@ -1979,6 +1979,76 @@
         }
       }
     },
+    "Clipboard Fallback" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clipboard Fallback"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クリップボード代替取得"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "클립보드 대체"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "剪贴板回退"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "剪貼簿回退"
+          }
+        }
+      }
+    },
+    "Use Cmd+C to get selected text when accessibility fails (for WeChat, Telegram, etc.)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use Cmd+C to get selected text when accessibility fails (for WeChat, Telegram, etc.)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アクセシビリティで取得できない場合、Cmd+Cで選択テキストを取得（WeChat、Telegramなど）"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "접근성으로 가져올 수 없을 때 Cmd+C로 선택 텍스트 가져오기 (WeChat, Telegram 등)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当辅助功能无法获取时，使用 Cmd+C 获取选中文字（适用于微信、Telegram 等）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "當輔助功能無法取得時，使用 Cmd+C 取得選取文字（適用於微信、Telegram 等）"
+          }
+        }
+      }
+    },
     "DeepL Translate" : {
       "extractionState" : "stale",
       "localizations" : {

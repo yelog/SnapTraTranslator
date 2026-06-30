@@ -565,6 +565,18 @@ struct GeneralSettingsView: View {
                             title: L("Translate Selected Text"),
                             isOn: $model.settings.selectedTextTranslationEnabled
                         )
+
+                        if model.settings.selectedTextTranslationEnabled {
+                            Divider()
+                                .padding(.horizontal, 28)
+                                .opacity(0.3)
+
+                            ToggleRow(
+                                title: L("Clipboard Fallback"),
+                                subtitle: L("Use Cmd+C to get selected text when accessibility fails (for WeChat, Telegram, etc.)"),
+                                isOn: $model.settings.selectedTextClipboardFallback
+                            )
+                        }
                     }
 
                     Divider()

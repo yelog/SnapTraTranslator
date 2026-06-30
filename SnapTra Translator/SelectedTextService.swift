@@ -16,6 +16,9 @@ final class SelectedTextService {
         let depth: Int
     }
 
+    /// Whether to fall back to Cmd+C clipboard simulation when AXUIElement fails.
+    var clipboardFallbackEnabled = true
+
     func currentSelectionSnapshot(mouseLocation: CGPoint) -> SelectedTextSnapshot? {
         let systemWideElement = AXUIElementCreateSystemWide()
         configureMessagingTimeout(for: systemWideElement)
@@ -51,6 +54,13 @@ final class SelectedTextService {
                 return snapshot
             }
             debugLog("\(context) no usable snapshot")
+        }
+
+        debugLog("no selection snapshot from AXUIElement")
+
+        if clipboardFallbackEnabled, let snapshot = clipboardSelectionSnapshot(mouseLocation: mouseLocation) {
+            debugLog("clipboard fallback success text=\"\(truncate(snapshot.text))\"")
+            return snapshot
         }
 
         debugLog("no selection snapshot")
@@ -602,6 +612,102 @@ final class SelectedTextService {
     private func truncate(_ text: String, limit: Int = 120) -> String {
         guard text.count > limit else { return text }
         return String(text.prefix(limit)) + "..."
+    }
+
+    // MARK: - Clipboard Fallback
+
+    private func clipboardSelectionSnapshot(mouseLocation: CGPoint) -> SelectedTextSnapshot? {
+        let pasteboard = NSPasteboard.general
+
+        // Save current clipboard state
+        let originalChangeCount = pasteboard.changeCount
+        let originalItems = savePasteboardItems(from: pasteboard)
+
+        // Simulate Cmd+C
+        simulateCmdC()
+
+        // Wait for clipboard to update (up to 150ms)
+        let deadline = Date().addingTimeInterval(0.15)
+        while pasteboard.changeCount == originalChangeCount, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+
+        // Read selected text from clipboard
+        guard let text = pasteboard.string(forType: .string),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            debugLog("clipboard fallback: no text on pasteboard")
+            restorePasteboard(items: originalItems, to: pasteboard)
+            return nil
+        }
+
+        let frontmostApp = NSWorkspace.shared.frontmostApplication
+        let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let snapshot = SelectedTextSnapshot(
+            text: normalizedText,
+            selectedRange: NSRange(location: NSNotFound, length: normalizedText.utf16.count),
+            bounds: nil,
+            sourceAppIdentifier: frontmostApp?.bundleIdentifier
+        )
+
+        // Restore original clipboard
+        restorePasteboard(items: originalItems, to: pasteboard)
+
+        return snapshot
+    }
+
+    private func simulateCmdC() {
+        guard let source = CGEventSource(stateID: .combinedSessionState) else {
+            debugLog("clipboard fallback: failed to create event source")
+            return
+        }
+
+        let keyCodeC: CGKeyCode = 0x08
+
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCodeC, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCodeC, keyDown: false) else {
+            debugLog("clipboard fallback: failed to create key events")
+            return
+        }
+
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
+    }
+
+    private struct PasteboardBackup {
+        let changeCount: Int
+        let items: [[NSPasteboard.PasteboardType: Data]]
+    }
+
+    private func savePasteboardItems(from pasteboard: NSPasteboard) -> PasteboardBackup {
+        var items: [[NSPasteboard.PasteboardType: Data]] = []
+        if let pasteboardItems = pasteboard.pasteboardItems {
+            for item in pasteboardItems {
+                var dict: [NSPasteboard.PasteboardType: Data] = [:]
+                for type in item.types {
+                    if let data = item.data(forType: type) {
+                        dict[type] = data
+                    }
+                }
+                items.append(dict)
+            }
+        }
+        return PasteboardBackup(changeCount: pasteboard.changeCount, items: items)
+    }
+
+    private func restorePasteboard(items backup: PasteboardBackup, to pasteboard: NSPasteboard) {
+        guard !backup.items.isEmpty else { return }
+        pasteboard.clearContents()
+        for dict in backup.items {
+            let item = NSPasteboardItem()
+            for (type, data) in dict {
+                item.setData(data, forType: type)
+            }
+            pasteboard.writeObjects([item])
+        }
     }
 
     private func debugLog(_ message: String) {
