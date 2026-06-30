@@ -219,32 +219,37 @@ struct InPlaceTranslationView: View {
     private var layout: InPlaceTranslationLayoutResult {
         InPlaceTranslationLayout.resolve(
             sourceRect: content.sourceRect,
+            sourceLineRects: content.sourceLineRects,
             preferredFontSize: content.bodyFontSize,
             translatedText: displayText
         )
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous)
-                .fill(.regularMaterial)
+                .fill(Color(nsColor: content.style.backgroundColor).opacity(content.style.backgroundOpacity))
+                .background(.regularMaterial.opacity(content.style.materialOpacity))
                 .overlay(
                     RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous)
-                        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.58))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
+                        .strokeBorder(Color(nsColor: content.style.foregroundColor).opacity(0.12), lineWidth: 0.5)
                 )
 
             Text(displayText)
                 .font(.system(size: layout.fontSize, weight: .semibold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(Color(nsColor: content.style.foregroundColor))
                 .multilineTextAlignment(.leading)
                 .lineLimit(nil)
                 .minimumScaleFactor(0.55)
-                .padding(layout.padding)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .frame(
+                    width: layout.textFrame.size.width,
+                    height: layout.textFrame.size.height,
+                    alignment: .topLeading
+                )
+                .position(
+                    x: layout.textFrame.origin.x + layout.textFrame.size.width / 2,
+                    y: layout.textFrame.origin.y + layout.textFrame.size.height / 2
+                )
         }
     }
 }
