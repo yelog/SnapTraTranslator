@@ -2,8 +2,9 @@ import XCTest
 @testable import SnapTra_Translator
 
 final class ParagraphOverlayLayoutTests: XCTestCase {
-    func testManualRegionSelectionDoesNotActivateApplication() {
+    func testManualRegionSelectionPresentationKeepsBrowserFocusAndAcceptsInitialClick() {
         XCTAssertFalse(ManualRegionSelectionPresentationPolicy.activatesApplication)
+        XCTAssertTrue(ManualRegionSelectionPresentationPolicy.acceptsFirstMouse)
     }
 
     func testParagraphHighlightResizeGeometryUsesStableScreenDeltaForAllCorners() {

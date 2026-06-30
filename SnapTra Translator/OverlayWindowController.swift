@@ -96,6 +96,7 @@ final class DebugOverlayWindowController: NSWindowController {
 
 enum ManualRegionSelectionPresentationPolicy {
     static let activatesApplication = false
+    static let acceptsFirstMouse = true
 }
 
 private final class ManualRegionSelectionView: NSView {
@@ -107,6 +108,10 @@ private final class ManualRegionSelectionView: NSView {
     private let minimumSelectionSize = CGSize(width: 12, height: 12)
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        ManualRegionSelectionPresentationPolicy.acceptsFirstMouse
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
