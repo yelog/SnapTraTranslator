@@ -753,9 +753,15 @@ struct DoubleTapSentenceTranslationModePickerRow: View {
                 Text(L("Translation Range"))
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(.primary)
-                Text(L("Choose how double-tap picks the sentence region"))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
+                Text(L("Used for double-tap sentence translation"))
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(L("Used for double-tap sentence translation"))
             }
             Spacer()
             Picker("", selection: $mode) {
@@ -766,7 +772,7 @@ struct DoubleTapSentenceTranslationModePickerRow: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .tint(.accentColor)
-            .frame(width: 210, alignment: .trailing)
+            .frame(width: 180, alignment: .trailing)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)

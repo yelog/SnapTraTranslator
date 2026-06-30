@@ -1804,72 +1804,72 @@
         }
       }
     },
-    "Detect paragraph under cursor" : {
+    "Under Cursor" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Detect paragraph under cursor"
+            "value" : "Under Cursor"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "カーソル下の段落を検出"
+            "value" : "カーソル下"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "커서 아래 문단 감지"
+            "value" : "커서 아래"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自动识别光标下段落"
+            "value" : "光标下方"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自動識別游標下段落"
+            "value" : "游標下方"
           }
         }
       }
     },
-    "Select region manually" : {
+    "Manual Selection" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Select region manually"
+            "value" : "Manual Selection"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "範囲を手動選択"
+            "value" : "手動選択"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "영역 직접 선택"
+            "value" : "직접 선택"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "手动框选区域"
+            "value" : "手动选择"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "手動框選區域"
+            "value" : "手動選擇"
           }
         }
       }
@@ -1909,37 +1909,37 @@
         }
       }
     },
-    "Choose how double-tap picks the sentence region" : {
+    "Used for double-tap sentence translation" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose how double-tap picks the sentence region"
+            "value" : "Used for double-tap sentence translation"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ダブルタップ時の文範囲の選び方を指定"
+            "value" : "ダブルタップ文翻訳に使用"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "두 번 탭할 때 문장 영역을 선택하는 방식"
+            "value" : "두 번 탭 문장 번역에 사용"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择双击时如何确定句子范围"
+            "value" : "用于双击句子翻译"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "選擇雙擊時如何確定句子範圍"
+            "value" : "用於雙擊句子翻譯"
           }
         }
       }
@@ -9072,6 +9072,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "智谱 API 翻译"
+          }
+        }
+      }
+    },
+    "Zhipu" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zhipu"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zhipu"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zhipu"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "智谱"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "智譜"
           }
         }
       }

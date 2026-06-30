@@ -127,6 +127,14 @@ final class SettingsStoreMigrationTests: XCTestCase {
         XCTAssertTrue(migrated.filter { $0.type.isLLMProvider }.allSatisfy { !$0.isEnabled })
     }
 
+    func testZhipuProviderNameUsesLocalizedEnglishDisplayName() {
+        let localizationManager = LocalizationManager.shared
+        localizationManager.setLanguage(.english)
+        defer { localizationManager.setLanguage(.system) }
+
+        XCTAssertEqual(SentenceTranslationSource.SourceType.zhipu.displayName, "Zhipu")
+    }
+
     func testDefaultLLMProviderConfigurations() {
         let configurations = SettingsStore.defaultLLMProviderConfigurations()
 
@@ -255,6 +263,26 @@ final class SettingsStoreMigrationTests: XCTestCase {
         let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
 
         XCTAssertEqual(settings.doubleTapSentenceTranslationMode, .manualRegion)
+    }
+
+    func testDoubleTapSentenceTranslationModeUsesCompactEnglishLabels() {
+        let localizationManager = LocalizationManager.shared
+        localizationManager.setLanguage(.english)
+        defer { localizationManager.setLanguage(.system) }
+
+        XCTAssertEqual(DoubleTapSentenceTranslationMode.cursorParagraph.displayName, "Under Cursor")
+        XCTAssertEqual(DoubleTapSentenceTranslationMode.manualRegion.displayName, "Manual Selection")
+    }
+
+    func testTranslationRangeSubtitleExplainsDoubleTapSentenceScope() {
+        let localizationManager = LocalizationManager.shared
+        defer { localizationManager.setLanguage(.system) }
+
+        localizationManager.setLanguage(.english)
+        XCTAssertEqual(L("Used for double-tap sentence translation"), "Used for double-tap sentence translation")
+
+        localizationManager.setLanguage(.chineseSimplified)
+        XCTAssertEqual(L("Used for double-tap sentence translation"), "用于双击句子翻译")
     }
 
     func testBidirectionalTranslationDefaultsToEnabled() {

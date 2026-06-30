@@ -356,7 +356,7 @@ struct SentenceServiceRow: View {
         case .deepSeek:
             return "DeepSeek"
         case .zhipu:
-            return "智谱"
+            return L("Zhipu")
         case .ollama:
             return "Ollama"
         case .omlx:

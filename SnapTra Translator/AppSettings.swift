@@ -46,9 +46,9 @@ enum DoubleTapSentenceTranslationMode: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .cursorParagraph:
-            return L("Detect paragraph under cursor")
+            return L("Under Cursor")
         case .manualRegion:
-            return L("Select region manually")
+            return L("Manual Selection")
         }
     }
 }
