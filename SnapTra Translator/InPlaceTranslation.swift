@@ -15,6 +15,116 @@ enum InPlaceTranslationState: Equatable {
     case failed(String)
 }
 
+struct InPlaceTranslationStyle: Equatable {
+    var backgroundColor: NSColor
+    var foregroundColor: NSColor
+    var backgroundOpacity: CGFloat
+    var materialOpacity: CGFloat
+}
+
+enum InPlaceTranslationStyleResolver {
+    private static let defaultStyle = InPlaceTranslationStyle(
+        backgroundColor: .windowBackgroundColor,
+        foregroundColor: .labelColor,
+        backgroundOpacity: 0.72,
+        materialOpacity: 0.22
+    )
+
+    static func resolve(
+        captureImage: CGImage?,
+        captureRect: CGRect,
+        sourceRect: CGRect,
+        sourceLineRects: [CGRect]
+    ) -> InPlaceTranslationStyle {
+        guard let image = captureImage,
+              captureRect.width > 0, captureRect.height > 0 else {
+            return defaultStyle
+        }
+
+        let normalizedX = (sourceRect.minX - captureRect.minX) / captureRect.width
+        let normalizedY = (sourceRect.minY - captureRect.minY) / captureRect.height
+        let normalizedW = sourceRect.width / captureRect.width
+        let normalizedH = sourceRect.height / captureRect.height
+
+        let pixelX = Int(normalizedX * CGFloat(image.width))
+        let pixelY = Int(normalizedY * CGFloat(image.height))
+        let pixelW = max(1, Int(normalizedW * CGFloat(image.width)))
+        let pixelH = max(1, Int(normalizedH * CGFloat(image.height)))
+
+        let clampedX = max(0, min(pixelX, image.width - 1))
+        let clampedY = max(0, min(pixelY, image.height - 1))
+        let clampedW = max(1, min(pixelW, image.width - clampedX))
+        let clampedH = max(1, min(pixelH, image.height - clampedY))
+
+        guard let averageColor = Self.averageColor(
+            in: CGRect(x: clampedX, y: clampedY, width: clampedW, height: clampedH),
+            image: image
+        ) else {
+            return defaultStyle
+        }
+
+        let luminance = Self.relativeLuminance(for: averageColor)
+        let foregroundColor: NSColor = luminance > 0.5
+            ? NSColor(calibratedWhite: 0.08, alpha: 1)
+            : NSColor(calibratedWhite: 0.96, alpha: 1)
+
+        return InPlaceTranslationStyle(
+            backgroundColor: averageColor,
+            foregroundColor: foregroundColor,
+            backgroundOpacity: 0.72,
+            materialOpacity: 0.22
+        )
+    }
+
+    private static func averageColor(in pixelRect: CGRect, image: CGImage) -> NSColor? {
+        let sampleW = min(16, Int(pixelRect.width))
+        let sampleH = min(16, Int(pixelRect.height))
+        guard sampleW > 0, sampleH > 0 else { return nil }
+
+        guard let context = CGContext(
+            data: nil,
+            width: sampleW,
+            height: sampleH,
+            bitsPerComponent: 8,
+            bytesPerRow: sampleW * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: sampleW, height: sampleH))
+
+        guard let data = context.data else { return nil }
+        let pixels = data.bindMemory(to: UInt8.self, capacity: sampleW * sampleH * 4)
+
+        var totalR: Double = 0
+        var totalG: Double = 0
+        var totalB: Double = 0
+        let count = Double(sampleW * sampleH)
+
+        for row in 0..<sampleH {
+            for col in 0..<sampleW {
+                let offset = (row * sampleW + col) * 4
+                totalR += Double(pixels[offset]) / 255.0
+                totalG += Double(pixels[offset + 1]) / 255.0
+                totalB += Double(pixels[offset + 2]) / 255.0
+            }
+        }
+
+        return NSColor(
+            calibratedRed: CGFloat(totalR / count),
+            green: CGFloat(totalG / count),
+            blue: CGFloat(totalB / count),
+            alpha: 1
+        )
+    }
+
+    private static func relativeLuminance(for color: NSColor) -> CGFloat {
+        let rgb = color.usingColorSpace(.deviceRGB) ?? color
+        return 0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent
+    }
+}
+
 struct InPlaceTranslationTextFrame: Equatable {
     var origin: CGPoint
     var size: CGSize
