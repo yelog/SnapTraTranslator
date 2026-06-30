@@ -390,6 +390,7 @@ final class AppModel: ObservableObject {
     private var lastAvailabilityKey: String?
     private var cachedLanguageStatuses: [String: CachedLanguageAvailabilityStatus] = [:]
     private var paragraphTranslationTask: Task<Void, Never>?
+    private var activeInPlaceTranslationContent: InPlaceTranslationContent?
 
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
@@ -412,6 +413,7 @@ final class AppModel: ObservableObject {
     private let debugOverlayWindowController = DebugOverlayWindowController()
     private let paragraphHighlightWindowController = ParagraphHighlightWindowController()
     private let manualRegionSelectionWindowController = ManualRegionSelectionWindowController()
+    private let inPlaceTranslationWindowController = InPlaceTranslationWindowController()
     lazy var overlayWindowController = OverlayWindowController(model: self)
     private let startupLanguageAvailabilityRetryDelays: [UInt64] = [
         1_000_000_000,
@@ -508,6 +510,7 @@ final class AppModel: ObservableObject {
         activeLookupMode = .word
         isParagraphOverlayPinned = false
         isTapKeptOverlayPresented = false
+        hideInPlaceTranslation()
         tapKeptOverlayReleaseLocation = nil
         stopOverlayEscapeMonitoring()
         paragraphHighlightWindowController.hide()
@@ -680,6 +683,7 @@ final class AppModel: ObservableObject {
         isParagraphRegionInteractionActive = true
         shouldRestoreParagraphOverlayAfterManualRegionCancel = restoresOverlayOnCancel
         overlayWindowController.hideWindowOnly()
+        hideInPlaceTranslation()
         paragraphHighlightWindowController.hide()
         debugOverlayWindowController.hide()
 
@@ -806,6 +810,7 @@ final class AppModel: ObservableObject {
 
     private func startLookup() {
         activeLookupMode = .word
+        hideInPlaceTranslation()
         cancelActiveLookupWork()
         let lookupID = UUID()
         activeLookupID = lookupID
@@ -815,6 +820,7 @@ final class AppModel: ObservableObject {
     }
 
     private func startParagraphLookup() {
+        hideInPlaceTranslation()
         cancelActiveLookupWork()
         let lookupID = UUID()
         activeLookupID = lookupID
@@ -826,6 +832,7 @@ final class AppModel: ObservableObject {
     private func handleParagraphRegionResizeBegan() {
         isParagraphRegionInteractionActive = true
         overlayWindowController.hideWindowOnly()
+        hideInPlaceTranslation()
     }
 
     private func handleParagraphRegionResizeCompleted(_ rect: CGRect) {
@@ -846,7 +853,11 @@ final class AppModel: ObservableObject {
         overlayPreferredWidth = max(320, rect.width)
         paragraphHighlightWindowController.show(at: rect)
         setOverlayAnchor(CGPoint(x: rect.midX, y: rect.minY))
-        updateOverlay(state: .paragraphLoading, anchor: overlayAnchor)
+        if settings.sentenceTranslationPresentationMode == .inPlace {
+            overlayWindowController.hideWindowOnly()
+        } else {
+            updateOverlay(state: .paragraphLoading, anchor: overlayAnchor)
+        }
 
         lookupTask = Task { [weak self] in
             await self?.performManualParagraphRegionLookup(rect: rect, lookupID: lookupID)
@@ -1259,7 +1270,18 @@ final class AppModel: ObservableObject {
                     sourceLanguageIdentifier: languagePair.sourceIdentifier,
                     selectedTargetLanguageIdentifier: languagePair.targetIdentifier
                 )
-                updateOverlay(state: .paragraphResult(initialContent), anchor: mouseLocation)
+                let usesInPlaceTranslation = shouldUseInPlaceSentenceTranslation(for: lineRect, text: text)
+                if usesInPlaceTranslation {
+                    showInPlaceTranslationLoading(
+                        originalText: text,
+                        rect: lineRect,
+                        lineRects: [lineRect],
+                        bodyFontSize: initialContent.bodyFontSize
+                    )
+                    overlayWindowController.hideWindowOnly()
+                } else {
+                    updateOverlay(state: .paragraphResult(initialContent), anchor: mouseLocation)
+                }
 
                 Task {
                     await performThirdPartySentenceTranslations(
@@ -1341,7 +1363,21 @@ final class AppModel: ObservableObject {
                     sourceLanguageIdentifier: languagePair.sourceIdentifier,
                     selectedTargetLanguageIdentifier: languagePair.targetIdentifier
                 )
-                updateOverlay(state: .paragraphResult(initialContent), anchor: mouseLocation)
+                let usesInPlaceTranslation = shouldUseInPlaceSentenceTranslation(
+                    for: paragraphRect,
+                    text: paragraph.text
+                )
+                if usesInPlaceTranslation {
+                    showInPlaceTranslationLoading(
+                        originalText: paragraph.text,
+                        rect: paragraphRect,
+                        lineRects: paragraph.lines.map { screenRect(for: $0.boundingBox, in: capture.region.rect) },
+                        bodyFontSize: bodyFontSize
+                    )
+                    overlayWindowController.hideWindowOnly()
+                } else {
+                    updateOverlay(state: .paragraphResult(initialContent), anchor: mouseLocation)
+                }
 
                 let targetLanguage = languagePair.targetLanguage
 
@@ -1460,7 +1496,21 @@ final class AppModel: ObservableObject {
                 sourceLanguageIdentifier: languagePair.sourceIdentifier,
                 selectedTargetLanguageIdentifier: languagePair.targetIdentifier
             )
-            updateOverlay(state: .paragraphResult(initialContent), anchor: anchor)
+            let usesInPlaceTranslation = shouldUseInPlaceSentenceTranslation(
+                for: capture.region.rect,
+                text: text
+            )
+            if usesInPlaceTranslation {
+                showInPlaceTranslationLoading(
+                    originalText: text,
+                    rect: capture.region.rect,
+                    lineRects: lines.map { screenRect(for: $0.boundingBox, in: capture.region.rect) },
+                    bodyFontSize: bodyFontSize
+                )
+                overlayWindowController.hideWindowOnly()
+            } else {
+                updateOverlay(state: .paragraphResult(initialContent), anchor: anchor)
+            }
 
             Task {
                 await performThirdPartySentenceTranslations(
@@ -1661,10 +1711,37 @@ final class AppModel: ObservableObject {
         lookupID: UUID,
         anchor: CGPoint
     ) {
+        if activeInPlaceTranslationContent != nil {
+            applyInPlaceTranslationState(state, lookupID: lookupID)
+            return
+        }
+
         updateParagraphOverlayContent(for: lookupID, anchor: anchor) { content in
             content.translationState = state
             content.isRetranslating = false
         }
+    }
+
+    private func applyInPlaceTranslationState(
+        _ state: ParagraphOverlayTranslationState,
+        lookupID: UUID
+    ) {
+        guard activeLookupID == lookupID,
+              var content = activeInPlaceTranslationContent else {
+            return
+        }
+
+        switch state {
+        case .loading:
+            content.translationState = .loading
+        case .ready(let translatedText):
+            content.translationState = .ready(translatedText)
+        case .failed(let message):
+            content.translationState = .failed(message)
+        }
+
+        activeInPlaceTranslationContent = content
+        inPlaceTranslationWindowController.show(content: content)
     }
 
     func translateParagraphOriginal(to targetIdentifier: String) {
@@ -1862,11 +1939,36 @@ final class AppModel: ObservableObject {
     ) {
         guard !Task.isCancelled, activeLookupID == lookupID else { return }
 
+        if activeInPlaceTranslationContent != nil {
+            applyInPlaceThirdPartyTranslationResult(state, lookupID: lookupID)
+            return
+        }
+
         updateParagraphOverlayContent(for: lookupID, anchor: anchor) { content in
             if let index = content.serviceResults.firstIndex(where: { $0.sourceType == sourceType }) {
                 content.serviceResults[index].state = state
             }
         }
+    }
+
+    private func applyInPlaceThirdPartyTranslationResult(
+        _ state: TranslationResultState,
+        lookupID: UUID
+    ) {
+        guard activeLookupID == lookupID,
+              var content = activeInPlaceTranslationContent,
+              !SentenceTranslationServiceSelection.isNativeTranslationEnabled(in: settings.sentenceTranslationSources) else {
+            return
+        }
+
+        guard case .ready(let translatedText) = state else { return }
+        if case .ready = content.translationState {
+            return
+        }
+
+        content.translationState = .ready(translatedText)
+        activeInPlaceTranslationContent = content
+        inPlaceTranslationWindowController.show(content: content)
     }
 
     private func loadSentenceTranslationState(
@@ -2536,6 +2638,46 @@ final class AppModel: ObservableObject {
         )
     }
 
+    private func shouldUseInPlaceSentenceTranslation(for rect: CGRect, text: String) -> Bool {
+        guard settings.sentenceTranslationPresentationMode == .inPlace else {
+            return false
+        }
+
+        guard rect.width >= 120, rect.height >= 24 else {
+            return false
+        }
+
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty, trimmedText.count <= 800 else {
+            return false
+        }
+
+        return true
+    }
+
+    private func showInPlaceTranslationLoading(
+        originalText: String,
+        rect: CGRect,
+        lineRects: [CGRect],
+        bodyFontSize: CGFloat
+    ) {
+        let content = InPlaceTranslationContent(
+            originalText: originalText,
+            translationState: .loading,
+            sourceRect: rect,
+            sourceLineRects: lineRects,
+            bodyFontSize: bodyFontSize
+        )
+        activeInPlaceTranslationContent = content
+        inPlaceTranslationWindowController.show(content: content)
+        syncOverlayDismissalMonitoring()
+    }
+
+    private func hideInPlaceTranslation() {
+        activeInPlaceTranslationContent = nil
+        inPlaceTranslationWindowController.hide()
+    }
+
     private func estimatedDisplayFontSize(from lines: [RecognizedTextLine], in captureRect: CGRect) -> CGFloat {
         guard !lines.isEmpty else { return 14 }
         let averageHeight = lines.map(\.boundingBox.height).reduce(0, +) / CGFloat(lines.count)
@@ -2769,6 +2911,7 @@ final class AppModel: ObservableObject {
         cancelPendingOverlayLayoutRefresh()
         speechService.stopSpeaking()
         cachedLanguageStatuses.removeAll(keepingCapacity: false)
+        hideInPlaceTranslation()
         if overlayState != .idle {
             overlayState = .idle
         }
@@ -2895,7 +3038,7 @@ final class AppModel: ObservableObject {
 
     private func syncOverlayDismissalMonitoring() {
         if OverlayEscapeDismissalPolicy.shouldMonitor(
-            isParagraphOverlayPresented: isParagraphOverlayPresented,
+            isParagraphOverlayPresented: isParagraphOverlayPresented || activeInPlaceTranslationContent != nil,
             isTapKeptOverlayPresented: isTapKeptOverlayPresented
         ) {
             startOverlayEscapeMonitoringIfNeeded()
@@ -2946,7 +3089,7 @@ final class AppModel: ObservableObject {
     private func handleOverlayEscapeKey(_ event: NSEvent) -> Bool {
         guard OverlayEscapeDismissalPolicy.shouldDismiss(
             keyCode: event.keyCode,
-            isParagraphOverlayPresented: isParagraphOverlayPresented,
+            isParagraphOverlayPresented: isParagraphOverlayPresented || activeInPlaceTranslationContent != nil,
             isTapKeptOverlayPresented: isTapKeptOverlayPresented
         ) else { return false }
 

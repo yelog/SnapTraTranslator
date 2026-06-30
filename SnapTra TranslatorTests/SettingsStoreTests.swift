@@ -49,6 +49,7 @@ final class SettingsStoreMigrationTests: XCTestCase {
         AppSettingKey.doubleTapSentenceTranslationMode,
         AppSettingKey.selectedTextTranslationEnabled,
         AppSettingKey.hideOriginalTextInSentenceOverlay,
+        AppSettingKey.sentenceTranslationPresentationMode,
         AppSettingKey.autoCheckUpdates,
         AppSettingKey.updateChannel,
         AppSettingKey.debugShowChannelSelector,
@@ -338,6 +339,30 @@ final class SettingsStoreMigrationTests: XCTestCase {
         let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
 
         XCTAssertTrue(settings.hideOriginalTextInSentenceOverlay)
+    }
+
+    func testSentenceTranslationPresentationModeDefaultsToOverlayPanel() {
+        let defaults = makeDefaults()
+
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertEqual(settings.sentenceTranslationPresentationMode, .overlayPanel)
+        XCTAssertEqual(
+            defaults.string(forKey: AppSettingKey.sentenceTranslationPresentationMode),
+            SentenceTranslationPresentationMode.overlayPanel.rawValue
+        )
+    }
+
+    func testLoadsPersistedSentenceTranslationPresentationMode() {
+        let defaults = makeDefaults()
+        defaults.set(
+            SentenceTranslationPresentationMode.inPlace.rawValue,
+            forKey: AppSettingKey.sentenceTranslationPresentationMode
+        )
+
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertEqual(settings.sentenceTranslationPresentationMode, .inPlace)
     }
 
     func testKeepWordOverlayAfterTapDefaultsToEnabled() {

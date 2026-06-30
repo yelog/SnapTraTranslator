@@ -175,6 +175,22 @@ enum MenuBarIconStyle: String, CaseIterable, Identifiable {
     }
 }
 
+enum SentenceTranslationPresentationMode: String, CaseIterable, Identifiable {
+    case overlayPanel
+    case inPlace
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .overlayPanel:
+            return L("Translation Panel")
+        case .inPlace:
+            return L("In-place")
+        }
+    }
+}
+
 enum AppSettingKey {
     static let playPronunciation = "playPronunciation"
     static let playWordPronunciation = "playWordPronunciation"
@@ -201,6 +217,7 @@ enum AppSettingKey {
     static let ocrSentenceTranslationEnabled = "ocrSentenceTranslationEnabled"
     static let selectedTextTranslationEnabled = "selectedTextTranslationEnabled"
     static let hideOriginalTextInSentenceOverlay = "hideOriginalTextInSentenceOverlay"
+    static let sentenceTranslationPresentationMode = "sentenceTranslationPresentationMode"
     static let autoCheckUpdates = "autoCheckUpdates"
     static let updateChannel = "updateChannel"
     static let debugShowChannelSelector = "debugShowChannelSelector"

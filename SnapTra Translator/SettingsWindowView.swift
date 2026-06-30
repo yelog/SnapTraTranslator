@@ -581,6 +581,14 @@ struct GeneralSettingsView: View {
                         .padding(.horizontal, 14)
                         .opacity(0.5)
 
+                    SentenceTranslationPresentationModePickerRow(
+                        mode: $model.settings.sentenceTranslationPresentationMode
+                    )
+
+                    Divider()
+                        .padding(.horizontal, 14)
+                        .opacity(0.5)
+
                     ToggleRow(
                         title: L("Debug OCR Region"),
                         subtitle: L("Show capture area when shortcut is pressed"),
@@ -766,6 +774,37 @@ struct DoubleTapSentenceTranslationModePickerRow: View {
             Spacer()
             Picker("", selection: $mode) {
                 ForEach(DoubleTapSentenceTranslationMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .tint(.accentColor)
+            .frame(width: 180, alignment: .trailing)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+}
+
+struct SentenceTranslationPresentationModePickerRow: View {
+    @Binding var mode: SentenceTranslationPresentationMode
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("Sentence Display"))
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.primary)
+                Text(L("Choose how sentence translations are shown"))
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer()
+            Picker("", selection: $mode) {
+                ForEach(SentenceTranslationPresentationMode.allCases) { mode in
                     Text(mode.displayName).tag(mode)
                 }
             }

@@ -347,6 +347,14 @@ final class SettingsStore: ObservableObject {
     @Published var hideOriginalTextInSentenceOverlay: Bool {
         didSet { defaults.set(hideOriginalTextInSentenceOverlay, forKey: AppSettingKey.hideOriginalTextInSentenceOverlay) }
     }
+    @Published var sentenceTranslationPresentationMode: SentenceTranslationPresentationMode {
+        didSet {
+            defaults.set(
+                sentenceTranslationPresentationMode.rawValue,
+                forKey: AppSettingKey.sentenceTranslationPresentationMode
+            )
+        }
+    }
     @Published var autoCheckUpdates: Bool {
         didSet {
             defaults.set(autoCheckUpdates, forKey: AppSettingKey.autoCheckUpdates)
@@ -477,6 +485,10 @@ final class SettingsStore: ObservableObject {
         selectedTextTranslationEnabled = sentenceTranslationSettings.selectedTextTranslationEnabled
         let hideOriginalTextValue = defaults.object(forKey: AppSettingKey.hideOriginalTextInSentenceOverlay) as? Bool
         hideOriginalTextInSentenceOverlay = hideOriginalTextValue ?? true
+        let sentencePresentationModeValue = defaults.string(forKey: AppSettingKey.sentenceTranslationPresentationMode)
+        sentenceTranslationPresentationMode = SentenceTranslationPresentationMode(
+            rawValue: sentencePresentationModeValue ?? ""
+        ) ?? .overlayPanel
 
         // Load auto update settings
         let autoCheckUpdatesValue = defaults.object(forKey: AppSettingKey.autoCheckUpdates) as? Bool
@@ -532,6 +544,10 @@ final class SettingsStore: ObservableObject {
         )
         defaults.set(selectedTextTranslationEnabled, forKey: AppSettingKey.selectedTextTranslationEnabled)
         defaults.set(hideOriginalTextInSentenceOverlay, forKey: AppSettingKey.hideOriginalTextInSentenceOverlay)
+        defaults.set(
+            sentenceTranslationPresentationMode.rawValue,
+            forKey: AppSettingKey.sentenceTranslationPresentationMode
+        )
         defaults.set(autoCheckUpdates, forKey: AppSettingKey.autoCheckUpdates)
         defaults.set(updateChannel.rawValue, forKey: AppSettingKey.updateChannel)
         #if DEBUG
