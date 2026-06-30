@@ -323,6 +323,14 @@ final class SettingsStore: ObservableObject {
     @Published var ocrSentenceTranslationEnabled: Bool {
         didSet { defaults.set(ocrSentenceTranslationEnabled, forKey: AppSettingKey.ocrSentenceTranslationEnabled) }
     }
+    @Published var doubleTapSentenceTranslationMode: DoubleTapSentenceTranslationMode {
+        didSet {
+            defaults.set(
+                doubleTapSentenceTranslationMode.rawValue,
+                forKey: AppSettingKey.doubleTapSentenceTranslationMode
+            )
+        }
+    }
     @Published var selectedTextTranslationEnabled: Bool {
         didSet { defaults.set(selectedTextTranslationEnabled, forKey: AppSettingKey.selectedTextTranslationEnabled) }
     }
@@ -452,6 +460,10 @@ final class SettingsStore: ObservableObject {
         
         let sentenceTranslationSettings = Self.loadSentenceTranslationSettings(defaults: defaults)
         ocrSentenceTranslationEnabled = sentenceTranslationSettings.ocrSentenceTranslationEnabled
+        let doubleTapModeValue = defaults.string(forKey: AppSettingKey.doubleTapSentenceTranslationMode)
+        doubleTapSentenceTranslationMode = DoubleTapSentenceTranslationMode(
+            rawValue: doubleTapModeValue ?? ""
+        ) ?? .cursorParagraph
         selectedTextTranslationEnabled = sentenceTranslationSettings.selectedTextTranslationEnabled
         let hideOriginalTextValue = defaults.object(forKey: AppSettingKey.hideOriginalTextInSentenceOverlay) as? Bool
         hideOriginalTextInSentenceOverlay = hideOriginalTextValue ?? true
@@ -504,6 +516,10 @@ final class SettingsStore: ObservableObject {
         defaults.set(appLanguage.rawValue, forKey: AppSettingKey.appLanguage)
         defaults.set(englishAccent.rawValue, forKey: AppSettingKey.englishAccent)
         defaults.set(ocrSentenceTranslationEnabled, forKey: AppSettingKey.ocrSentenceTranslationEnabled)
+        defaults.set(
+            doubleTapSentenceTranslationMode.rawValue,
+            forKey: AppSettingKey.doubleTapSentenceTranslationMode
+        )
         defaults.set(selectedTextTranslationEnabled, forKey: AppSettingKey.selectedTextTranslationEnabled)
         defaults.set(hideOriginalTextInSentenceOverlay, forKey: AppSettingKey.hideOriginalTextInSentenceOverlay)
         defaults.set(autoCheckUpdates, forKey: AppSettingKey.autoCheckUpdates)

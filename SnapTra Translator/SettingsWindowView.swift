@@ -541,9 +541,20 @@ struct GeneralSettingsView: View {
                         .opacity(0.5)
 
                     ToggleRow(
-                        title: L("Double-tap OCR Sentence Translation"),
+                        title: L("Double-tap Sentence Translation"),
+                        subtitle: L("Start sentence translation after double-tapping the hotkey"),
                         isOn: $model.settings.ocrSentenceTranslationEnabled
                     )
+
+                    if model.settings.ocrSentenceTranslationEnabled {
+                        Divider()
+                            .padding(.horizontal, 14)
+                            .opacity(0.5)
+
+                        DoubleTapSentenceTranslationModePickerRow(
+                            mode: $model.settings.doubleTapSentenceTranslationMode
+                        )
+                    }
 
                     if supportsSelectedTextTranslation {
                         Divider()
@@ -727,6 +738,35 @@ struct ToggleRow: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+}
+
+struct DoubleTapSentenceTranslationModePickerRow: View {
+    @Binding var mode: DoubleTapSentenceTranslationMode
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("Translation Range"))
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.primary)
+                Text(L("Choose how double-tap picks the sentence region"))
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+            Picker("", selection: $mode) {
+                ForEach(DoubleTapSentenceTranslationMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .tint(.accentColor)
+            .frame(width: 210, alignment: .trailing)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)

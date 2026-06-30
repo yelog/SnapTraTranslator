@@ -37,6 +37,44 @@ enum SingleKey: String, CaseIterable, Identifiable {
     }
 }
 
+enum DoubleTapSentenceTranslationMode: String, CaseIterable, Identifiable {
+    case cursorParagraph = "cursorParagraph"
+    case manualRegion = "manualRegion"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .cursorParagraph:
+            return L("Detect paragraph under cursor")
+        case .manualRegion:
+            return L("Select region manually")
+        }
+    }
+}
+
+enum DoubleTapSentenceTranslationAction: Equatable {
+    case disabled
+    case automaticOCR
+    case manualRegionSelection
+}
+
+enum DoubleTapSentenceTranslationPolicy {
+    static func resolve(
+        isEnabled: Bool,
+        mode: DoubleTapSentenceTranslationMode
+    ) -> DoubleTapSentenceTranslationAction {
+        guard isEnabled else { return .disabled }
+
+        switch mode {
+        case .cursorParagraph:
+            return .automaticOCR
+        case .manualRegion:
+            return .manualRegionSelection
+        }
+    }
+}
+
 enum TTSProvider: String, CaseIterable, Identifiable {
     case apple = "apple"
     case youdao = "youdao"
@@ -151,6 +189,7 @@ enum AppSettingKey {
     static let debugShowOcrRegion = "debugShowOcrRegion"
     static let continuousTranslation = "continuousTranslation"
     static let keepWordOverlayAfterTap = "keepWordOverlayAfterTap"
+    static let doubleTapSentenceTranslationMode = "doubleTapSentenceTranslationMode"
     static let lastScreenRecordingStatus = "lastScreenRecordingStatus"
     static let hasCompletedInitialSetup = "hasCompletedInitialSetup"
     static let ttsProvider = "ttsProvider"

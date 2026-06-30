@@ -46,6 +46,7 @@ final class SettingsStoreMigrationTests: XCTestCase {
         AppSettingKey.englishAccent,
         AppSettingKey.legacySentenceTranslationEnabled,
         AppSettingKey.ocrSentenceTranslationEnabled,
+        AppSettingKey.doubleTapSentenceTranslationMode,
         AppSettingKey.selectedTextTranslationEnabled,
         AppSettingKey.hideOriginalTextInSentenceOverlay,
         AppSettingKey.autoCheckUpdates,
@@ -232,6 +233,30 @@ final class SettingsStoreMigrationTests: XCTestCase {
         XCTAssertTrue(settings.selectedTextTranslationEnabled)
     }
 
+    func testDoubleTapSentenceTranslationModeDefaultsToCursorParagraph() {
+        let defaults = makeDefaults()
+
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertEqual(settings.doubleTapSentenceTranslationMode, .cursorParagraph)
+        XCTAssertEqual(
+            defaults.string(forKey: AppSettingKey.doubleTapSentenceTranslationMode),
+            DoubleTapSentenceTranslationMode.cursorParagraph.rawValue
+        )
+    }
+
+    func testLoadsPersistedDoubleTapSentenceTranslationMode() {
+        let defaults = makeDefaults()
+        defaults.set(
+            DoubleTapSentenceTranslationMode.manualRegion.rawValue,
+            forKey: AppSettingKey.doubleTapSentenceTranslationMode
+        )
+
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertEqual(settings.doubleTapSentenceTranslationMode, .manualRegion)
+    }
+
     func testBidirectionalTranslationDefaultsToEnabled() {
         let defaults = makeDefaults()
 
@@ -306,6 +331,35 @@ final class SettingsStoreMigrationTests: XCTestCase {
         let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
 
         XCTAssertTrue(settings.keepWordOverlayAfterTap)
+    }
+}
+
+final class DoubleTapSentenceTranslationPolicyTests: XCTestCase {
+    func testDisabledToggleWinsOverMode() {
+        let action = DoubleTapSentenceTranslationPolicy.resolve(
+            isEnabled: false,
+            mode: .manualRegion
+        )
+
+        XCTAssertEqual(action, .disabled)
+    }
+
+    func testCursorParagraphModeStartsAutomaticOCR() {
+        let action = DoubleTapSentenceTranslationPolicy.resolve(
+            isEnabled: true,
+            mode: .cursorParagraph
+        )
+
+        XCTAssertEqual(action, .automaticOCR)
+    }
+
+    func testManualRegionModeStartsRegionSelection() {
+        let action = DoubleTapSentenceTranslationPolicy.resolve(
+            isEnabled: true,
+            mode: .manualRegion
+        )
+
+        XCTAssertEqual(action, .manualRegionSelection)
     }
 }
 

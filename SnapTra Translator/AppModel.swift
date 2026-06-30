@@ -400,6 +400,7 @@ final class AppModel: ObservableObject {
     private var tapKeptOverlayReleaseLocation: CGPoint?
     private var translationServiceInitialized = false
     private var isParagraphRegionInteractionActive = false
+    private var shouldRestoreParagraphOverlayAfterManualRegionCancel = true
     private let debounceInterval: TimeInterval = 0.1
     private let overlayLayoutRefreshInterval: TimeInterval = 0.04
     private let positionThreshold: CGFloat = 10.0
@@ -574,24 +575,24 @@ final class AppModel: ObservableObject {
 
     func handleHotkeyDoubleTap() {
         guard isHotkeyActive else { return }
-        guard settings.ocrSentenceTranslationEnabled else {
+
+        let action = DoubleTapSentenceTranslationPolicy.resolve(
+            isEnabled: settings.ocrSentenceTranslationEnabled,
+            mode: settings.doubleTapSentenceTranslationMode
+        )
+
+        switch action {
+        case .disabled:
             isHotkeyActive = false
             stopMouseTracking()
             cancelActiveLookupWork()
             hideOverlay()
             return
+        case .automaticOCR:
+            beginDoubleTapAutomaticParagraphLookup()
+        case .manualRegionSelection:
+            beginDoubleTapManualParagraphRegionSelection()
         }
-        guard permissions.status.screenRecording else { return }
-        if settings.debugShowOcrRegion {
-            settings.debugShowOcrRegion = false
-            debugOverlayWindowController.hide()
-        }
-        activeLookupMode = .ocrSentence
-        stopMouseTracking()
-        let mouseLocation = NSEvent.mouseLocation
-        setOverlayAnchor(mouseLocation)
-        updateOverlay(state: .paragraphLoading, anchor: mouseLocation)
-        startParagraphLookup()
     }
 
     /// 手动关闭气泡（用于非持续翻译模式）
@@ -642,12 +643,39 @@ final class AppModel: ObservableObject {
 
     func beginManualParagraphRegionSelection() {
         guard isParagraphOverlayPresented else { return }
+        beginManualParagraphRegionSelection(restoresOverlayOnCancel: true)
+    }
+
+    private func beginDoubleTapAutomaticParagraphLookup() {
+        guard permissions.status.screenRecording else { return }
+        if settings.debugShowOcrRegion {
+            settings.debugShowOcrRegion = false
+            debugOverlayWindowController.hide()
+        }
+        activeLookupMode = .ocrSentence
+        stopMouseTracking()
+        let mouseLocation = NSEvent.mouseLocation
+        setOverlayAnchor(mouseLocation)
+        updateOverlay(state: .paragraphLoading, anchor: mouseLocation)
+        startParagraphLookup()
+    }
+
+    private func beginDoubleTapManualParagraphRegionSelection() {
+        activeLookupMode = .ocrSentence
+        stopMouseTracking()
+        cancelActiveLookupWork()
+        setOverlayAnchor(NSEvent.mouseLocation)
+        beginManualParagraphRegionSelection(restoresOverlayOnCancel: false)
+    }
+
+    private func beginManualParagraphRegionSelection(restoresOverlayOnCancel: Bool) {
         guard permissions.status.screenRecording else {
             updateOverlay(state: .error(L("Enable Screen Recording")), anchor: overlayAnchor)
             return
         }
 
         isParagraphRegionInteractionActive = true
+        shouldRestoreParagraphOverlayAfterManualRegionCancel = restoresOverlayOnCancel
         overlayWindowController.hideWindowOnly()
         paragraphHighlightWindowController.hide()
         debugOverlayWindowController.hide()
@@ -668,15 +696,22 @@ final class AppModel: ObservableObject {
 
     private func handleManualParagraphRegionSelectionCompleted(_ rect: CGRect) {
         isParagraphRegionInteractionActive = false
+        shouldRestoreParagraphOverlayAfterManualRegionCancel = true
         handleParagraphRegionResizeCompleted(rect)
     }
 
     private func handleManualParagraphRegionSelectionCancelled() {
         isParagraphRegionInteractionActive = false
-        if isParagraphOverlayPresented {
+        if shouldRestoreParagraphOverlayAfterManualRegionCancel, isParagraphOverlayPresented {
             overlayWindowController.show(at: overlayAnchor, makeKey: true)
             overlayWindowController.setInteractive(true)
+        } else {
+            activeLookupMode = .word
+            isHotkeyActive = false
+            cancelActiveLookupWork()
+            hideOverlay()
         }
+        shouldRestoreParagraphOverlayAfterManualRegionCancel = true
         syncOverlayDismissalMonitoring()
     }
     
