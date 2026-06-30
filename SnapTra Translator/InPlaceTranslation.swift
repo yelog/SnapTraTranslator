@@ -7,6 +7,7 @@ struct InPlaceTranslationContent: Equatable {
     var sourceRect: CGRect
     var sourceLineRects: [CGRect]
     var bodyFontSize: CGFloat
+    var style: InPlaceTranslationStyle
 }
 
 enum InPlaceTranslationState: Equatable {

@@ -1276,7 +1276,9 @@ final class AppModel: ObservableObject {
                         originalText: text,
                         rect: lineRect,
                         lineRects: [lineRect],
-                        bodyFontSize: initialContent.bodyFontSize
+                        bodyFontSize: initialContent.bodyFontSize,
+                        captureImage: capture.image,
+                        captureRect: capture.region.rect
                     )
                     overlayWindowController.hideWindowOnly()
                 } else {
@@ -1372,7 +1374,9 @@ final class AppModel: ObservableObject {
                         originalText: paragraph.text,
                         rect: paragraphRect,
                         lineRects: paragraph.lines.map { screenRect(for: $0.boundingBox, in: capture.region.rect) },
-                        bodyFontSize: bodyFontSize
+                        bodyFontSize: bodyFontSize,
+                        captureImage: capture.image,
+                        captureRect: capture.region.rect
                     )
                     overlayWindowController.hideWindowOnly()
                 } else {
@@ -1505,7 +1509,9 @@ final class AppModel: ObservableObject {
                     originalText: text,
                     rect: capture.region.rect,
                     lineRects: lines.map { screenRect(for: $0.boundingBox, in: capture.region.rect) },
-                    bodyFontSize: bodyFontSize
+                    bodyFontSize: bodyFontSize,
+                    captureImage: capture.image,
+                    captureRect: capture.region.rect
                 )
                 overlayWindowController.hideWindowOnly()
             } else {
@@ -2659,14 +2665,23 @@ final class AppModel: ObservableObject {
         originalText: String,
         rect: CGRect,
         lineRects: [CGRect],
-        bodyFontSize: CGFloat
+        bodyFontSize: CGFloat,
+        captureImage: CGImage?,
+        captureRect: CGRect
     ) {
+        let style = InPlaceTranslationStyleResolver.resolve(
+            captureImage: captureImage,
+            captureRect: captureRect,
+            sourceRect: rect,
+            sourceLineRects: lineRects
+        )
         let content = InPlaceTranslationContent(
             originalText: originalText,
             translationState: .loading,
             sourceRect: rect,
             sourceLineRects: lineRects,
-            bodyFontSize: bodyFontSize
+            bodyFontSize: bodyFontSize,
+            style: style
         )
         activeInPlaceTranslationContent = content
         inPlaceTranslationWindowController.show(content: content)
