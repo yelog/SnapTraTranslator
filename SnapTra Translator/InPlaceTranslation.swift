@@ -19,16 +19,14 @@ enum InPlaceTranslationState: Equatable {
 struct InPlaceTranslationStyle: Equatable {
     var backgroundColor: NSColor
     var foregroundColor: NSColor
-    var backgroundOpacity: CGFloat
-    var materialOpacity: CGFloat
+    var borderColor: NSColor
 }
 
 enum InPlaceTranslationStyleResolver {
     private static let defaultStyle = InPlaceTranslationStyle(
-        backgroundColor: .windowBackgroundColor,
+        backgroundColor: .controlBackgroundColor,
         foregroundColor: .labelColor,
-        backgroundOpacity: 0.72,
-        materialOpacity: 0.22
+        borderColor: .separatorColor
     )
 
     static func resolve(
@@ -69,11 +67,17 @@ enum InPlaceTranslationStyleResolver {
             ? NSColor(calibratedWhite: 0.08, alpha: 1)
             : NSColor(calibratedWhite: 0.96, alpha: 1)
 
+        let backgroundColor: NSColor = luminance > 0.5
+            ? NSColor(calibratedWhite: 0.98, alpha: 1)
+            : NSColor(calibratedWhite: 0.08, alpha: 1)
+        let borderColor: NSColor = luminance > 0.5
+            ? NSColor(calibratedWhite: 0.68, alpha: 1)
+            : NSColor(calibratedWhite: 0.34, alpha: 1)
+
         return InPlaceTranslationStyle(
-            backgroundColor: averageColor,
+            backgroundColor: backgroundColor,
             foregroundColor: foregroundColor,
-            backgroundOpacity: 0.72,
-            materialOpacity: 0.22
+            borderColor: borderColor
         )
     }
 
@@ -228,12 +232,12 @@ struct InPlaceTranslationView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous)
-                .fill(Color(nsColor: content.style.backgroundColor).opacity(content.style.backgroundOpacity))
-                .background(.regularMaterial.opacity(content.style.materialOpacity))
+                .fill(Color(nsColor: content.style.backgroundColor))
                 .overlay(
                     RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous)
-                        .strokeBorder(Color(nsColor: content.style.foregroundColor).opacity(0.12), lineWidth: 0.5)
+                        .strokeBorder(Color(nsColor: content.style.borderColor).opacity(0.55), lineWidth: 0.75)
                 )
+                .shadow(color: .black.opacity(0.10), radius: 2, x: 0, y: 1)
 
             Text(displayText)
                 .font(.system(size: layout.fontSize, weight: .semibold))

@@ -111,7 +111,7 @@ final class InPlaceTranslationLayoutTests: XCTestCase {
         XCTAssertGreaterThan(style.foregroundColor.relativeTestLuminance, 0.5)
     }
 
-    func testStyleResolverReturnsDefaultsWithoutImage() {
+    func testStyleResolverReturnsOpaqueDefaultsWithoutImage() {
         let style = InPlaceTranslationStyleResolver.resolve(
             captureImage: nil,
             captureRect: CGRect(x: 0, y: 0, width: 100, height: 100),
@@ -119,8 +119,21 @@ final class InPlaceTranslationLayoutTests: XCTestCase {
             sourceLineRects: []
         )
 
-        XCTAssertGreaterThan(style.backgroundOpacity, 0)
-        XCTAssertGreaterThan(style.materialOpacity, 0)
+        XCTAssertEqual(style.backgroundColor.alphaComponent, 1, accuracy: 0.001)
+        XCTAssertEqual(style.borderColor.alphaComponent, 1, accuracy: 0.001)
+    }
+
+    func testStyleResolverUsesOpaqueBackgroundToCoverSourceText() {
+        let image = makeSolidImage(red: 0.95, green: 0.95, blue: 0.95)
+        let style = InPlaceTranslationStyleResolver.resolve(
+            captureImage: image,
+            captureRect: CGRect(x: 0, y: 0, width: 100, height: 100),
+            sourceRect: CGRect(x: 10, y: 10, width: 40, height: 30),
+            sourceLineRects: []
+        )
+
+        XCTAssertEqual(style.backgroundColor.alphaComponent, 1, accuracy: 0.001)
+        XCTAssertGreaterThan(style.backgroundColor.relativeTestLuminance, 0.9)
     }
 }
 

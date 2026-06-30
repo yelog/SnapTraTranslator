@@ -2683,6 +2683,7 @@ final class AppModel: ObservableObject {
             bodyFontSize: bodyFontSize,
             style: style
         )
+        paragraphHighlightWindowController.hide()
         activeInPlaceTranslationContent = content
         inPlaceTranslationWindowController.show(content: content)
         syncOverlayDismissalMonitoring()
