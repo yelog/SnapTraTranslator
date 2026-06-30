@@ -2,6 +2,10 @@ import XCTest
 @testable import SnapTra_Translator
 
 final class ParagraphOverlayLayoutTests: XCTestCase {
+    func testManualRegionSelectionDoesNotActivateApplication() {
+        XCTAssertFalse(ManualRegionSelectionPresentationPolicy.activatesApplication)
+    }
+
     func testParagraphHighlightResizeGeometryUsesStableScreenDeltaForAllCorners() {
         let startFrame = CGRect(x: 100, y: 200, width: 240, height: 80)
         let minimumSize = CGSize(width: 80, height: 24)

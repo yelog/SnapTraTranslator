@@ -94,6 +94,10 @@ final class DebugOverlayWindowController: NSWindowController {
 
 // MARK: - Manual OCR Region Selection
 
+enum ManualRegionSelectionPresentationPolicy {
+    static let activatesApplication = false
+}
+
 private final class ManualRegionSelectionView: NSView {
     var onComplete: (CGRect) -> Void = { _ in }
     var onCancel: () -> Void = {}
@@ -210,7 +214,9 @@ final class ManualRegionSelectionWindowController {
         hide()
         didFinish = false
 
-        NSApp.activate(ignoringOtherApps: true)
+        if ManualRegionSelectionPresentationPolicy.activatesApplication {
+            NSApp.activate(ignoringOtherApps: true)
+        }
 
         for screen in NSScreen.screens {
             let selectionView = ManualRegionSelectionView(frame: CGRect(origin: .zero, size: screen.frame.size))
