@@ -870,7 +870,36 @@ final class AppModel: ObservableObject {
         let mouseLocation = NSEvent.mouseLocation
         guard activeLookupID == lookupID else { return }
 
-        switch resolveSinglePressLookupIntent(mouseLocation: mouseLocation) {
+        let intent = resolveSinglePressLookupIntent(mouseLocation: mouseLocation)
+
+        // If AXUIElement found no selected text, try clipboard fallback before falling back to OCR
+        if case .ocrWord = intent, settings.selectedTextClipboardFallback {
+            selectedTextService.clipboardFallbackEnabled = true
+            if let clipboardSnapshot = await selectedTextService.clipboardFallbackSnapshot() {
+                guard !Task.isCancelled, activeLookupID == lookupID else { return }
+                debugSelectedTextRoute(
+                    "clipboard fallback succeeded text=\"\(truncate(clipboardSnapshot.text))\""
+                )
+                let clipboardIntent = SinglePressLookupRouter.resolve(
+                    mouseLocation: mouseLocation,
+                    isSelectedTextTranslationSupported: true,
+                    isSelectedTextTranslationEnabled: true,
+                    hasAccessibilityPermission: true,
+                    selectionSnapshot: clipboardSnapshot
+                )
+                if case .selectedTextSentence = clipboardIntent {
+                    activeLookupMode = .selectedTextSentence
+                    await performSelectedTextSentenceLookup(
+                        snapshot: clipboardSnapshot,
+                        lookupID: lookupID,
+                        mouseLocation: mouseLocation
+                    )
+                    return
+                }
+            }
+        }
+
+        switch intent {
         case .selectedTextSentence(let snapshot):
             activeLookupMode = .selectedTextSentence
             await performSelectedTextSentenceLookup(

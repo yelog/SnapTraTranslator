@@ -20,6 +20,18 @@ final class SelectedTextService {
     var clipboardFallbackEnabled = true
 
     func currentSelectionSnapshot(mouseLocation: CGPoint) -> SelectedTextSnapshot? {
+        axSelectionSnapshot(mouseLocation: mouseLocation)
+    }
+
+    /// Clipboard-based fallback that uses Cmd+C simulation.
+    /// Must be called from an async context to avoid blocking the main thread.
+    func clipboardFallbackSnapshot() async -> SelectedTextSnapshot? {
+        guard clipboardFallbackEnabled else { return nil }
+        debugLog("trying clipboard fallback")
+        return await clipboardSelectionSnapshot()
+    }
+
+    private func axSelectionSnapshot(mouseLocation: CGPoint) -> SelectedTextSnapshot? {
         let systemWideElement = AXUIElementCreateSystemWide()
         configureMessagingTimeout(for: systemWideElement)
 
@@ -57,13 +69,6 @@ final class SelectedTextService {
         }
 
         debugLog("no selection snapshot from AXUIElement")
-
-        if clipboardFallbackEnabled, let snapshot = clipboardSelectionSnapshot(mouseLocation: mouseLocation) {
-            debugLog("clipboard fallback success text=\"\(truncate(snapshot.text))\"")
-            return snapshot
-        }
-
-        debugLog("no selection snapshot")
         return nil
     }
 
@@ -616,7 +621,7 @@ final class SelectedTextService {
 
     // MARK: - Clipboard Fallback
 
-    private func clipboardSelectionSnapshot(mouseLocation: CGPoint) -> SelectedTextSnapshot? {
+    private func clipboardSelectionSnapshot() async -> SelectedTextSnapshot? {
         let pasteboard = NSPasteboard.general
 
         // Save current clipboard state
@@ -626,10 +631,10 @@ final class SelectedTextService {
         // Simulate Cmd+C
         simulateCmdC()
 
-        // Wait for clipboard to update (up to 150ms)
-        let deadline = Date().addingTimeInterval(0.15)
-        while pasteboard.changeCount == originalChangeCount, Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.01)
+        // Wait for clipboard to update (up to 150ms) using async sleep to avoid blocking main thread
+        for _ in 0..<15 {
+            if pasteboard.changeCount != originalChangeCount { break }
+            try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
         }
 
         // Read selected text from clipboard
