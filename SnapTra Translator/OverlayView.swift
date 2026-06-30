@@ -275,12 +275,14 @@ struct OverlayView: View {
     private func paragraphResultView(content: ParagraphOverlayContent) -> some View {
         let originalText = content.originalText ?? ""
         let hasOriginalText = !originalText.isEmpty
+        let hasTranslationOutput = content.showsNativeTranslation || !content.serviceResults.isEmpty
         let originalVisibility = ParagraphOriginalVisibilityPolicy.resolve(
             hasOriginalText: hasOriginalText,
             isParagraphOverlayPinned: model.isParagraphOverlayPinned,
             hidesOriginalTextSetting: model.settings.hideOriginalTextInSentenceOverlay,
             isOriginalEditorExpanded: isParagraphOriginalEditorExpanded,
-            isManualInputFallback: content.isManualInputFallback
+            isManualInputFallback: content.isManualInputFallback,
+            hasTranslationOutput: hasTranslationOutput
         )
         let showsAutoDismissFailure = !hasOriginalText && content.serviceResults.isEmpty && !originalVisibility.showsOriginalTextRegion
         let originalFontSize: CGFloat = if content.useFixedFontSize {
@@ -337,54 +339,56 @@ struct OverlayView: View {
                             .padding(.bottom, originalVisibility.usesEditableOriginalText ? 6 : 2)
                     }
 
-                    // Native Translation Section (System Translation)
-                    switch content.translationState {
-                    case .loading:
-                        VStack(alignment: .leading, spacing: 0) {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text(L("Translating"))
-                                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                LoadingDotsView()
-                            }
-                            .padding(.horizontal, paragraphTextHorizontalPadding)
-                            .padding(.vertical, 14)
-                        }
-
-                    case .ready(let translatedText):
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(alignment: .center, spacing: 8) {
-                                Text(paragraphTranslationSectionTitle)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-
-                                if content.isRetranslating {
+                    if content.showsNativeTranslation {
+                        // Native Translation Section (System Translation)
+                        switch content.translationState {
+                        case .loading:
+                            VStack(alignment: .leading, spacing: 0) {
+                                HStack(spacing: 8) {
                                     ProgressView()
                                         .controlSize(.small)
-                                        .scaleEffect(0.7)
+                                    Text(L("Translating"))
+                                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                                        .foregroundStyle(.secondary)
+                                    LoadingDotsView()
                                 }
-
-                                CopyButton(text: translatedText)
-                            }
-
-                            paragraphTextContent(
-                                text: translatedText,
-                                font: .systemFont(ofSize: translationFontSize, weight: .semibold),
-                                textColor: content.isRetranslating ? .secondaryLabelColor : .labelColor,
-                                preferredLineHeight: translationFontSize * 1.5
-                            )
-                        }
-                        .padding(.horizontal, paragraphTextHorizontalPadding)
-                        .padding(.top, originalVisibility.usesEditableOriginalText ? 12 : 14)
-                        .padding(.bottom, 14)
-
-                    case .failed(let message):
-                        VStack(alignment: .leading, spacing: 0) {
-                            paragraphErrorContent(message: L(message))
                                 .padding(.horizontal, paragraphTextHorizontalPadding)
                                 .padding(.vertical, 14)
+                            }
+
+                        case .ready(let translatedText):
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(alignment: .center, spacing: 8) {
+                                    Text(paragraphTranslationSectionTitle)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+
+                                    if content.isRetranslating {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                            .scaleEffect(0.7)
+                                    }
+
+                                    CopyButton(text: translatedText)
+                                }
+
+                                paragraphTextContent(
+                                    text: translatedText,
+                                    font: .systemFont(ofSize: translationFontSize, weight: .semibold),
+                                    textColor: content.isRetranslating ? .secondaryLabelColor : .labelColor,
+                                    preferredLineHeight: translationFontSize * 1.5
+                                )
+                            }
+                            .padding(.horizontal, paragraphTextHorizontalPadding)
+                            .padding(.top, originalVisibility.usesEditableOriginalText ? 12 : 14)
+                            .padding(.bottom, 14)
+
+                        case .failed(let message):
+                            VStack(alignment: .leading, spacing: 0) {
+                                paragraphErrorContent(message: L(message))
+                                    .padding(.horizontal, paragraphTextHorizontalPadding)
+                                    .padding(.vertical, 14)
+                            }
                         }
                     }
 
@@ -1687,13 +1691,15 @@ enum ParagraphOriginalVisibilityPolicy {
         isParagraphOverlayPinned: Bool,
         hidesOriginalTextSetting: Bool,
         isOriginalEditorExpanded: Bool,
-        isManualInputFallback: Bool = false
+        isManualInputFallback: Bool = false,
+        hasTranslationOutput: Bool = true
     ) -> Decision {
+        let shouldHideOriginalText = hidesOriginalTextSetting && hasTranslationOutput
         let canEditOriginalText = isParagraphOverlayPinned
         let showsEditableFallback = canEditOriginalText && !hasOriginalText
-        let showsOriginalEditorToggle = canEditOriginalText && hidesOriginalTextSetting && hasOriginalText && !isManualInputFallback
+        let showsOriginalEditorToggle = canEditOriginalText && shouldHideOriginalText && hasOriginalText && !isManualInputFallback
 
-        let showsOriginalTextRegion: Bool = if hidesOriginalTextSetting {
+        let showsOriginalTextRegion: Bool = if shouldHideOriginalText {
             showsEditableFallback || isManualInputFallback || (canEditOriginalText && isOriginalEditorExpanded)
         } else {
             hasOriginalText || canEditOriginalText
@@ -1704,7 +1710,7 @@ enum ParagraphOriginalVisibilityPolicy {
             showsOriginalTextRegion: showsOriginalTextRegion,
             usesEditableOriginalText: usesEditableOriginalText,
             showsOriginalEditorToggle: showsOriginalEditorToggle,
-            hidesOriginalTextRegion: hidesOriginalTextSetting && !showsOriginalTextRegion
+            hidesOriginalTextRegion: shouldHideOriginalText && !showsOriginalTextRegion
         )
     }
 }

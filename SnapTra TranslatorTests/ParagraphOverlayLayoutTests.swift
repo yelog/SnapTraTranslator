@@ -656,4 +656,20 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         XCTAssertFalse(decision.showsOriginalEditorToggle)
         XCTAssertTrue(decision.hidesOriginalTextRegion)
     }
+
+    func testOriginalVisibilityShowsOriginalWhenNoTranslationOutputExists() {
+        let decision = ParagraphOriginalVisibilityPolicy.resolve(
+            hasOriginalText: true,
+            isParagraphOverlayPinned: false,
+            hidesOriginalTextSetting: true,
+            isOriginalEditorExpanded: false,
+            isManualInputFallback: false,
+            hasTranslationOutput: false
+        )
+
+        XCTAssertTrue(decision.showsOriginalTextRegion)
+        XCTAssertFalse(decision.usesEditableOriginalText)
+        XCTAssertFalse(decision.showsOriginalEditorToggle)
+        XCTAssertFalse(decision.hidesOriginalTextRegion)
+    }
 }

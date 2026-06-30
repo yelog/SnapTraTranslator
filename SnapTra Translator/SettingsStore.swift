@@ -36,6 +36,16 @@ struct SentenceTranslationSource: Identifiable, Codable, Equatable {
     }
 }
 
+enum SentenceTranslationServiceSelection {
+    static func isNativeTranslationEnabled(in sources: [SentenceTranslationSource]) -> Bool {
+        sources.contains { $0.type == .native && $0.isEnabled }
+    }
+
+    static func enabledThirdPartyServices(in sources: [SentenceTranslationSource]) -> [SentenceTranslationSource] {
+        sources.filter { $0.isEnabled && !$0.isNative }
+    }
+}
+
 struct LLMProviderConfiguration: Identifiable, Codable, Equatable {
     let provider: SentenceTranslationSource.SourceType
     var model: String

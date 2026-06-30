@@ -110,6 +110,7 @@ struct ParagraphTranslationLanguageOption: Equatable, Identifiable {
 struct ParagraphOverlayContent: Equatable {
     var originalText: String?
     var translationState: ParagraphOverlayTranslationState
+    var showsNativeTranslation: Bool
     var serviceResults: [ServiceTranslationResult]
     var bodyFontSize: CGFloat
     var useFixedFontSize: Bool
@@ -122,6 +123,7 @@ struct ParagraphOverlayContent: Equatable {
     init(
         originalText: String? = nil,
         translationState: ParagraphOverlayTranslationState,
+        showsNativeTranslation: Bool = true,
         serviceResults: [ServiceTranslationResult] = [],
         bodyFontSize: CGFloat = 13,
         useFixedFontSize: Bool = false,
@@ -133,6 +135,7 @@ struct ParagraphOverlayContent: Equatable {
     ) {
         self.originalText = originalText
         self.translationState = translationState
+        self.showsNativeTranslation = showsNativeTranslation
         self.serviceResults = serviceResults
         self.bodyFontSize = bodyFontSize
         self.useFixedFontSize = useFixedFontSize
@@ -1107,13 +1110,18 @@ final class AppModel: ObservableObject {
             pasteboard.setString(snapshot.text, forType: .string)
         }
 
-        let enabledServices = settings.sentenceTranslationSources
-            .filter { $0.isEnabled && !$0.isNative }
+        let isNativeTranslationEnabled = SentenceTranslationServiceSelection.isNativeTranslationEnabled(
+            in: settings.sentenceTranslationSources
+        )
+        let enabledServices = SentenceTranslationServiceSelection.enabledThirdPartyServices(
+            in: settings.sentenceTranslationSources
+        )
         let languageOptions = paragraphLanguageOptions(for: languagePair)
 
         let initialContent = ParagraphOverlayContent(
             originalText: snapshot.text,
             translationState: .loading,
+            showsNativeTranslation: isNativeTranslationEnabled,
             serviceResults: enabledServices.map { source in
                 ServiceTranslationResult(sourceType: source.type, state: .loading)
             },
@@ -1136,19 +1144,21 @@ final class AppModel: ObservableObject {
             )
         }
 
-        let translationState = await loadSentenceTranslationState(
-            text: snapshot.text,
-            languagePair: languagePair,
-            sourceLanguage: sourceLanguage,
-            targetLanguage: targetLanguage,
-            translationBridge: translationBridge
-        )
+        if isNativeTranslationEnabled {
+            let translationState = await loadSentenceTranslationState(
+                text: snapshot.text,
+                languagePair: languagePair,
+                sourceLanguage: sourceLanguage,
+                targetLanguage: targetLanguage,
+                translationBridge: translationBridge
+            )
 
-        applyParagraphTranslationState(
-            translationState,
-            lookupID: lookupID,
-            anchor: mouseLocation
-        )
+            applyParagraphTranslationState(
+                translationState,
+                lookupID: lookupID,
+                anchor: mouseLocation
+            )
+        }
     }
 
     func performParagraphLookup(lookupID: UUID) async {
@@ -1229,13 +1239,18 @@ final class AppModel: ObservableObject {
                     pasteboard.setString(text, forType: .string)
                 }
 
-                let enabledServices = settings.sentenceTranslationSources
-                    .filter { $0.isEnabled && !$0.isNative }
+                let isNativeTranslationEnabled = SentenceTranslationServiceSelection.isNativeTranslationEnabled(
+                    in: settings.sentenceTranslationSources
+                )
+                let enabledServices = SentenceTranslationServiceSelection.enabledThirdPartyServices(
+                    in: settings.sentenceTranslationSources
+                )
                 let languageOptions = paragraphLanguageOptions(for: languagePair)
 
                 let initialContent = ParagraphOverlayContent(
                     originalText: text,
                     translationState: .loading,
+                    showsNativeTranslation: isNativeTranslationEnabled,
                     serviceResults: enabledServices.map { source in
                         ServiceTranslationResult(sourceType: source.type, state: .loading)
                     },
@@ -1257,19 +1272,21 @@ final class AppModel: ObservableObject {
                     )
                 }
 
-                let translationState = await loadSentenceTranslationState(
-                    text: text,
-                    languagePair: languagePair,
-                    sourceLanguage: sourceLanguage,
-                    targetLanguage: languagePair.targetLanguage,
-                    translationBridge: translationBridge
-                )
+                if isNativeTranslationEnabled {
+                    let translationState = await loadSentenceTranslationState(
+                        text: text,
+                        languagePair: languagePair,
+                        sourceLanguage: sourceLanguage,
+                        targetLanguage: languagePair.targetLanguage,
+                        translationBridge: translationBridge
+                    )
 
-                applyParagraphTranslationState(
-                    translationState,
-                    lookupID: lookupID,
-                    anchor: mouseLocation
-                )
+                    applyParagraphTranslationState(
+                        translationState,
+                        lookupID: lookupID,
+                        anchor: mouseLocation
+                    )
+                }
                 return
             case .english(let paragraph):
                 // Found paragraph - continue with translation
@@ -1302,8 +1319,12 @@ final class AppModel: ObservableObject {
                     pasteboard.setString(paragraph.text, forType: .string)
                 }
 
-                let enabledServices = settings.sentenceTranslationSources
-                    .filter { $0.isEnabled && !$0.isNative }
+                let isNativeTranslationEnabled = SentenceTranslationServiceSelection.isNativeTranslationEnabled(
+                    in: settings.sentenceTranslationSources
+                )
+                let enabledServices = SentenceTranslationServiceSelection.enabledThirdPartyServices(
+                    in: settings.sentenceTranslationSources
+                )
                 let languageOptions = paragraphLanguageOptions(for: languagePair)
 
                 let initialServiceResults = enabledServices.map { source in
@@ -1313,6 +1334,7 @@ final class AppModel: ObservableObject {
                 let initialContent = ParagraphOverlayContent(
                     originalText: paragraph.text,
                     translationState: .loading,
+                    showsNativeTranslation: isNativeTranslationEnabled,
                     serviceResults: initialServiceResults,
                     bodyFontSize: bodyFontSize,
                     languageOptions: languageOptions,
@@ -1335,20 +1357,21 @@ final class AppModel: ObservableObject {
                     )
                 }
 
-                // Perform native translation
-                let translationState = await loadParagraphTranslationState(
-                    paragraph: paragraph,
-                    languagePair: languagePair,
-                    sourceLanguage: sourceLanguage,
-                    targetLanguage: targetLanguage,
-                    translationBridge: translationBridge
-                )
+                if isNativeTranslationEnabled {
+                    let translationState = await loadParagraphTranslationState(
+                        paragraph: paragraph,
+                        languagePair: languagePair,
+                        sourceLanguage: sourceLanguage,
+                        targetLanguage: targetLanguage,
+                        translationBridge: translationBridge
+                    )
 
-                applyParagraphTranslationState(
-                    translationState,
-                    lookupID: lookupID,
-                    anchor: mouseLocation
-                )
+                    applyParagraphTranslationState(
+                        translationState,
+                        lookupID: lookupID,
+                        anchor: mouseLocation
+                    )
+                }
                 return
             }
         } catch is CancellationError {
@@ -1417,13 +1440,18 @@ final class AppModel: ObservableObject {
                 pasteboard.setString(text, forType: .string)
             }
 
-            let enabledServices = settings.sentenceTranslationSources
-                .filter { $0.isEnabled && !$0.isNative }
+            let isNativeTranslationEnabled = SentenceTranslationServiceSelection.isNativeTranslationEnabled(
+                in: settings.sentenceTranslationSources
+            )
+            let enabledServices = SentenceTranslationServiceSelection.enabledThirdPartyServices(
+                in: settings.sentenceTranslationSources
+            )
             let languageOptions = paragraphLanguageOptions(for: languagePair)
 
             let initialContent = ParagraphOverlayContent(
                 originalText: text,
                 translationState: .loading,
+                showsNativeTranslation: isNativeTranslationEnabled,
                 serviceResults: enabledServices.map { source in
                     ServiceTranslationResult(sourceType: source.type, state: .loading)
                 },
@@ -1445,19 +1473,21 @@ final class AppModel: ObservableObject {
                 )
             }
 
-            let translationState = await loadSentenceTranslationState(
-                text: text,
-                languagePair: languagePair,
-                sourceLanguage: sourceLanguage,
-                targetLanguage: languagePair.targetLanguage,
-                translationBridge: translationBridge
-            )
+            if isNativeTranslationEnabled {
+                let translationState = await loadSentenceTranslationState(
+                    text: text,
+                    languagePair: languagePair,
+                    sourceLanguage: sourceLanguage,
+                    targetLanguage: languagePair.targetLanguage,
+                    translationBridge: translationBridge
+                )
 
-            applyParagraphTranslationState(
-                translationState,
-                lookupID: lookupID,
-                anchor: anchor
-            )
+                applyParagraphTranslationState(
+                    translationState,
+                    lookupID: lookupID,
+                    anchor: anchor
+                )
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -1701,14 +1731,19 @@ final class AppModel: ObservableObject {
         let lookupID = UUID()
         activeLookupID = lookupID
         let anchor = overlayAnchor
-        let enabledServices = settings.sentenceTranslationSources
-            .filter { $0.isEnabled && !$0.isNative }
+        let isNativeTranslationEnabled = SentenceTranslationServiceSelection.isNativeTranslationEnabled(
+            in: settings.sentenceTranslationSources
+        )
+        let enabledServices = SentenceTranslationServiceSelection.enabledThirdPartyServices(
+            in: settings.sentenceTranslationSources
+        )
 
         updateParagraphOverlayContentIgnoringLookup(anchor: anchor) { content in
             // Keep existing translationState so the old translation text stays visible
             // during the direction switch, avoiding window resize jitter.
             // The text will be replaced in-place when the new translation arrives.
-            content.isRetranslating = true
+            content.isRetranslating = isNativeTranslationEnabled
+            content.showsNativeTranslation = isNativeTranslationEnabled
             content.serviceResults = enabledServices.map { source in
                 ServiceTranslationResult(sourceType: source.type, state: .loading)
             }
@@ -1730,19 +1765,21 @@ final class AppModel: ObservableObject {
                 anchor: anchor
             )
 
-            let translationState = await self.loadSentenceTranslationState(
-                text: originalText,
-                languagePair: languagePair,
-                sourceLanguage: languagePair.sourceLanguage,
-                targetLanguage: languagePair.targetLanguage,
-                translationBridge: self.translationBridge
-            )
+            if isNativeTranslationEnabled {
+                let translationState = await self.loadSentenceTranslationState(
+                    text: originalText,
+                    languagePair: languagePair,
+                    sourceLanguage: languagePair.sourceLanguage,
+                    targetLanguage: languagePair.targetLanguage,
+                    translationBridge: self.translationBridge
+                )
 
-            self.applyParagraphTranslationState(
-                translationState,
-                lookupID: lookupID,
-                anchor: anchor
-            )
+                self.applyParagraphTranslationState(
+                    translationState,
+                    lookupID: lookupID,
+                    anchor: anchor
+                )
+            }
             _ = await thirdPartyTranslations
         }
     }

@@ -363,6 +363,41 @@ final class DoubleTapSentenceTranslationPolicyTests: XCTestCase {
     }
 }
 
+final class SentenceTranslationServiceSelectionTests: XCTestCase {
+    func testNativeTranslationFollowsNativeSourceToggle() {
+        let sources = [
+            SentenceTranslationSource(id: UUID(), type: .native, isEnabled: false),
+            SentenceTranslationSource(id: UUID(), type: .google, isEnabled: true),
+        ]
+
+        XCTAssertFalse(SentenceTranslationServiceSelection.isNativeTranslationEnabled(in: sources))
+        XCTAssertEqual(
+            SentenceTranslationServiceSelection.enabledThirdPartyServices(in: sources).map(\.type),
+            [.google]
+        )
+    }
+
+    func testNativeTranslationIsEnabledOnlyByEnabledNativeSource() {
+        let sources = [
+            SentenceTranslationSource(id: UUID(), type: .native, isEnabled: true),
+            SentenceTranslationSource(id: UUID(), type: .google, isEnabled: false),
+        ]
+
+        XCTAssertTrue(SentenceTranslationServiceSelection.isNativeTranslationEnabled(in: sources))
+        XCTAssertTrue(SentenceTranslationServiceSelection.enabledThirdPartyServices(in: sources).isEmpty)
+    }
+
+    func testParagraphOverlayContentCanHideNativeTranslationSection() {
+        let content = ParagraphOverlayContent(
+            originalText: "Hello",
+            translationState: .loading,
+            showsNativeTranslation: false
+        )
+
+        XCTAssertFalse(content.showsNativeTranslation)
+    }
+}
+
 @MainActor
 final class SelectedTextLookupRoutingTests: XCTestCase {
     func testInsideSelectionRoutesToSelectedTextTranslation() {
