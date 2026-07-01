@@ -39,6 +39,9 @@ struct SentenceSettingsView: View {
                 }, onMove: moveSource)
                 .padding(.horizontal)
 
+                ImageTranslationSettingsSection(settings: model.settings)
+                    .padding(.horizontal)
+
                 // Refresh latency button
                 HStack {
                     Spacer()
@@ -210,11 +213,11 @@ struct SentenceServiceRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(.quaternary, lineWidth: 0.5)
         )
         // Special styling for native translation
@@ -560,5 +563,206 @@ private class TooltipNSView: NSView {
     
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return false
+    }
+}
+
+// MARK: - Image Translation Settings
+
+struct ImageTranslationSettingsSection: View {
+    @ObservedObject var settings: SettingsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(L("Image Translation"))
+                    .font(.headline)
+                Text(L("Used when Sentence Display is set to Image Translation"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(ImageTranslationProvider.allCases) { provider in
+                ImageTranslationProviderRow(provider: provider, settings: settings)
+            }
+        }
+        .padding(.top, 4)
+    }
+}
+
+private struct ImageTranslationProviderRow: View {
+    let provider: ImageTranslationProvider
+    @ObservedObject var settings: SettingsStore
+    @State private var secretText = ""
+
+    private var configuration: ImageTranslationProviderConfiguration {
+        settings.imageTranslationProviderConfiguration(for: provider)
+    }
+
+    private var isEnabled: Binding<Bool> {
+        Binding(
+            get: {
+                settings.imageTranslationSource.provider == provider
+                    && settings.imageTranslationSource.isEnabled
+            },
+            set: { isEnabled in
+                settings.updateImageTranslationSource(provider: provider, isEnabled: isEnabled)
+                loadSecret()
+            }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                providerIcon
+                    .frame(width: 24, height: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text(provider.displayName)
+                            .font(.system(size: 13, weight: .medium))
+
+                        if showsMissingCredentialsBadge {
+                            missingCredentialsBadge
+                        }
+                    }
+
+                    Text(provider.subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: isEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
+            .padding(.vertical, 8)
+
+            if isEnabled.wrappedValue {
+                VStack(alignment: .leading, spacing: 8) {
+                    Divider()
+                        .padding(.leading, 36)
+
+                    imageFieldRow(title: L("App ID")) {
+                        TextField(
+                            L("Required"),
+                            text: Binding(
+                                get: { configuration.appID },
+                                set: { appID in
+                                    settings.updateImageTranslationProviderConfiguration(
+                                        for: provider,
+                                        appID: appID,
+                                        endpoint: configuration.endpoint
+                                    )
+                                }
+                            )
+                        )
+                    }
+
+                    imageFieldRow(title: L("Secret Key")) {
+                        SecureField(L("Required"), text: $secretText)
+                            .onChange(of: secretText) { _, newValue in
+                                ImageTranslationCredentialStore.setSecret(newValue, for: provider)
+                            }
+                    }
+
+                    imageFieldRow(title: L("Endpoint")) {
+                        TextField(
+                            provider.defaultEndpoint,
+                            text: Binding(
+                                get: { configuration.endpoint },
+                                set: { endpoint in
+                                    settings.updateImageTranslationProviderConfiguration(
+                                        for: provider,
+                                        appID: configuration.appID,
+                                        endpoint: endpoint
+                                    )
+                                }
+                            )
+                        )
+                    }
+
+                    HStack(spacing: 8) {
+                        Spacer()
+                        Button {
+                            settings.resetImageTranslationProviderConfiguration(for: provider)
+                            secretText = ""
+                        } label: {
+                            Label(L("Reset Defaults"), systemImage: "arrow.counterclockwise")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.leading, 36)
+                }
+                .padding(.top, 8)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(.quaternary, lineWidth: 0.5)
+        )
+        .onAppear {
+            loadSecret()
+        }
+    }
+
+    @ViewBuilder
+    private var providerIcon: some View {
+        switch provider {
+        case .baidu:
+            Image("TTSBaidu")
+                .resizable()
+                .interpolation(.high)
+        }
+    }
+
+    private func imageFieldRow<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 82, alignment: .leading)
+
+            content()
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12))
+        }
+        .padding(.leading, 36)
+    }
+
+    private var showsMissingCredentialsBadge: Bool {
+        isEnabled.wrappedValue
+            && (configuration.appID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !ImageTranslationCredentialStore.hasSecret(for: provider))
+    }
+
+    private var missingCredentialsBadge: some View {
+        Text(L("Credentials Required"))
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(Color.orange.opacity(0.12))
+            )
+    }
+
+    private func loadSecret() {
+        secretText = ImageTranslationCredentialStore.secret(for: provider) ?? ""
     }
 }

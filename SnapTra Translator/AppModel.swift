@@ -381,6 +381,7 @@ final class AppModel: ObservableObject {
     private let dictionaryService = DictionaryService()
     private let speechService = SpeechService()
     private let sentenceTranslationService = SentenceTranslationService()
+    private let imageTranslationService = ImageTranslationService()
     let dictionaryDownload: DictionaryDownloadManager
     private var cancellables = Set<AnyCancellable>()
     private var lookupTask: Task<Void, Never>?
@@ -391,6 +392,7 @@ final class AppModel: ObservableObject {
     private var cachedLanguageStatuses: [String: CachedLanguageAvailabilityStatus] = [:]
     private var paragraphTranslationTask: Task<Void, Never>?
     private var activeInPlaceTranslationContent: InPlaceTranslationContent?
+    private var activeInPlaceImageTranslationContent: InPlaceImageTranslationContent?
 
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
@@ -414,6 +416,7 @@ final class AppModel: ObservableObject {
     private let paragraphHighlightWindowController = ParagraphHighlightWindowController()
     private let manualRegionSelectionWindowController = ManualRegionSelectionWindowController()
     private let inPlaceTranslationWindowController = InPlaceTranslationWindowController()
+    private let inPlaceImageTranslationWindowController = InPlaceImageTranslationWindowController()
     lazy var overlayWindowController = OverlayWindowController(model: self)
     private let startupLanguageAvailabilityRetryDelays: [UInt64] = [
         1_000_000_000,
@@ -1280,6 +1283,24 @@ final class AppModel: ObservableObject {
                     pasteboard.setString(text, forType: .string)
                 }
 
+                if usesImageSentenceTranslation {
+                    guard let imageData = pngData(from: capture.image, normalizedRect: line.boundingBox) else {
+                        showInPlaceImageTranslation(
+                            state: .failed(L("Image translation failed")),
+                            rect: lineRect
+                        )
+                        return
+                    }
+
+                    await performImageSentenceTranslation(
+                        imageData: imageData,
+                        sourceRect: lineRect,
+                        languagePair: languagePair,
+                        lookupID: lookupID
+                    )
+                    return
+                }
+
                 let isNativeTranslationEnabled = SentenceTranslationServiceSelection.isNativeTranslationEnabled(
                     in: settings.sentenceTranslationSources
                 )
@@ -1371,6 +1392,24 @@ final class AppModel: ObservableObject {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
                     pasteboard.setString(paragraph.text, forType: .string)
+                }
+
+                if usesImageSentenceTranslation {
+                    guard let imageData = pngData(from: capture.image, normalizedRect: paragraph.boundingBox) else {
+                        showInPlaceImageTranslation(
+                            state: .failed(L("Image translation failed")),
+                            rect: paragraphRect
+                        )
+                        return
+                    }
+
+                    await performImageSentenceTranslation(
+                        imageData: imageData,
+                        sourceRect: paragraphRect,
+                        languagePair: languagePair,
+                        lookupID: lookupID
+                    )
+                    return
                 }
 
                 let isNativeTranslationEnabled = SentenceTranslationServiceSelection.isNativeTranslationEnabled(
@@ -1466,6 +1505,27 @@ final class AppModel: ObservableObject {
                 translationState: .failed(L("Capture failed"))
             )
             updateOverlay(state: .paragraphResult(content), anchor: anchor)
+            return
+        }
+
+        if usesImageSentenceTranslation {
+            guard let imageData = pngData(from: capture.image) else {
+                showInPlaceImageTranslation(
+                    state: .failed(L("Image translation failed")),
+                    rect: capture.region.rect
+                )
+                return
+            }
+
+            activeParagraphRect = capture.region.rect
+            overlayPreferredWidth = max(320, capture.region.rect.width)
+
+            await performImageSentenceTranslation(
+                imageData: imageData,
+                sourceRect: capture.region.rect,
+                languagePair: configuredLanguagePair(),
+                lookupID: lookupID
+            )
             return
         }
 
@@ -2005,6 +2065,69 @@ final class AppModel: ObservableObject {
         content.translationState = .ready(translatedText)
         activeInPlaceTranslationContent = content
         inPlaceTranslationWindowController.show(content: content)
+    }
+
+    private var usesImageSentenceTranslation: Bool {
+        settings.sentenceTranslationPresentationMode == .imageTranslation
+    }
+
+    private func performImageSentenceTranslation(
+        imageData: Data,
+        sourceRect: CGRect,
+        languagePair: LookupLanguagePair,
+        lookupID: UUID
+    ) async {
+        let source = settings.imageTranslationSource
+        let configuration = settings.imageTranslationProviderConfiguration(for: source.provider)
+        let initialState: InPlaceImageTranslationState = source.isEnabled
+            ? .loading
+            : .failed(L("Enable an image translation service in Settings > Service > Sentence"))
+        showInPlaceImageTranslation(state: initialState, rect: sourceRect)
+
+        guard source.isEnabled else { return }
+
+        do {
+            let result = try await imageTranslationService.translate(
+                imageData: imageData,
+                provider: source.provider,
+                sourceLanguage: languagePair.sourceIdentifier,
+                targetLanguage: languagePair.targetIdentifier,
+                configuration: configuration
+            )
+            guard !Task.isCancelled, activeLookupID == lookupID else { return }
+
+            guard let pasteImageBase64 = result.pasteImageBase64,
+                  let translatedImageData = Self.imageData(fromBase64: pasteImageBase64) else {
+                throw SentenceTranslationError.invalidResponse
+            }
+
+            applyInPlaceImageTranslationState(
+                .ready(translatedImageData),
+                lookupID: lookupID
+            )
+        } catch {
+            guard !Task.isCancelled, activeLookupID == lookupID else { return }
+
+            let message = "\(String(localized: "Image translation failed")): \(error.localizedDescription)"
+            applyInPlaceImageTranslationState(
+                .failed(message),
+                lookupID: lookupID
+            )
+        }
+    }
+
+    private static func imageData(fromBase64 value: String) -> Data? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let base64Payload: String
+        if let commaIndex = trimmed.firstIndex(of: ",") {
+            base64Payload = String(trimmed[trimmed.index(after: commaIndex)...])
+        } else {
+            base64Payload = trimmed
+        }
+
+        return Data(base64Encoded: base64Payload, options: .ignoreUnknownCharacters)
     }
 
     private func loadSentenceTranslationState(
@@ -2674,6 +2797,42 @@ final class AppModel: ObservableObject {
         )
     }
 
+    private func pngData(from image: CGImage, normalizedRect: CGRect? = nil) -> Data? {
+        let imageToEncode: CGImage
+        if let normalizedRect {
+            guard let cropped = croppedImage(from: image, normalizedRect: normalizedRect) else {
+                return nil
+            }
+            imageToEncode = cropped
+        } else {
+            imageToEncode = image
+        }
+
+        let representation = NSBitmapImageRep(cgImage: imageToEncode)
+        return representation.representation(using: .png, properties: [:])
+    }
+
+    private func croppedImage(from image: CGImage, normalizedRect: CGRect) -> CGImage? {
+        let rect = normalizedRect.standardized
+        let clampedX = max(0, min(rect.minX, 1))
+        let clampedY = max(0, min(rect.minY, 1))
+        let clampedMaxX = max(clampedX, min(rect.maxX, 1))
+        let clampedMaxY = max(clampedY, min(rect.maxY, 1))
+
+        let pixelRect = CGRect(
+            x: clampedX * CGFloat(image.width),
+            y: clampedY * CGFloat(image.height),
+            width: max(1, (clampedMaxX - clampedX) * CGFloat(image.width)),
+            height: max(1, (clampedMaxY - clampedY) * CGFloat(image.height))
+        ).integral
+
+        guard pixelRect.width > 0, pixelRect.height > 0 else {
+            return nil
+        }
+
+        return image.cropping(to: pixelRect)
+    }
+
     private func shouldUseInPlaceSentenceTranslation(for rect: CGRect, text: String) -> Bool {
         guard settings.sentenceTranslationPresentationMode == .inPlace else {
             return false
@@ -2719,9 +2878,41 @@ final class AppModel: ObservableObject {
         syncOverlayDismissalMonitoring()
     }
 
+    private func showInPlaceImageTranslation(
+        state: InPlaceImageTranslationState,
+        rect: CGRect
+    ) {
+        let content = InPlaceImageTranslationContent(
+            state: state,
+            sourceRect: rect
+        )
+        paragraphHighlightWindowController.hide()
+        overlayWindowController.hideWindowOnly()
+        activeInPlaceImageTranslationContent = content
+        inPlaceImageTranslationWindowController.show(content: content)
+        syncOverlayDismissalMonitoring()
+    }
+
+    private func applyInPlaceImageTranslationState(
+        _ state: InPlaceImageTranslationState,
+        lookupID: UUID
+    ) {
+        guard activeLookupID == lookupID,
+              var content = activeInPlaceImageTranslationContent else {
+            return
+        }
+
+        content.state = state
+        activeInPlaceImageTranslationContent = content
+        inPlaceImageTranslationWindowController.show(content: content)
+        syncOverlayDismissalMonitoring()
+    }
+
     private func hideInPlaceTranslation() {
         activeInPlaceTranslationContent = nil
+        activeInPlaceImageTranslationContent = nil
         inPlaceTranslationWindowController.hide()
+        inPlaceImageTranslationWindowController.hide()
     }
 
     private func estimatedDisplayFontSize(from lines: [RecognizedTextLine], in captureRect: CGRect) -> CGFloat {
@@ -3082,9 +3273,13 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private var isInPlaceTranslationPresented: Bool {
+        activeInPlaceTranslationContent != nil || activeInPlaceImageTranslationContent != nil
+    }
+
     private func syncOverlayDismissalMonitoring() {
         if OverlayEscapeDismissalPolicy.shouldMonitor(
-            isParagraphOverlayPresented: isParagraphOverlayPresented || activeInPlaceTranslationContent != nil,
+            isParagraphOverlayPresented: isParagraphOverlayPresented || isInPlaceTranslationPresented,
             isTapKeptOverlayPresented: isTapKeptOverlayPresented
         ) {
             startOverlayEscapeMonitoringIfNeeded()
@@ -3135,7 +3330,7 @@ final class AppModel: ObservableObject {
     private func handleOverlayEscapeKey(_ event: NSEvent) -> Bool {
         guard OverlayEscapeDismissalPolicy.shouldDismiss(
             keyCode: event.keyCode,
-            isParagraphOverlayPresented: isParagraphOverlayPresented || activeInPlaceTranslationContent != nil,
+            isParagraphOverlayPresented: isParagraphOverlayPresented || isInPlaceTranslationPresented,
             isTapKeptOverlayPresented: isTapKeptOverlayPresented
         ) else { return false }
 

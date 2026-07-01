@@ -178,6 +178,7 @@ enum MenuBarIconStyle: String, CaseIterable, Identifiable {
 enum SentenceTranslationPresentationMode: String, CaseIterable, Identifiable {
     case overlayPanel
     case inPlace
+    case imageTranslation
 
     var id: String { rawValue }
 
@@ -187,6 +188,8 @@ enum SentenceTranslationPresentationMode: String, CaseIterable, Identifiable {
             return L("Translation Panel")
         case .inPlace:
             return L("In-place")
+        case .imageTranslation:
+            return L("Image Translation")
         }
     }
 }
@@ -219,6 +222,8 @@ enum AppSettingKey {
     static let selectedTextClipboardFallback = "selectedTextClipboardFallback"
     static let hideOriginalTextInSentenceOverlay = "hideOriginalTextInSentenceOverlay"
     static let sentenceTranslationPresentationMode = "sentenceTranslationPresentationMode"
+    static let imageTranslationSource = "imageTranslationSource"
+    static let imageTranslationSourceEnabled = "imageTranslationSourceEnabled"
     static let autoCheckUpdates = "autoCheckUpdates"
     static let updateChannel = "updateChannel"
     static let debugShowChannelSelector = "debugShowChannelSelector"

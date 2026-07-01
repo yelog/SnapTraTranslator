@@ -648,6 +648,9 @@ struct DictionarySettingsView: View {
             }, onMove: moveSentenceSource)
             .padding(.horizontal)
 
+            ImageTranslationSettingsSection(settings: model.settings)
+                .padding(.horizontal)
+
             HStack {
                 Spacer()
                 Button {

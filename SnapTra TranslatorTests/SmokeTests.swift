@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import XCTest
 @testable import SnapTra_Translator
@@ -9,26 +10,8 @@ final class SmokeTests: XCTestCase {
 }
 
 final class SentenceTranslationServiceStreamingTests: XCTestCase {
-    private var didCaptureOpenAIAPIKey = false
-    private var capturedOpenAIAPIKey: String?
-    private var didCaptureZhipuAPIKey = false
-    private var capturedZhipuAPIKey: String?
-
     override func tearDown() {
-        if didCaptureOpenAIAPIKey {
-            if let capturedOpenAIAPIKey {
-                LLMProviderCredentialStore.setAPIKey(capturedOpenAIAPIKey, for: .openAI)
-            } else {
-                LLMProviderCredentialStore.deleteAPIKey(for: .openAI)
-            }
-        }
-        if didCaptureZhipuAPIKey {
-            if let capturedZhipuAPIKey {
-                LLMProviderCredentialStore.setAPIKey(capturedZhipuAPIKey, for: .zhipu)
-            } else {
-                LLMProviderCredentialStore.deleteAPIKey(for: .zhipu)
-            }
-        }
+        LLMProviderCredentialStore.clearTestAPIKeyOverrides()
         MockLLMURLProtocol.requestHandler = nil
         super.tearDown()
     }
@@ -216,7 +199,7 @@ final class SentenceTranslationServiceStreamingTests: XCTestCase {
     }
 
     func testOpenAICompatibleStreamingUsesNoneForGPT5MiniReasoningEffort() async throws {
-        try configureTemporaryOpenAIAPIKey()
+        configureTemporaryOpenAIAPIKey()
 
         let stream = """
         data: {"choices":[{"delta":{"content":"你好"}}]}
@@ -269,7 +252,7 @@ final class SentenceTranslationServiceStreamingTests: XCTestCase {
     }
 
     func testOpenAICompatibleStreamingRetriesWithoutReasoningEffortWhenValueUnsupported() async throws {
-        try configureTemporaryOpenAIAPIKey()
+        configureTemporaryOpenAIAPIKey()
 
         let stream = """
         data: {"choices":[{"delta":{"content":"你好"}}]}
@@ -333,7 +316,7 @@ final class SentenceTranslationServiceStreamingTests: XCTestCase {
     }
 
     func testZhipuStreamingUsesInternationalURLAndDisablesThinking() async throws {
-        try configureTemporaryZhipuAPIKey()
+        configureTemporaryZhipuAPIKey()
 
         let stream = """
         data: {"choices":[{"delta":{"content":"你好"}}]}
@@ -386,22 +369,106 @@ final class SentenceTranslationServiceStreamingTests: XCTestCase {
         XCTAssertNil(requestBody?["reasoning_effort"])
     }
 
-    private func configureTemporaryOpenAIAPIKey() throws {
-        capturedOpenAIAPIKey = LLMProviderCredentialStore.apiKey(for: .openAI)
-        didCaptureOpenAIAPIKey = true
-
-        guard LLMProviderCredentialStore.setAPIKey("test-api-key", for: .openAI) else {
-            throw MockLLMURLProtocol.Error.missingBody
-        }
+    private func configureTemporaryOpenAIAPIKey() {
+        LLMProviderCredentialStore.setTestAPIKeyOverride("test-api-key", for: .openAI)
     }
 
-    private func configureTemporaryZhipuAPIKey() throws {
-        capturedZhipuAPIKey = LLMProviderCredentialStore.apiKey(for: .zhipu)
-        didCaptureZhipuAPIKey = true
+    private func configureTemporaryZhipuAPIKey() {
+        LLMProviderCredentialStore.setTestAPIKeyOverride("zhipu-test-key", for: .zhipu)
+    }
+}
 
-        guard LLMProviderCredentialStore.setAPIKey("zhipu-test-key", for: .zhipu) else {
-            throw MockLLMURLProtocol.Error.missingBody
+final class ImageTranslationServiceTests: XCTestCase {
+    override func tearDown() {
+        ImageTranslationCredentialStore.clearTestSecretOverrides()
+        MockLLMURLProtocol.requestHandler = nil
+        super.tearDown()
+    }
+
+    func testBaiduImageTranslationUsesSignedMultipartRequestAndReturnsTranslatedImage() async throws {
+        configureTemporaryBaiduSecret()
+
+        let imageData = Data("fake-png-data".utf8)
+        let translatedImageBase64 = Data("translated-image".utf8).base64EncodedString()
+        var capturedRequest: URLRequest?
+        var capturedBody = Data()
+
+        MockLLMURLProtocol.requestHandler = { request in
+            guard request.url?.absoluteString.hasPrefix("https://fanyi-api.baidu.com/api/trans/sdk/picture?") == true else {
+                throw MockLLMURLProtocol.Error.unexpectedURL
+            }
+            guard request.httpMethod == "POST" else {
+                throw MockLLMURLProtocol.Error.unexpectedHeader
+            }
+            guard request.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("multipart/form-data; boundary=") == true else {
+                throw MockLLMURLProtocol.Error.unexpectedHeader
+            }
+            capturedRequest = request
+            capturedBody = try request.rawBody()
+
+            let response = """
+            {"error_code":"0","error_msg":"success","data":{"from":"en","to":"zh","sumSrc":"Hello","sumDst":"你好","pasteImg":"\(translatedImageBase64)","content":[]}}
+            """
+            return (
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )!,
+                Data(response.utf8)
+            )
         }
+
+        let service = ImageTranslationService(session: .mockLLM)
+        let result = try await service.translate(
+            imageData: imageData,
+            provider: .baidu,
+            sourceLanguage: "en",
+            targetLanguage: "zh-Hans",
+            configuration: ImageTranslationProviderConfiguration(
+                provider: .baidu,
+                appID: "test-appid",
+                endpoint: "https://fanyi-api.baidu.com/api/trans/sdk/picture"
+            )
+        )
+
+        XCTAssertEqual(result.translatedText, "你好")
+        XCTAssertEqual(result.pasteImageBase64, translatedImageBase64)
+        let request = try XCTUnwrap(capturedRequest)
+        let queryItems = Dictionary(
+            uniqueKeysWithValues: URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .compactMap { item in item.value.map { (item.name, $0) } } ?? []
+        )
+        XCTAssertEqual(queryItems["from"], "en")
+        XCTAssertEqual(queryItems["to"], "zh")
+        XCTAssertEqual(queryItems["appid"], "test-appid")
+        XCTAssertEqual(queryItems["cuid"], "APICUID")
+        XCTAssertEqual(queryItems["mac"], "mac")
+        XCTAssertEqual(queryItems["version"], "3")
+        XCTAssertEqual(queryItems["paste"], "1")
+
+        let salt = try XCTUnwrap(queryItems["salt"])
+        let expectedSign = md5Hex("test-appid\(md5Hex(imageData))\(salt)APICUIDmactest-secret")
+        XCTAssertEqual(queryItems["sign"], expectedSign)
+
+        let bodyText = String(decoding: capturedBody, as: UTF8.self)
+        XCTAssertTrue(bodyText.contains(#"name="image"; filename="capture.png""#))
+        XCTAssertTrue(capturedBody.contains(imageData))
+    }
+
+    private func configureTemporaryBaiduSecret() {
+        ImageTranslationCredentialStore.setTestSecretOverride("test-secret", for: .baidu)
+    }
+
+    private func md5Hex(_ input: String) -> String {
+        md5Hex(Data(input.utf8))
+    }
+
+    private func md5Hex(_ data: Data) -> String {
+        let digest = Insecure.MD5.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -465,6 +532,22 @@ private extension URLRequest {
             throw MockLLMURLProtocol.Error.missingBody
         }
         return json
+    }
+
+    func rawBody() throws -> Data {
+        if let httpBody {
+            return httpBody
+        }
+        if let httpBodyStream {
+            return try Data(reading: httpBodyStream)
+        }
+        throw MockLLMURLProtocol.Error.missingBody
+    }
+}
+
+private extension Data {
+    func contains(_ needle: Data) -> Bool {
+        range(of: needle) != nil
     }
 }
 

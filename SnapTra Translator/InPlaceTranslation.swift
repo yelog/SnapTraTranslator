@@ -29,9 +29,9 @@ struct InPlaceTranslationStyle: Equatable {
 
 enum InPlaceTranslationStyleResolver {
     private static let defaultStyle = InPlaceTranslationStyle(
-        backgroundColor: .controlBackgroundColor,
+        backgroundColor: .windowBackgroundColor,
         foregroundColor: .labelColor,
-        borderColor: .separatorColor
+        borderColor: NSColor(calibratedWhite: 0.68, alpha: 1)
     )
 
     static func resolve(
@@ -262,6 +262,62 @@ struct InPlaceTranslationView: View {
     }
 }
 
+struct InPlaceImageTranslationContent: Equatable {
+    var state: InPlaceImageTranslationState
+    var sourceRect: CGRect
+}
+
+enum InPlaceImageTranslationState: Equatable {
+    case loading
+    case ready(Data)
+    case failed(String)
+}
+
+struct InPlaceImageTranslationView: View {
+    let content: InPlaceImageTranslationContent
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                switch content.state {
+                case .loading:
+                    fallbackContent(message: L("Translating"), size: proxy.size)
+                case .ready(let imageData):
+                    if let image = NSImage(data: imageData) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .clipped()
+                    } else {
+                        fallbackContent(message: L("Image translation failed"), size: proxy.size)
+                    }
+                case .failed(let message):
+                    fallbackContent(message: message, size: proxy.size)
+                }
+            }
+        }
+    }
+
+    private func fallbackContent(message: String, size: CGSize) -> some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: size.height < 32 ? 4 : 7, style: .continuous)
+                .fill(Color(nsColor: .windowBackgroundColor))
+                .overlay(
+                    RoundedRectangle(cornerRadius: size.height < 32 ? 4 : 7, style: .continuous)
+                        .strokeBorder(Color(nsColor: NSColor(calibratedWhite: 0.68, alpha: 1)).opacity(0.55), lineWidth: 0.75)
+                )
+                .shadow(color: .black.opacity(0.10), radius: 2, x: 0, y: 1)
+
+            Text(message)
+                .font(.system(size: max(11, min(15, size.height * 0.28)), weight: .semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .padding(size.height < 32 ? 4 : 8)
+        }
+    }
+}
+
 // MARK: - Selectable Text View
 
 private struct InPlaceSelectableTextView: NSViewRepresentable {
@@ -357,5 +413,48 @@ final class InPlaceTranslationWindowController: NSWindowController {
         if interactive {
             window.makeKey()
         }
+    }
+}
+
+@MainActor
+final class InPlaceImageTranslationWindowController: NSWindowController {
+    private let hostingView: NSHostingView<AnyView>
+
+    init() {
+        hostingView = NSHostingView(rootView: AnyView(EmptyView()))
+        let panel = InPlaceTranslationPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.contentView = hostingView
+        panel.isReleasedWhenClosed = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = .screenSaver
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.ignoresMouseEvents = true
+        panel.isMovableByWindowBackground = false
+        super.init(window: panel)
+        CaptureExclusionRegistry.shared.register(panel)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func show(content: InPlaceImageTranslationContent) {
+        guard let window else { return }
+        hostingView.rootView = AnyView(InPlaceImageTranslationView(content: content))
+        window.setFrame(content.sourceRect, display: true)
+        window.orderFrontRegardless()
+    }
+
+    func hide() {
+        hostingView.rootView = AnyView(EmptyView())
+        window?.orderOut(nil)
     }
 }

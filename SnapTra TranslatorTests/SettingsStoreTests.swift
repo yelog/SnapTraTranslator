@@ -50,12 +50,15 @@ final class SettingsStoreMigrationTests: XCTestCase {
         AppSettingKey.selectedTextTranslationEnabled,
         AppSettingKey.hideOriginalTextInSentenceOverlay,
         AppSettingKey.sentenceTranslationPresentationMode,
+        AppSettingKey.imageTranslationSource,
+        AppSettingKey.imageTranslationSourceEnabled,
         AppSettingKey.autoCheckUpdates,
         AppSettingKey.updateChannel,
         AppSettingKey.debugShowChannelSelector,
         "dictionarySources",
         "sentenceTranslationSources",
         "llmProviderConfigurations",
+        "imageTranslationProviderConfigurations",
     ]
 
     private func makeDefaults(testName: String = #function) -> UserDefaults {
@@ -363,6 +366,54 @@ final class SettingsStoreMigrationTests: XCTestCase {
         let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
 
         XCTAssertEqual(settings.sentenceTranslationPresentationMode, .inPlace)
+    }
+
+    func testSentenceTranslationPresentationModeIncludesImageTranslation() {
+        let localizationManager = LocalizationManager.shared
+        localizationManager.setLanguage(.english)
+        defer { localizationManager.setLanguage(.system) }
+
+        XCTAssertTrue(SentenceTranslationPresentationMode.allCases.contains(.imageTranslation))
+        XCTAssertEqual(SentenceTranslationPresentationMode.imageTranslation.displayName, "Image Translation")
+    }
+
+    func testImageTranslationSourceDefaultsToDisabledBaidu() {
+        let defaults = makeDefaults()
+
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertEqual(settings.imageTranslationSource.provider, .baidu)
+        XCTAssertFalse(settings.imageTranslationSource.isEnabled)
+        XCTAssertEqual(
+            defaults.string(forKey: AppSettingKey.imageTranslationSource),
+            ImageTranslationProvider.baidu.rawValue
+        )
+    }
+
+    func testDefaultImageTranslationProviderConfigurations() {
+        let configurations = SettingsStore.defaultImageTranslationProviderConfigurations()
+
+        XCTAssertEqual(configurations.map(\.provider), ImageTranslationProvider.allCases)
+        XCTAssertEqual(
+            configurations.first { $0.provider == .baidu }?.endpoint,
+            "https://fanyi-api.baidu.com/api/trans/sdk/picture"
+        )
+    }
+
+    func testImageTranslationProviderConfigurationMigrationPreservesCustomEndpoint() {
+        let existing = [
+            ImageTranslationProviderConfiguration(
+                provider: .baidu,
+                appID: "custom-appid",
+                endpoint: "https://proxy.example/picture"
+            ),
+        ]
+
+        let migrated = SettingsStore.migrateImageTranslationProviderConfigurations(existing)
+
+        XCTAssertEqual(migrated.map(\.provider), ImageTranslationProvider.allCases)
+        XCTAssertEqual(migrated.first { $0.provider == .baidu }?.appID, "custom-appid")
+        XCTAssertEqual(migrated.first { $0.provider == .baidu }?.endpoint, "https://proxy.example/picture")
     }
 
     func testKeepWordOverlayAfterTapDefaultsToEnabled() {

@@ -78,6 +78,68 @@ struct LLMProviderConfiguration: Identifiable, Codable, Equatable {
     }
 }
 
+// MARK: - Image Translation Source
+
+enum ImageTranslationProvider: String, CaseIterable, Codable, Identifiable {
+    case baidu
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .baidu:
+            return L("Baidu")
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .baidu:
+            return L("Baidu image translation")
+        }
+    }
+
+    var defaultEndpoint: String {
+        switch self {
+        case .baidu:
+            return "https://fanyi-api.baidu.com/api/trans/sdk/picture"
+        }
+    }
+}
+
+struct ImageTranslationSource: Codable, Equatable {
+    var provider: ImageTranslationProvider
+    var isEnabled: Bool
+
+    static let `default` = ImageTranslationSource(provider: .baidu, isEnabled: false)
+}
+
+struct ImageTranslationProviderConfiguration: Identifiable, Codable, Equatable {
+    let provider: ImageTranslationProvider
+    var appID: String
+    var endpoint: String
+
+    var id: String {
+        provider.rawValue
+    }
+
+    init(
+        provider: ImageTranslationProvider,
+        appID: String = "",
+        endpoint: String? = nil
+    ) {
+        self.provider = provider
+        self.appID = appID
+        self.endpoint = endpoint ?? provider.defaultEndpoint
+    }
+
+    static func defaultConfiguration(
+        for provider: ImageTranslationProvider
+    ) -> ImageTranslationProviderConfiguration {
+        ImageTranslationProviderConfiguration(provider: provider)
+    }
+}
+
 enum ZhipuAPIRegion: String, CaseIterable, Codable, Equatable {
     case domestic
     case international
@@ -315,6 +377,16 @@ final class SettingsStore: ObservableObject {
             saveLLMProviderConfigurations()
         }
     }
+    @Published var imageTranslationSource: ImageTranslationSource {
+        didSet {
+            saveImageTranslationSource()
+        }
+    }
+    @Published var imageTranslationProviderConfigurations: [ImageTranslationProviderConfiguration] {
+        didSet {
+            saveImageTranslationProviderConfigurations()
+        }
+    }
     @Published var wordTTSProvider: TTSProvider {
         didSet { defaults.set(wordTTSProvider.rawValue, forKey: AppSettingKey.wordTTSProvider) }
     }
@@ -393,6 +465,7 @@ final class SettingsStore: ObservableObject {
     private static let dictionarySourcesKey = "dictionarySources"
     private static let sentenceTranslationSourcesKey = "sentenceTranslationSources"
     private static let llmProviderConfigurationsKey = "llmProviderConfigurations"
+    private static let imageTranslationProviderConfigurationsKey = "imageTranslationProviderConfigurations"
 
     init(defaults: UserDefaults = .standard, loginItemStatus: Bool? = nil) {
         self.defaults = defaults
@@ -448,6 +521,8 @@ final class SettingsStore: ObservableObject {
         // Load sentence translation sources
         sentenceTranslationSources = Self.loadOrMigrateSentenceTranslationSources(defaults: defaults)
         llmProviderConfigurations = Self.loadOrMigrateLLMProviderConfigurations(defaults: defaults)
+        imageTranslationSource = Self.loadImageTranslationSource(defaults: defaults)
+        imageTranslationProviderConfigurations = Self.loadOrMigrateImageTranslationProviderConfigurations(defaults: defaults)
 
         // Load TTS providers with migration from old single ttsProvider
         let hasOldTTSKey = defaults.object(forKey: AppSettingKey.ttsProvider) != nil
@@ -554,6 +629,7 @@ final class SettingsStore: ObservableObject {
             sentenceTranslationPresentationMode.rawValue,
             forKey: AppSettingKey.sentenceTranslationPresentationMode
         )
+        saveImageTranslationSource()
         defaults.set(autoCheckUpdates, forKey: AppSettingKey.autoCheckUpdates)
         defaults.set(updateChannel.rawValue, forKey: AppSettingKey.updateChannel)
         #if DEBUG
@@ -565,6 +641,7 @@ final class SettingsStore: ObservableObject {
         saveDictionarySources()
         saveSentenceTranslationSources()
         saveLLMProviderConfigurations()
+        saveImageTranslationProviderConfigurations()
     }
 
     private static func loadOrMigrateDictionarySources(defaults: UserDefaults) -> [DictionarySource] {
@@ -739,6 +816,15 @@ final class SettingsStore: ObservableObject {
 
     private func saveLLMProviderConfigurations() {
         Self.persistLLMProviderConfigurations(llmProviderConfigurations, defaults: defaults)
+    }
+
+    private func saveImageTranslationSource() {
+        defaults.set(imageTranslationSource.provider.rawValue, forKey: AppSettingKey.imageTranslationSource)
+        defaults.set(imageTranslationSource.isEnabled, forKey: AppSettingKey.imageTranslationSourceEnabled)
+    }
+
+    private func saveImageTranslationProviderConfigurations() {
+        Self.persistImageTranslationProviderConfigurations(imageTranslationProviderConfigurations, defaults: defaults)
     }
 
     private static func loadOrMigrateSentenceTranslationSources(defaults: UserDefaults) -> [SentenceTranslationSource] {
@@ -940,5 +1026,117 @@ final class SettingsStore: ObservableObject {
             baseURL: provider.defaultLLMBaseURL,
             zhipuRegion: provider == .zhipu ? .domestic : nil
         )
+    }
+
+    // MARK: - Image Translation
+
+    private static func loadImageTranslationSource(defaults: UserDefaults) -> ImageTranslationSource {
+        let providerValue = defaults.string(forKey: AppSettingKey.imageTranslationSource)
+        let provider = ImageTranslationProvider(rawValue: providerValue ?? "") ?? .baidu
+        let isEnabled = defaults.object(forKey: AppSettingKey.imageTranslationSourceEnabled) as? Bool ?? false
+        let source = ImageTranslationSource(provider: provider, isEnabled: isEnabled)
+        defaults.set(source.provider.rawValue, forKey: AppSettingKey.imageTranslationSource)
+        defaults.set(source.isEnabled, forKey: AppSettingKey.imageTranslationSourceEnabled)
+        return source
+    }
+
+    private static func loadOrMigrateImageTranslationProviderConfigurations(
+        defaults: UserDefaults
+    ) -> [ImageTranslationProviderConfiguration] {
+        if let data = defaults.data(forKey: imageTranslationProviderConfigurationsKey),
+           let configurations = try? JSONDecoder().decode([ImageTranslationProviderConfiguration].self, from: data) {
+            let migrated = migrateImageTranslationProviderConfigurations(configurations)
+            persistImageTranslationProviderConfigurations(migrated, defaults: defaults)
+            return migrated
+        }
+
+        let configurations = defaultImageTranslationProviderConfigurations()
+        persistImageTranslationProviderConfigurations(configurations, defaults: defaults)
+        return configurations
+    }
+
+    static func migrateImageTranslationProviderConfigurations(
+        _ configurations: [ImageTranslationProviderConfiguration]
+    ) -> [ImageTranslationProviderConfiguration] {
+        var result: [ImageTranslationProviderConfiguration] = []
+        var seenProviders = Set<ImageTranslationProvider>()
+
+        for provider in ImageTranslationProvider.allCases {
+            let existing = configurations.first {
+                $0.provider == provider && !seenProviders.contains($0.provider)
+            }
+            let configuration = existing ?? ImageTranslationProviderConfiguration.defaultConfiguration(for: provider)
+            result.append(
+                ImageTranslationProviderConfiguration(
+                    provider: provider,
+                    appID: configuration.appID,
+                    endpoint: configuration.endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? provider.defaultEndpoint
+                        : configuration.endpoint
+                )
+            )
+            seenProviders.insert(provider)
+        }
+
+        return result
+    }
+
+    static func defaultImageTranslationProviderConfigurations() -> [ImageTranslationProviderConfiguration] {
+        ImageTranslationProvider.allCases.map {
+            ImageTranslationProviderConfiguration.defaultConfiguration(for: $0)
+        }
+    }
+
+    private static func persistImageTranslationProviderConfigurations(
+        _ configurations: [ImageTranslationProviderConfiguration],
+        defaults: UserDefaults
+    ) {
+        if let data = try? JSONEncoder().encode(configurations) {
+            defaults.set(data, forKey: imageTranslationProviderConfigurationsKey)
+        }
+    }
+
+    func imageTranslationProviderConfiguration(
+        for provider: ImageTranslationProvider
+    ) -> ImageTranslationProviderConfiguration {
+        imageTranslationProviderConfigurations.first { $0.provider == provider }
+            ?? ImageTranslationProviderConfiguration.defaultConfiguration(for: provider)
+    }
+
+    func updateImageTranslationSource(
+        provider: ImageTranslationProvider,
+        isEnabled: Bool
+    ) {
+        imageTranslationSource = ImageTranslationSource(provider: provider, isEnabled: isEnabled)
+    }
+
+    func updateImageTranslationProviderConfiguration(
+        for provider: ImageTranslationProvider,
+        appID: String,
+        endpoint: String
+    ) {
+        var configurations = imageTranslationProviderConfigurations
+        let configuration = ImageTranslationProviderConfiguration(
+            provider: provider,
+            appID: appID,
+            endpoint: endpoint
+        )
+
+        if let index = configurations.firstIndex(where: { $0.provider == provider }) {
+            configurations[index] = configuration
+        } else {
+            configurations.append(configuration)
+        }
+
+        imageTranslationProviderConfigurations = Self.migrateImageTranslationProviderConfigurations(configurations)
+    }
+
+    func resetImageTranslationProviderConfiguration(for provider: ImageTranslationProvider) {
+        updateImageTranslationProviderConfiguration(
+            for: provider,
+            appID: "",
+            endpoint: provider.defaultEndpoint
+        )
+        ImageTranslationCredentialStore.deleteSecret(for: provider)
     }
 }

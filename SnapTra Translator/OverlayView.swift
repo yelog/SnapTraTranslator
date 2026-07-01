@@ -907,7 +907,11 @@ struct OverlayView: View {
     }
 
     private var paragraphTranslationSectionTitle: String {
-        SentenceTranslationSource.SourceType.native.displayName
+        if model.settings.sentenceTranslationPresentationMode == .imageTranslation {
+            return model.settings.imageTranslationSource.provider.displayName
+        }
+
+        return SentenceTranslationSource.SourceType.native.displayName
     }
 
     private var paragraphHeaderDragGesture: some Gesture {

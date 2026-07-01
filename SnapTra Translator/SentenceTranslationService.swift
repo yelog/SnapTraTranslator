@@ -1645,9 +1645,18 @@ private struct GeminiGenerateContentResponse: Decodable {
 
 enum LLMProviderCredentialStore {
     private static let service = "com.yelog.SnapTra-Translator.llm"
+#if DEBUG
+    private static var testAPIKeyOverrides: [SentenceTranslationSource.SourceType: String] = [:]
+#endif
 
     static func apiKey(for provider: SentenceTranslationSource.SourceType) -> String? {
         guard provider.isLLMProvider else { return nil }
+
+#if DEBUG
+        if let testAPIKey = testAPIKeyOverrides[provider] {
+            return testAPIKey
+        }
+#endif
 
         var query = baseQuery(for: provider)
         query[kSecReturnData as String] = true
@@ -1712,6 +1721,373 @@ enum LLMProviderCredentialStore {
             kSecAttrAccount as String: provider.rawValue,
         ]
     }
+
+#if DEBUG
+    static func setTestAPIKeyOverride(
+        _ apiKey: String?,
+        for provider: SentenceTranslationSource.SourceType
+    ) {
+        if let apiKey {
+            testAPIKeyOverrides[provider] = apiKey
+        } else {
+            testAPIKeyOverrides.removeValue(forKey: provider)
+        }
+    }
+
+    static func clearTestAPIKeyOverrides() {
+        testAPIKeyOverrides.removeAll()
+    }
+#endif
+}
+
+struct ImageTranslationResult: Equatable {
+    let translatedText: String
+    let sourceText: String?
+    let pasteImageBase64: String?
+}
+
+final class ImageTranslationService {
+    private let session: URLSession
+
+    init(session: URLSession = SharedURLSession.ephemeral) {
+        self.session = session
+    }
+
+    func translate(
+        imageData: Data,
+        provider: ImageTranslationProvider,
+        sourceLanguage: String,
+        targetLanguage: String,
+        configuration: ImageTranslationProviderConfiguration
+    ) async throws -> ImageTranslationResult {
+        switch provider {
+        case .baidu:
+            return try await translateBaiduImage(
+                imageData: imageData,
+                sourceLanguage: sourceLanguage,
+                targetLanguage: targetLanguage,
+                configuration: configuration
+            )
+        }
+    }
+
+    private func translateBaiduImage(
+        imageData: Data,
+        sourceLanguage: String,
+        targetLanguage: String,
+        configuration: ImageTranslationProviderConfiguration
+    ) async throws -> ImageTranslationResult {
+        guard !imageData.isEmpty, imageData.count <= 4 * 1024 * 1024 else {
+            throw SentenceTranslationError.invalidRequest
+        }
+
+        let appID = configuration.appID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !appID.isEmpty else {
+            throw SentenceTranslationError.missingConfiguration(provider: ImageTranslationProvider.baidu.displayName, field: "App ID")
+        }
+
+        guard let secret = ImageTranslationCredentialStore.secret(for: .baidu)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !secret.isEmpty else {
+            throw SentenceTranslationError.missingConfiguration(provider: ImageTranslationProvider.baidu.displayName, field: "Secret Key")
+        }
+
+        guard let from = baiduImageLanguageCode(for: sourceLanguage, isSource: true),
+              let to = baiduImageLanguageCode(for: targetLanguage, isSource: false) else {
+            throw SentenceTranslationError.invalidRequest
+        }
+
+        let salt = String(Int(Date().timeIntervalSince1970 * 1000))
+        let cuid = "APICUID"
+        let mac = "mac"
+        let version = "3"
+        let paste = "1"
+        let sign = md5Hex("\(appID)\(md5Hex(imageData))\(salt)\(cuid)\(mac)\(secret)")
+
+        guard var components = URLComponents(
+            string: configuration.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        ) else {
+            throw SentenceTranslationError.missingConfiguration(provider: ImageTranslationProvider.baidu.displayName, field: "Endpoint")
+        }
+        components.queryItems = [
+            .init(name: "from", value: from),
+            .init(name: "to", value: to),
+            .init(name: "appid", value: appID),
+            .init(name: "salt", value: salt),
+            .init(name: "cuid", value: cuid),
+            .init(name: "mac", value: mac),
+            .init(name: "version", value: version),
+            .init(name: "paste", value: paste),
+            .init(name: "sign", value: sign),
+        ]
+
+        guard let url = components.url else {
+            throw SentenceTranslationError.invalidRequest
+        }
+
+        let boundary = "SnapTraBoundary-\(UUID().uuidString)"
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = multipartBody(
+            imageData: imageData,
+            boundary: boundary
+        )
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        let data = try await performProviderRequest(request, provider: ImageTranslationProvider.baidu.displayName)
+        let response = try JSONDecoder().decode(BaiduImageTranslationResponse.self, from: data)
+        if let errorCode = response.errorCode, !errorCode.isEmpty, errorCode != "0" {
+            throw SentenceTranslationError.providerRejected(
+                provider: ImageTranslationProvider.baidu.displayName,
+                code: Int(errorCode) ?? -1,
+                message: response.errorMessage
+            )
+        }
+
+        let translatedText = response.resolvedTranslatedText
+        guard !translatedText.isEmpty else {
+            throw SentenceTranslationError.invalidResponse
+        }
+
+        return ImageTranslationResult(
+            translatedText: translatedText,
+            sourceText: response.resolvedSourceText,
+            pasteImageBase64: response.resolvedPasteImageBase64
+        )
+    }
+
+    private func baiduImageLanguageCode(for identifier: String, isSource: Bool) -> String? {
+        let normalized = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.isEmpty {
+            return isSource ? "auto" : nil
+        }
+        if normalized.hasPrefix("zh") { return "zh" }
+
+        let languageCode = Locale.Language(identifier: normalized).languageCode?.identifier
+            ?? normalized.split(separator: "-").first.map(String.init)
+            ?? normalized
+
+        switch languageCode.lowercased() {
+        case "auto":
+            return isSource ? "auto" : nil
+        case "en":
+            return "en"
+        case "ja":
+            return "jp"
+        case "ko":
+            return "kor"
+        case "fr":
+            return "fra"
+        case "es":
+            return "spa"
+        case "ar":
+            return "ara"
+        case "vi":
+            return "vie"
+        case "pt", "ru", "de", "it", "th":
+            return languageCode.lowercased()
+        default:
+            return isSource ? "auto" : nil
+        }
+    }
+
+    private func multipartBody(
+        imageData: Data,
+        boundary: String
+    ) -> Data {
+        var body = Data()
+        append("--\(boundary)\r\n", to: &body)
+        append("Content-Disposition: form-data; name=\"image\"; filename=\"capture.png\"\r\n", to: &body)
+        append("Content-Type: image/png\r\n\r\n", to: &body)
+        body.append(imageData)
+        append("\r\n--\(boundary)--\r\n", to: &body)
+        return body
+    }
+
+    private func append(_ string: String, to data: inout Data) {
+        data.append(Data(string.utf8))
+    }
+
+    private func performProviderRequest(_ request: URLRequest, provider: String) async throws -> Data {
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw SentenceTranslationError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let message = String(data: data, encoding: .utf8)
+                .map { String($0.prefix(500)) }
+            throw SentenceTranslationError.providerRejected(
+                provider: provider,
+                code: httpResponse.statusCode,
+                message: message
+            )
+        }
+        return data
+    }
+
+    private func md5Hex(_ input: String) -> String {
+        md5Hex(Data(input.utf8))
+    }
+
+    private func md5Hex(_ data: Data) -> String {
+        let digest = Insecure.MD5.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) SnapTra/1.0"
+}
+
+private struct BaiduImageTranslationResponse: Decodable {
+    let errorCode: String?
+    let errorMessage: String?
+    let data: Payload?
+    let sumSrc: String?
+    let sumDst: String?
+    let pasteImg: String?
+    let content: [Content]?
+
+    var resolvedSourceText: String? {
+        data?.sumSrc ?? sumSrc
+    }
+
+    var resolvedTranslatedText: String {
+        if let sumDst = (data?.sumDst ?? sumDst)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sumDst.isEmpty {
+            return sumDst
+        }
+
+        return (data?.content ?? content ?? [])
+            .compactMap(\.dst)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+    }
+
+    var resolvedPasteImageBase64: String? {
+        if let pasteImg = (data?.pasteImg ?? pasteImg)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !pasteImg.isEmpty {
+            return pasteImg
+        }
+
+        return (data?.content ?? content)?
+            .compactMap(\.pasteImg)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case errorCode = "error_code"
+        case errorMessage = "error_msg"
+        case data
+        case sumSrc
+        case sumDst
+        case pasteImg
+        case content
+    }
+
+    struct Payload: Decodable {
+        let sumSrc: String?
+        let sumDst: String?
+        let pasteImg: String?
+        let content: [Content]?
+    }
+
+    struct Content: Decodable {
+        let dst: String?
+        let pasteImg: String?
+    }
+}
+
+enum ImageTranslationCredentialStore {
+    private static let service = "com.yelog.SnapTra-Translator.image-translation"
+#if DEBUG
+    private static var testSecretOverrides: [ImageTranslationProvider: String] = [:]
+#endif
+
+    static func secret(for provider: ImageTranslationProvider) -> String? {
+#if DEBUG
+        if let testSecret = testSecretOverrides[provider] {
+            return testSecret
+        }
+#endif
+
+        var query = baseQuery(for: provider)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess,
+              let data = item as? Data,
+              let secret = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+
+        return secret
+    }
+
+    static func hasSecret(for provider: ImageTranslationProvider) -> Bool {
+        guard let secret = secret(for: provider)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return false
+        }
+        return !secret.isEmpty
+    }
+
+    @discardableResult
+    static func setSecret(
+        _ secret: String,
+        for provider: ImageTranslationProvider
+    ) -> Bool {
+        let trimmedSecret = secret.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSecret.isEmpty else {
+            return deleteSecret(for: provider)
+        }
+
+        guard let data = trimmedSecret.data(using: .utf8) else { return false }
+        let query = baseQuery(for: provider)
+        let attributes = [kSecValueData as String: data]
+
+        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if updateStatus == errSecSuccess {
+            return true
+        }
+
+        var addQuery = query
+        addQuery[kSecValueData as String] = data
+        return SecItemAdd(addQuery as CFDictionary, nil) == errSecSuccess
+    }
+
+    @discardableResult
+    static func deleteSecret(for provider: ImageTranslationProvider) -> Bool {
+        let status = SecItemDelete(baseQuery(for: provider) as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
+    private static func baseQuery(for provider: ImageTranslationProvider) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: provider.rawValue,
+        ]
+    }
+
+#if DEBUG
+    static func setTestSecretOverride(
+        _ secret: String?,
+        for provider: ImageTranslationProvider
+    ) {
+        if let secret {
+            testSecretOverrides[provider] = secret
+        } else {
+            testSecretOverrides.removeValue(forKey: provider)
+        }
+    }
+
+    static func clearTestSecretOverrides() {
+        testSecretOverrides.removeAll()
+    }
+#endif
 }
 
 private extension Array {
