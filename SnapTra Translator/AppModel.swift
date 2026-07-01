@@ -2878,7 +2878,7 @@ final class AppModel: ObservableObject {
             return false
         }
 
-        guard rect.width >= 120, rect.height >= 24 else {
+        guard rect.width >= 40, rect.height >= 14 else {
             return false
         }
 
