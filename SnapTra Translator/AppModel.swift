@@ -1519,11 +1519,12 @@ final class AppModel: ObservableObject {
 
             activeParagraphRect = capture.region.rect
             overlayPreferredWidth = max(320, capture.region.rect.width)
+            let languagePair = await resolveManualImageTranslationLanguagePair(from: capture.image)
 
             await performImageSentenceTranslation(
                 imageData: imageData,
                 sourceRect: capture.region.rect,
-                languagePair: configuredLanguagePair(),
+                languagePair: languagePair,
                 lookupID: lookupID
             )
             return
@@ -2128,6 +2129,29 @@ final class AppModel: ObservableObject {
         }
 
         return Data(base64Encoded: base64Payload, options: .ignoreUnknownCharacters)
+    }
+
+    private func resolveManualImageTranslationLanguagePair(from image: CGImage) async -> LookupLanguagePair {
+        let configuredPair = configuredLanguagePair()
+        guard settings.bidirectionalTranslationEnabled,
+              LookupLanguagePairResolver.supportsBidirectionalDetection(for: configuredPair) else {
+            return configuredPair
+        }
+
+        do {
+            let (_, lines) = try await ocrService.recognizeParagraphsWithRawLines(
+                in: image,
+                language: settings.sourceLanguage
+            )
+            let recognizedText = OCRService.recognizedText(from: lines)
+            return ImageSentenceTranslationLanguagePairResolver.resolveManualRegionPair(
+                recognizedText: recognizedText,
+                configuredPair: configuredPair,
+                bidirectionalEnabled: settings.bidirectionalTranslationEnabled
+            )
+        } catch {
+            return configuredPair
+        }
     }
 
     private func loadSentenceTranslationState(

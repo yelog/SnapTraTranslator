@@ -102,7 +102,7 @@ enum ImageTranslationProvider: String, CaseIterable, Codable, Identifiable {
     var defaultEndpoint: String {
         switch self {
         case .baidu:
-            return "https://fanyi-api.baidu.com/api/trans/sdk/picture"
+            return "https://fanyi-api.baidu.com/ait/api/picture/translate"
         }
     }
 }
@@ -1070,15 +1070,33 @@ final class SettingsStore: ObservableObject {
                 ImageTranslationProviderConfiguration(
                     provider: provider,
                     appID: configuration.appID,
-                    endpoint: configuration.endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        ? provider.defaultEndpoint
-                        : configuration.endpoint
+                    endpoint: Self.migratedImageTranslationEndpoint(
+                        configuration.endpoint,
+                        provider: provider
+                    )
                 )
             )
             seenProviders.insert(provider)
         }
 
         return result
+    }
+
+    private static func migratedImageTranslationEndpoint(
+        _ endpoint: String,
+        provider: ImageTranslationProvider
+    ) -> String {
+        let trimmed = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return provider.defaultEndpoint
+        }
+
+        switch provider {
+        case .baidu where trimmed == "https://fanyi-api.baidu.com/api/trans/sdk/picture":
+            return provider.defaultEndpoint
+        default:
+            return endpoint
+        }
     }
 
     static func defaultImageTranslationProviderConfigurations() -> [ImageTranslationProviderConfiguration] {

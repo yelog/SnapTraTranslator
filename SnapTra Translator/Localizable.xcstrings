@@ -91,6 +91,23 @@
         }
       }
     },
+    "Access Token / Secret Key" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Access Token / Secret Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Access Token / Secret Key"
+          }
+        }
+      }
+    },
     "About SnapTra Translator" : {
       "comment" : "About window title",
       "extractionState" : "stale",

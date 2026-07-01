@@ -197,6 +197,33 @@ final class OCRTokenClassifierTests: XCTestCase {
         XCTAssertEqual(result, pair)
     }
 
+    func testManualImageTranslationDirectionReversesForTargetLanguageText() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
+
+        let result = ImageSentenceTranslationLanguagePairResolver.resolveManualRegionPair(
+            recognizedText: "这是手动框选出来的中文图片区域",
+            configuredPair: pair,
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertEqual(
+            result,
+            LookupLanguagePair.fixed(sourceIdentifier: "zh-Hans", targetIdentifier: "en")
+        )
+    }
+
+    func testManualImageTranslationDirectionFallsBackWhenOCRTextIsEmpty() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
+
+        let result = ImageSentenceTranslationLanguagePairResolver.resolveManualRegionPair(
+            recognizedText: "",
+            configuredPair: pair,
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertEqual(result, pair)
+    }
+
     // MARK: - Russian ↔ Chinese Bidirectional Tests
 
     func testBidirectionalResolverReversesRussianChineseForChineseText() {

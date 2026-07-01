@@ -396,7 +396,7 @@ final class SettingsStoreMigrationTests: XCTestCase {
         XCTAssertEqual(configurations.map(\.provider), ImageTranslationProvider.allCases)
         XCTAssertEqual(
             configurations.first { $0.provider == .baidu }?.endpoint,
-            "https://fanyi-api.baidu.com/api/trans/sdk/picture"
+            "https://fanyi-api.baidu.com/ait/api/picture/translate"
         )
     }
 
@@ -414,6 +414,24 @@ final class SettingsStoreMigrationTests: XCTestCase {
         XCTAssertEqual(migrated.map(\.provider), ImageTranslationProvider.allCases)
         XCTAssertEqual(migrated.first { $0.provider == .baidu }?.appID, "custom-appid")
         XCTAssertEqual(migrated.first { $0.provider == .baidu }?.endpoint, "https://proxy.example/picture")
+    }
+
+    func testImageTranslationProviderConfigurationMigrationUpgradesLegacyDefaultEndpoint() {
+        let existing = [
+            ImageTranslationProviderConfiguration(
+                provider: .baidu,
+                appID: "existing-appid",
+                endpoint: "https://fanyi-api.baidu.com/api/trans/sdk/picture"
+            ),
+        ]
+
+        let migrated = SettingsStore.migrateImageTranslationProviderConfigurations(existing)
+
+        XCTAssertEqual(migrated.first { $0.provider == .baidu }?.appID, "existing-appid")
+        XCTAssertEqual(
+            migrated.first { $0.provider == .baidu }?.endpoint,
+            "https://fanyi-api.baidu.com/ait/api/picture/translate"
+        )
     }
 
     func testKeepWordOverlayAfterTapDefaultsToEnabled() {

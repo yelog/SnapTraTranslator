@@ -335,3 +335,22 @@ enum LookupLanguagePairResolver {
         }
     }
 }
+
+enum ImageSentenceTranslationLanguagePairResolver {
+    static func resolveManualRegionPair(
+        recognizedText: String,
+        configuredPair: LookupLanguagePair,
+        bidirectionalEnabled: Bool
+    ) -> LookupLanguagePair {
+        let trimmedText = recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else {
+            return configuredPair
+        }
+
+        return LookupLanguagePairResolver.resolve(
+            configuredPair: configuredPair,
+            observedText: trimmedText,
+            bidirectionalEnabled: bidirectionalEnabled
+        )
+    }
+}

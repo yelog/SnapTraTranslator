@@ -385,7 +385,121 @@ final class ImageTranslationServiceTests: XCTestCase {
         super.tearDown()
     }
 
-    func testBaiduImageTranslationUsesSignedMultipartRequestAndReturnsTranslatedImage() async throws {
+    func testBaiduImageTranslationUsesV2JSONRequestAndReturnsTranslatedImage() async throws {
+        configureTemporaryBaiduSecret()
+
+        let imageData = Data("fake-png-data".utf8)
+        let translatedImageBase64 = Data("translated-image".utf8).base64EncodedString()
+        var capturedRequest: URLRequest?
+        var capturedBody: [String: Any]?
+
+        MockLLMURLProtocol.requestHandler = { request in
+            guard request.url?.absoluteString.hasPrefix("https://fanyi-api.baidu.com/ait/api/picture/translate?") == true else {
+                throw MockLLMURLProtocol.Error.unexpectedURL
+            }
+            guard request.httpMethod == "POST" else {
+                throw MockLLMURLProtocol.Error.unexpectedHeader
+            }
+            guard request.value(forHTTPHeaderField: "Content-Type") == "application/json" else {
+                throw MockLLMURLProtocol.Error.unexpectedHeader
+            }
+            capturedRequest = request
+            capturedBody = try JSONSerialization.jsonObject(with: request.rawBody()) as? [String: Any]
+
+            let response = """
+            {"from":"en","to":"zh","src":"Hello","dst":"你好","paste_img":"\(translatedImageBase64)","contents":[]}
+            """
+            return (
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )!,
+                Data(response.utf8)
+            )
+        }
+
+        let service = ImageTranslationService(session: .mockLLM)
+        let result = try await service.translate(
+            imageData: imageData,
+            provider: .baidu,
+            sourceLanguage: "en",
+            targetLanguage: "zh-Hans",
+            configuration: ImageTranslationProviderConfiguration(
+                provider: .baidu,
+                appID: "test-appid",
+                endpoint: "https://fanyi-api.baidu.com/ait/api/picture/translate"
+            )
+        )
+
+        XCTAssertEqual(result.translatedText, "你好")
+        XCTAssertEqual(result.pasteImageBase64, translatedImageBase64)
+        let request = try XCTUnwrap(capturedRequest)
+        let queryItems = Dictionary(
+            uniqueKeysWithValues: URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .compactMap { item in item.value.map { (item.name, $0) } } ?? []
+        )
+        XCTAssertEqual(queryItems["access_token"], "test-secret")
+        XCTAssertNil(queryItems["sign"])
+
+        let body = try XCTUnwrap(capturedBody)
+        XCTAssertEqual(body["from"] as? String, "auto")
+        XCTAssertEqual(body["to"] as? String, "zh")
+        XCTAssertEqual(body["appid"] as? String, "test-appid")
+        XCTAssertEqual(body["content"] as? String, imageData.base64EncodedString())
+        XCTAssertEqual(body["paste"] as? Int, 1)
+        XCTAssertEqual(body["need_intervene"] as? Int, 0)
+        XCTAssertEqual(body["view_type"] as? Int, 1)
+        XCTAssertEqual(body["model_type"] as? String, "nmt")
+    }
+
+    func testBaiduImageTranslationReportsNumericV2ErrorCode() async throws {
+        configureTemporaryBaiduSecret()
+
+        MockLLMURLProtocol.requestHandler = { request in
+            guard request.url?.absoluteString.hasPrefix("https://fanyi-api.baidu.com/ait/api/picture/translate?") == true else {
+                throw MockLLMURLProtocol.Error.unexpectedURL
+            }
+
+            let response = """
+            {"error_code":55002,"error_msg":"Token 校验未通过"}
+            """
+            return (
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )!,
+                Data(response.utf8)
+            )
+        }
+
+        let service = ImageTranslationService(session: .mockLLM)
+
+        do {
+            _ = try await service.translate(
+                imageData: Data("fake-png-data".utf8),
+                provider: .baidu,
+                sourceLanguage: "en",
+                targetLanguage: "zh-Hans",
+                configuration: ImageTranslationProviderConfiguration(
+                    provider: .baidu,
+                    appID: "test-appid",
+                    endpoint: "https://fanyi-api.baidu.com/ait/api/picture/translate"
+                )
+            )
+            XCTFail("Expected Baidu provider rejection")
+        } catch SentenceTranslationError.providerRejected(let provider, let code, let message) {
+            XCTAssertEqual(provider, ImageTranslationProvider.baidu.displayName)
+            XCTAssertEqual(code, 55002)
+            XCTAssertEqual(message, "Token 校验未通过")
+        }
+    }
+
+    func testBaiduImageTranslationKeepsLegacySignedMultipartEndpointCompatible() async throws {
         configureTemporaryBaiduSecret()
 
         let imageData = Data("fake-png-data".utf8)

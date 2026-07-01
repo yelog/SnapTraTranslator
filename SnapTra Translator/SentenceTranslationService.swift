@@ -1777,7 +1777,7 @@ final class ImageTranslationService {
         targetLanguage: String,
         configuration: ImageTranslationProviderConfiguration
     ) async throws -> ImageTranslationResult {
-        guard !imageData.isEmpty, imageData.count <= 4 * 1024 * 1024 else {
+        guard !imageData.isEmpty, imageData.count <= 5 * 1024 * 1024 else {
             throw SentenceTranslationError.invalidRequest
         }
 
@@ -1786,6 +1786,84 @@ final class ImageTranslationService {
             throw SentenceTranslationError.missingConfiguration(provider: ImageTranslationProvider.baidu.displayName, field: "App ID")
         }
 
+        if isLegacyBaiduImageEndpoint(configuration.endpoint) {
+            return try await translateLegacyBaiduImage(
+                imageData: imageData,
+                sourceLanguage: sourceLanguage,
+                targetLanguage: targetLanguage,
+                configuration: configuration,
+                appID: appID
+            )
+        }
+
+        return try await translateBaiduImageV2(
+            imageData: imageData,
+            targetLanguage: targetLanguage,
+            configuration: configuration,
+            appID: appID
+        )
+    }
+
+    private func translateBaiduImageV2(
+        imageData: Data,
+        targetLanguage: String,
+        configuration: ImageTranslationProviderConfiguration,
+        appID: String
+    ) async throws -> ImageTranslationResult {
+        guard let accessToken = ImageTranslationCredentialStore.secret(for: .baidu)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !accessToken.isEmpty else {
+            throw SentenceTranslationError.missingConfiguration(provider: ImageTranslationProvider.baidu.displayName, field: "Access Token")
+        }
+
+        guard let to = baiduImageLanguageCode(for: targetLanguage, isSource: false) else {
+            throw SentenceTranslationError.invalidRequest
+        }
+
+        guard var components = URLComponents(
+            string: configuration.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        ) else {
+            throw SentenceTranslationError.missingConfiguration(provider: ImageTranslationProvider.baidu.displayName, field: "Endpoint")
+        }
+
+        var queryItems = components.queryItems ?? []
+        if !queryItems.contains(where: { $0.name == "access_token" }) {
+            queryItems.append(.init(name: "access_token", value: accessToken))
+        }
+        components.queryItems = queryItems
+
+        guard let url = components.url else {
+            throw SentenceTranslationError.invalidRequest
+        }
+
+        let body = BaiduImageTranslationV2Request(
+            from: "auto",
+            to: to,
+            appID: appID,
+            content: imageData.base64EncodedString(),
+            paste: 1,
+            needIntervene: 0,
+            viewType: 1,
+            modelType: "nmt"
+        )
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = try JSONEncoder().encode(body)
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        return try await performBaiduImageRequest(request)
+    }
+
+    private func translateLegacyBaiduImage(
+        imageData: Data,
+        sourceLanguage: String,
+        targetLanguage: String,
+        configuration: ImageTranslationProviderConfiguration,
+        appID: String
+    ) async throws -> ImageTranslationResult {
         guard let secret = ImageTranslationCredentialStore.secret(for: .baidu)?
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !secret.isEmpty else {
@@ -1835,9 +1913,16 @@ final class ImageTranslationService {
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
+        return try await performBaiduImageRequest(request)
+    }
+
+    private func performBaiduImageRequest(_ request: URLRequest) async throws -> ImageTranslationResult {
         let data = try await performProviderRequest(request, provider: ImageTranslationProvider.baidu.displayName)
         let response = try JSONDecoder().decode(BaiduImageTranslationResponse.self, from: data)
-        if let errorCode = response.errorCode, !errorCode.isEmpty, errorCode != "0" {
+        if let errorCode = response.errorCode,
+           !errorCode.isEmpty,
+           errorCode != "0",
+           errorCode != "52000" {
             throw SentenceTranslationError.providerRejected(
                 provider: ImageTranslationProvider.baidu.displayName,
                 code: Int(errorCode) ?? -1,
@@ -1855,6 +1940,10 @@ final class ImageTranslationService {
             sourceText: response.resolvedSourceText,
             pasteImageBase64: response.resolvedPasteImageBase64
         )
+    }
+
+    private func isLegacyBaiduImageEndpoint(_ endpoint: String) -> Bool {
+        endpoint.contains("/api/trans/sdk/picture")
     }
 
     private func baiduImageLanguageCode(for identifier: String, isSource: Bool) -> String? {
@@ -1942,22 +2031,46 @@ private struct BaiduImageTranslationResponse: Decodable {
     let errorCode: String?
     let errorMessage: String?
     let data: Payload?
+    let src: String?
+    let dst: String?
     let sumSrc: String?
     let sumDst: String?
     let pasteImg: String?
+    let pasteImage: String?
     let content: [Content]?
+    let contents: [Content]?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        errorCode = container.decodeLossyStringIfPresent(forKey: .errorCode)
+            ?? container.decodeLossyStringIfPresent(forKey: .errorCodeCamel)
+        errorMessage = container.decodeLossyStringIfPresent(forKey: .errorMessage)
+            ?? container.decodeLossyStringIfPresent(forKey: .errorMessageCamel)
+            ?? container.decodeLossyStringIfPresent(forKey: .message)
+        data = try? container.decodeIfPresent(Payload.self, forKey: .data)
+        src = container.decodeLossyStringIfPresent(forKey: .src)
+        dst = container.decodeLossyStringIfPresent(forKey: .dst)
+        sumSrc = container.decodeLossyStringIfPresent(forKey: .sumSrc)
+            ?? container.decodeLossyStringIfPresent(forKey: .sumSource)
+        sumDst = container.decodeLossyStringIfPresent(forKey: .sumDst)
+            ?? container.decodeLossyStringIfPresent(forKey: .sumDestination)
+        pasteImg = container.decodeLossyStringIfPresent(forKey: .pasteImg)
+        pasteImage = container.decodeLossyStringIfPresent(forKey: .pasteImage)
+        content = try? container.decodeIfPresent([Content].self, forKey: .content)
+        contents = try? container.decodeIfPresent([Content].self, forKey: .contents)
+    }
 
     var resolvedSourceText: String? {
-        data?.sumSrc ?? sumSrc
+        data?.sumSrc ?? sumSrc ?? src
     }
 
     var resolvedTranslatedText: String {
-        if let sumDst = (data?.sumDst ?? sumDst)?.trimmingCharacters(in: .whitespacesAndNewlines),
+        if let sumDst = (data?.sumDst ?? sumDst ?? dst)?.trimmingCharacters(in: .whitespacesAndNewlines),
            !sumDst.isEmpty {
             return sumDst
         }
 
-        return (data?.content ?? content ?? [])
+        return (data?.content ?? contents ?? content ?? [])
             .compactMap(\.dst)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -1965,25 +2078,34 @@ private struct BaiduImageTranslationResponse: Decodable {
     }
 
     var resolvedPasteImageBase64: String? {
-        if let pasteImg = (data?.pasteImg ?? pasteImg)?.trimmingCharacters(in: .whitespacesAndNewlines),
+        if let pasteImg = (data?.pasteImg ?? pasteImage ?? pasteImg)?.trimmingCharacters(in: .whitespacesAndNewlines),
            !pasteImg.isEmpty {
             return pasteImg
         }
 
-        return (data?.content ?? content)?
-            .compactMap(\.pasteImg)
+        return (data?.content ?? contents ?? content)?
+            .compactMap(\.resolvedPasteImage)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty }
     }
 
     enum CodingKeys: String, CodingKey {
         case errorCode = "error_code"
+        case errorCodeCamel = "errorCode"
         case errorMessage = "error_msg"
+        case errorMessageCamel = "errorMessage"
+        case message
         case data
+        case src
+        case dst
         case sumSrc
+        case sumSource = "sum_src"
         case sumDst
+        case sumDestination = "sum_dst"
         case pasteImg
+        case pasteImage = "paste_img"
         case content
+        case contents
     }
 
     struct Payload: Decodable {
@@ -1991,11 +2113,93 @@ private struct BaiduImageTranslationResponse: Decodable {
         let sumDst: String?
         let pasteImg: String?
         let content: [Content]?
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            sumSrc = container.decodeLossyStringIfPresent(forKey: .sumSrc)
+                ?? container.decodeLossyStringIfPresent(forKey: .sumSource)
+            sumDst = container.decodeLossyStringIfPresent(forKey: .sumDst)
+                ?? container.decodeLossyStringIfPresent(forKey: .sumDestination)
+            pasteImg = container.decodeLossyStringIfPresent(forKey: .pasteImg)
+                ?? container.decodeLossyStringIfPresent(forKey: .pasteImage)
+            content = try? container.decodeIfPresent([Content].self, forKey: .content)
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case sumSrc
+            case sumSource = "sum_src"
+            case sumDst
+            case sumDestination = "sum_dst"
+            case pasteImg
+            case pasteImage = "paste_img"
+            case content
+        }
     }
 
     struct Content: Decodable {
         let dst: String?
         let pasteImg: String?
+        let pasteImage: String?
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            dst = container.decodeLossyStringIfPresent(forKey: .dst)
+            pasteImg = container.decodeLossyStringIfPresent(forKey: .pasteImg)
+            pasteImage = container.decodeLossyStringIfPresent(forKey: .pasteImage)
+        }
+
+        var resolvedPasteImage: String? {
+            pasteImage ?? pasteImg
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case dst
+            case pasteImg
+            case pasteImage = "paste_img"
+        }
+    }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeLossyStringIfPresent(forKey key: Key) -> String? {
+        if let value = try? decodeIfPresent(String.self, forKey: key) {
+            return value
+        }
+        if let value = try? decodeIfPresent(Int.self, forKey: key) {
+            return String(value)
+        }
+        if let value = try? decodeIfPresent(Double.self, forKey: key) {
+            if value.rounded(.towardZero) == value {
+                return String(Int(value))
+            }
+            return String(value)
+        }
+        if let value = try? decodeIfPresent(Bool.self, forKey: key) {
+            return value ? "true" : "false"
+        }
+        return nil
+    }
+}
+
+private struct BaiduImageTranslationV2Request: Encodable {
+    let from: String
+    let to: String
+    let appID: String
+    let content: String
+    let paste: Int
+    let needIntervene: Int
+    let viewType: Int
+    let modelType: String
+
+    enum CodingKeys: String, CodingKey {
+        case from
+        case to
+        case appID = "appid"
+        case content
+        case paste
+        case needIntervene = "need_intervene"
+        case viewType = "view_type"
+        case modelType = "model_type"
     }
 }
 
