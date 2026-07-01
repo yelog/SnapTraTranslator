@@ -359,7 +359,7 @@ struct OverlayView: View {
                         case .ready(let translatedText):
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack(alignment: .center, spacing: 8) {
-                                    Text(paragraphTranslationSectionTitle)
+                                    Text(paragraphTranslationSectionTitle(for: content))
                                         .font(.system(size: 11, weight: .semibold))
                                         .foregroundStyle(.secondary)
 
@@ -906,8 +906,8 @@ struct OverlayView: View {
         L("Original")
     }
 
-    private var paragraphTranslationSectionTitle: String {
-        if model.settings.sentenceTranslationPresentationMode == .imageTranslation {
+    private func paragraphTranslationSectionTitle(for content: ParagraphOverlayContent) -> String {
+        if content.imageTranslationUsed {
             return model.settings.imageTranslationSource.provider.displayName
         }
 

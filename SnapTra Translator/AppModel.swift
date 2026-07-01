@@ -119,6 +119,7 @@ struct ParagraphOverlayContent: Equatable {
     var selectedTargetLanguageIdentifier: String?
     var isRetranslating: Bool
     var isManualInputFallback: Bool
+    var imageTranslationUsed: Bool
 
     init(
         originalText: String? = nil,
@@ -131,7 +132,8 @@ struct ParagraphOverlayContent: Equatable {
         sourceLanguageIdentifier: String? = nil,
         selectedTargetLanguageIdentifier: String? = nil,
         isRetranslating: Bool = false,
-        isManualInputFallback: Bool = false
+        isManualInputFallback: Bool = false,
+        imageTranslationUsed: Bool = false
     ) {
         self.originalText = originalText
         self.translationState = translationState
@@ -144,6 +146,7 @@ struct ParagraphOverlayContent: Equatable {
         self.selectedTargetLanguageIdentifier = selectedTargetLanguageIdentifier
         self.isRetranslating = isRetranslating
         self.isManualInputFallback = isManualInputFallback
+        self.imageTranslationUsed = imageTranslationUsed
     }
 }
 
