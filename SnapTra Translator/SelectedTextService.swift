@@ -2,11 +2,49 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+enum SelectedTextSnapshotSource: Equatable {
+    case accessibility
+    case clipboard
+}
+
 struct SelectedTextSnapshot: Equatable {
     let text: String
     let selectedRange: NSRange
     let bounds: CGRect?
     let sourceAppIdentifier: String?
+    let source: SelectedTextSnapshotSource
+
+    init(
+        text: String,
+        selectedRange: NSRange,
+        bounds: CGRect?,
+        sourceAppIdentifier: String?,
+        source: SelectedTextSnapshotSource = .accessibility
+    ) {
+        self.text = text
+        self.selectedRange = selectedRange
+        self.bounds = bounds
+        self.sourceAppIdentifier = sourceAppIdentifier
+        self.source = source
+    }
+}
+
+enum ClipboardFallbackPolicy {
+    static func shouldReadCopiedText(
+        originalChangeCount: Int,
+        currentChangeCount: Int
+    ) -> Bool {
+        currentChangeCount != originalChangeCount
+    }
+
+    static func shouldTryAfterAccessibilityRejection(_ reason: String?) -> Bool {
+        switch reason {
+        case "missingBounds", "untrustedBounds", "mouseOutsideSelection":
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 final class SelectedTextService {
@@ -637,6 +675,15 @@ final class SelectedTextService {
             try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
         }
 
+        guard ClipboardFallbackPolicy.shouldReadCopiedText(
+            originalChangeCount: originalChangeCount,
+            currentChangeCount: pasteboard.changeCount
+        ) else {
+            debugLog("clipboard fallback: pasteboard unchanged")
+            restorePasteboard(items: originalItems, to: pasteboard)
+            return nil
+        }
+
         // Read selected text from clipboard
         guard let text = pasteboard.string(forType: .string),
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -652,7 +699,8 @@ final class SelectedTextService {
             text: normalizedText,
             selectedRange: NSRange(location: NSNotFound, length: normalizedText.utf16.count),
             bounds: nil,
-            sourceAppIdentifier: frontmostApp?.bundleIdentifier
+            sourceAppIdentifier: frontmostApp?.bundleIdentifier,
+            source: .clipboard
         )
 
         // Restore original clipboard
@@ -704,14 +752,16 @@ final class SelectedTextService {
     }
 
     private func restorePasteboard(items backup: PasteboardBackup, to pasteboard: NSPasteboard) {
-        guard !backup.items.isEmpty else { return }
         pasteboard.clearContents()
-        for dict in backup.items {
+        let items = backup.items.map { dict in
             let item = NSPasteboardItem()
             for (type, data) in dict {
                 item.setData(data, forType: type)
             }
-            pasteboard.writeObjects([item])
+            return item
+        }
+        if !items.isEmpty {
+            pasteboard.writeObjects(items)
         }
     }
 

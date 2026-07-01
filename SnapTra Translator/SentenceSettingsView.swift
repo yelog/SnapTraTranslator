@@ -662,7 +662,7 @@ private struct ImageTranslationProviderRow: View {
                         )
                     }
 
-                    imageFieldRow(title: L("Access Token / Secret Key")) {
+                    imageFieldRow(title: L("V2 Access Token")) {
                         SecureField(L("Required"), text: $secretText)
                             .onChange(of: secretText) { _, newValue in
                                 ImageTranslationCredentialStore.setSecret(newValue, for: provider)

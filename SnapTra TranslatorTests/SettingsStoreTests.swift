@@ -416,7 +416,7 @@ final class SettingsStoreMigrationTests: XCTestCase {
         XCTAssertEqual(migrated.first { $0.provider == .baidu }?.endpoint, "https://proxy.example/picture")
     }
 
-    func testImageTranslationProviderConfigurationMigrationUpgradesLegacyDefaultEndpoint() {
+    func testImageTranslationProviderConfigurationMigrationUpgradesDeprecatedBaiduEndpoint() {
         let existing = [
             ImageTranslationProviderConfiguration(
                 provider: .baidu,
@@ -541,7 +541,7 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
         XCTAssertEqual(intent, .selectedTextSentence(snapshot))
     }
 
-    func testSnapshotWithoutBoundsRoutesToSelectedTextTranslation() {
+    func testAccessibilitySnapshotWithoutBoundsButKnownRangeRoutesToSelectedTextTranslation() {
         let snapshot = SelectedTextSnapshot(
             text: "Hello world",
             selectedRange: NSRange(location: 0, length: 11),
@@ -560,7 +560,26 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
         XCTAssertEqual(intent, .selectedTextSentence(snapshot))
     }
 
-    func testMouseOutsideBoundsRoutesToSelectedTextTranslation() {
+    func testAccessibilitySnapshotWithoutBoundsAndUnknownRangeFallsBackToOcrWord() {
+        let snapshot = SelectedTextSnapshot(
+            text: "Hello world",
+            selectedRange: NSRange(location: NSNotFound, length: 11),
+            bounds: nil,
+            sourceAppIdentifier: "com.example.Unknown"
+        )
+
+        let intent = SinglePressLookupRouter.resolve(
+            mouseLocation: CGPoint(x: 260, y: 200),
+            isSelectedTextTranslationSupported: true,
+            isSelectedTextTranslationEnabled: true,
+            hasAccessibilityPermission: true,
+            selectionSnapshot: snapshot
+        )
+
+        XCTAssertEqual(intent, .ocrWord)
+    }
+
+    func testMouseOutsideBoundsWithKnownRangeRoutesToSelectedTextTranslation() {
         let snapshot = SelectedTextSnapshot(
             text: "Hello world",
             selectedRange: NSRange(location: 0, length: 11),
@@ -598,7 +617,7 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
         XCTAssertEqual(intent, .selectedTextSentence(snapshot))
     }
 
-    func testOversizedSelectionBoundsRoutesToSelectedTextTranslation() {
+    func testOversizedSelectionBoundsWithKnownRangeRoutesToSelectedTextTranslation() {
         let snapshot = SelectedTextSnapshot(
             text: "Hello world",
             selectedRange: NSRange(location: 0, length: 11),
@@ -615,6 +634,48 @@ final class SelectedTextLookupRoutingTests: XCTestCase {
         )
 
         XCTAssertEqual(intent, .selectedTextSentence(snapshot))
+    }
+
+    func testClipboardSnapshotWithoutBoundsRoutesToSelectedTextTranslation() {
+        let snapshot = SelectedTextSnapshot(
+            text: "Hello world",
+            selectedRange: NSRange(location: NSNotFound, length: 11),
+            bounds: nil,
+            sourceAppIdentifier: "com.tencent.xinWeChat",
+            source: .clipboard
+        )
+
+        let intent = SinglePressLookupRouter.resolve(
+            mouseLocation: CGPoint(x: 260, y: 200),
+            isSelectedTextTranslationSupported: true,
+            isSelectedTextTranslationEnabled: true,
+            hasAccessibilityPermission: true,
+            selectionSnapshot: snapshot
+        )
+
+        XCTAssertEqual(intent, .selectedTextSentence(snapshot))
+    }
+
+    func testClipboardFallbackRequiresPasteboardChange() {
+        XCTAssertFalse(
+            ClipboardFallbackPolicy.shouldReadCopiedText(
+                originalChangeCount: 12,
+                currentChangeCount: 12
+            )
+        )
+        XCTAssertTrue(
+            ClipboardFallbackPolicy.shouldReadCopiedText(
+                originalChangeCount: 12,
+                currentChangeCount: 13
+            )
+        )
+    }
+
+    func testClipboardFallbackCanRecoverGeometricallyRejectedAccessibilitySnapshots() {
+        XCTAssertTrue(ClipboardFallbackPolicy.shouldTryAfterAccessibilityRejection("missingBounds"))
+        XCTAssertTrue(ClipboardFallbackPolicy.shouldTryAfterAccessibilityRejection("untrustedBounds"))
+        XCTAssertTrue(ClipboardFallbackPolicy.shouldTryAfterAccessibilityRejection("mouseOutsideSelection"))
+        XCTAssertFalse(ClipboardFallbackPolicy.shouldTryAfterAccessibilityRejection("nonMeaningfulText"))
     }
 
     func testInvisibleSelectedTextFallsBackToOcrWord() {

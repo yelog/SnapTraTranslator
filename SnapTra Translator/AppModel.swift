@@ -352,6 +352,11 @@ enum ParagraphOverlayControlPolicy {
     }
 }
 
+private struct SinglePressLookupResolution {
+    let intent: SinglePressLookupIntent
+    let shouldTryClipboardFallback: Bool
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published var overlayState: OverlayState = .idle
@@ -873,10 +878,15 @@ final class AppModel: ObservableObject {
         let mouseLocation = NSEvent.mouseLocation
         guard activeLookupID == lookupID else { return }
 
-        let intent = resolveSinglePressLookupIntent(mouseLocation: mouseLocation)
+        let resolution = resolveSinglePressLookupIntent(mouseLocation: mouseLocation)
+        let intent = resolution.intent
 
-        // If AXUIElement found no selected text, try clipboard fallback before falling back to OCR
-        if case .ocrWord = intent, settings.selectedTextClipboardFallback {
+        // Clipboard fallback only participates when AX cannot provide a reliable selection route.
+        if resolution.shouldTryClipboardFallback,
+           supportsSelectedTextTranslation,
+           settings.selectedTextTranslationEnabled,
+           settings.selectedTextClipboardFallback,
+           permissions.status.accessibility {
             selectedTextService.clipboardFallbackEnabled = true
             if let clipboardSnapshot = await selectedTextService.clipboardFallbackSnapshot() {
                 guard !Task.isCancelled, activeLookupID == lookupID else { return }
@@ -885,9 +895,9 @@ final class AppModel: ObservableObject {
                 )
                 let clipboardIntent = SinglePressLookupRouter.resolve(
                     mouseLocation: mouseLocation,
-                    isSelectedTextTranslationSupported: true,
-                    isSelectedTextTranslationEnabled: true,
-                    hasAccessibilityPermission: true,
+                    isSelectedTextTranslationSupported: supportsSelectedTextTranslation,
+                    isSelectedTextTranslationEnabled: settings.selectedTextTranslationEnabled,
+                    hasAccessibilityPermission: permissions.status.accessibility,
                     selectionSnapshot: clipboardSnapshot
                 )
                 if case .selectedTextSentence = clipboardIntent {
@@ -1064,7 +1074,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func resolveSinglePressLookupIntent(mouseLocation: CGPoint) -> SinglePressLookupIntent {
+    private func resolveSinglePressLookupIntent(mouseLocation: CGPoint) -> SinglePressLookupResolution {
         debugSelectedTextRoute(
             """
             start mouse=\(describe(point: mouseLocation)) \
@@ -1080,29 +1090,31 @@ final class AppModel: ObservableObject {
 
         guard supportsSelectedTextTranslation else {
             debugSelectedTextRoute("decision=ocrWord reason=unsupportedChannel")
-            return .ocrWord
+            return SinglePressLookupResolution(intent: .ocrWord, shouldTryClipboardFallback: false)
         }
 
         guard settings.selectedTextTranslationEnabled else {
             debugSelectedTextRoute("decision=ocrWord reason=featureDisabled")
-            return .ocrWord
+            return SinglePressLookupResolution(intent: .ocrWord, shouldTryClipboardFallback: false)
         }
 
         guard permissions.status.accessibility else {
             debugSelectedTextRoute("decision=ocrWord reason=missingAccessibility")
-            return .ocrWord
+            return SinglePressLookupResolution(intent: .ocrWord, shouldTryClipboardFallback: false)
         }
 
         selectedTextService.clipboardFallbackEnabled = settings.selectedTextClipboardFallback
         let selectionSnapshot = selectedTextService.currentSelectionSnapshot(mouseLocation: mouseLocation)
+        var selectionRejectionReason: String?
         if let selectionSnapshot {
             debugSelectedTextRoute(
                 "snapshot text=\"\(truncate(selectionSnapshot.text))\" bounds=\(selectionSnapshot.bounds.map { describe(rect: $0) } ?? "nil") sourceApp=\(selectionSnapshot.sourceAppIdentifier ?? "nil")"
             )
-            if let rejectionReason = SinglePressLookupRouter.selectedTextRejectionReason(
+            selectionRejectionReason = SinglePressLookupRouter.selectedTextRejectionReason(
                 mouseLocation: mouseLocation,
                 selectionSnapshot: selectionSnapshot
-            ) {
+            )
+            if let rejectionReason = selectionRejectionReason {
                 debugSelectedTextRoute("snapshotRejected reason=\(rejectionReason)")
             }
         } else {
@@ -1122,7 +1134,11 @@ final class AppModel: ObservableObject {
         case .ocrWord:
             debugSelectedTextRoute("decision=ocrWord")
         }
-        return intent
+        return SinglePressLookupResolution(
+            intent: intent,
+            shouldTryClipboardFallback: selectionSnapshot == nil
+                || ClipboardFallbackPolicy.shouldTryAfterAccessibilityRejection(selectionRejectionReason)
+        )
     }
 
     private func performSelectedTextSentenceLookup(

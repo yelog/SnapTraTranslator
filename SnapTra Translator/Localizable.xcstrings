@@ -91,19 +91,19 @@
         }
       }
     },
-    "Access Token / Secret Key" : {
+    "V2 Access Token" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Access Token / Secret Key"
+            "value" : "V2 Access Token"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Access Token / Secret Key"
+            "value" : "V2 Access Token"
           }
         }
       }

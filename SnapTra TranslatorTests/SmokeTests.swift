@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import XCTest
 @testable import SnapTra_Translator
@@ -385,6 +384,84 @@ final class ImageTranslationServiceTests: XCTestCase {
         super.tearDown()
     }
 
+    func testBaiduImageTranslationFetchesAccessTokenWithAPIKeyAndSecretBeforeV2Request() async throws {
+        configureTemporaryBaiduSecret()
+
+        let translatedImageBase64 = Data("translated-image".utf8).base64EncodedString()
+        var requestURLs: [String] = []
+
+        MockLLMURLProtocol.requestHandler = { request in
+            requestURLs.append(request.url?.absoluteString ?? "")
+
+            if request.url?.host == "aip.baidubce.com" {
+                guard request.url?.path == "/oauth/2.0/token" else {
+                    throw MockLLMURLProtocol.Error.unexpectedURL
+                }
+                guard request.httpMethod == "POST" else {
+                    throw MockLLMURLProtocol.Error.unexpectedHeader
+                }
+
+                let queryItems = Dictionary(
+                    uniqueKeysWithValues: URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                        .queryItems?
+                        .compactMap { item in item.value.map { (item.name, $0) } } ?? []
+                )
+                XCTAssertEqual(queryItems["grant_type"], "client_credentials")
+                XCTAssertEqual(queryItems["client_id"], "test-api-key")
+                XCTAssertEqual(queryItems["client_secret"], "test-secret")
+
+                return (
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"]
+                    )!,
+                    Data(#"{"access_token":"oauth-access-token","expires_in":2592000}"#.utf8)
+                )
+            }
+
+            guard request.url?.absoluteString == "https://fanyi-api.baidu.com/ait/api/picture/translate" else {
+                throw MockLLMURLProtocol.Error.unexpectedURL
+            }
+            guard request.value(forHTTPHeaderField: "Authorization") == "Bearer oauth-access-token" else {
+                throw MockLLMURLProtocol.Error.unexpectedHeader
+            }
+
+            let response = """
+            {"from":"en","to":"zh","src":"Hello","dst":"你好","paste_img":"\(translatedImageBase64)","contents":[]}
+            """
+            return (
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )!,
+                Data(response.utf8)
+            )
+        }
+
+        let service = ImageTranslationService(session: .mockLLM)
+        let result = try await service.translate(
+            imageData: Data("fake-png-data".utf8),
+            provider: .baidu,
+            sourceLanguage: "en",
+            targetLanguage: "zh-Hans",
+            configuration: ImageTranslationProviderConfiguration(
+                provider: .baidu,
+                appID: "test-appid",
+                apiKey: "test-api-key",
+                endpoint: "https://fanyi-api.baidu.com/ait/api/picture/translate"
+            )
+        )
+
+        XCTAssertEqual(result.translatedText, "你好")
+        XCTAssertEqual(requestURLs.count, 2)
+        XCTAssertEqual(requestURLs.first?.contains("https://aip.baidubce.com/oauth/2.0/token"), true)
+        XCTAssertEqual(requestURLs.last, "https://fanyi-api.baidu.com/ait/api/picture/translate")
+    }
+
     func testBaiduImageTranslationUsesV2JSONRequestAndReturnsTranslatedImage() async throws {
         configureTemporaryBaiduSecret()
 
@@ -394,13 +471,16 @@ final class ImageTranslationServiceTests: XCTestCase {
         var capturedBody: [String: Any]?
 
         MockLLMURLProtocol.requestHandler = { request in
-            guard request.url?.absoluteString.hasPrefix("https://fanyi-api.baidu.com/ait/api/picture/translate?") == true else {
+            guard request.url?.absoluteString == "https://fanyi-api.baidu.com/ait/api/picture/translate" else {
                 throw MockLLMURLProtocol.Error.unexpectedURL
             }
             guard request.httpMethod == "POST" else {
                 throw MockLLMURLProtocol.Error.unexpectedHeader
             }
             guard request.value(forHTTPHeaderField: "Content-Type") == "application/json" else {
+                throw MockLLMURLProtocol.Error.unexpectedHeader
+            }
+            guard request.value(forHTTPHeaderField: "Authorization") == "Bearer test-secret" else {
                 throw MockLLMURLProtocol.Error.unexpectedHeader
             }
             capturedRequest = request
@@ -441,7 +521,7 @@ final class ImageTranslationServiceTests: XCTestCase {
                 .queryItems?
                 .compactMap { item in item.value.map { (item.name, $0) } } ?? []
         )
-        XCTAssertEqual(queryItems["access_token"], "test-secret")
+        XCTAssertNil(queryItems["access_token"])
         XCTAssertNil(queryItems["sign"])
 
         let body = try XCTUnwrap(capturedBody)
@@ -459,8 +539,11 @@ final class ImageTranslationServiceTests: XCTestCase {
         configureTemporaryBaiduSecret()
 
         MockLLMURLProtocol.requestHandler = { request in
-            guard request.url?.absoluteString.hasPrefix("https://fanyi-api.baidu.com/ait/api/picture/translate?") == true else {
+            guard request.url?.absoluteString == "https://fanyi-api.baidu.com/ait/api/picture/translate" else {
                 throw MockLLMURLProtocol.Error.unexpectedURL
+            }
+            guard request.value(forHTTPHeaderField: "Authorization") == "Bearer test-secret" else {
+                throw MockLLMURLProtocol.Error.unexpectedHeader
             }
 
             let response = """
@@ -495,33 +578,39 @@ final class ImageTranslationServiceTests: XCTestCase {
         } catch SentenceTranslationError.providerRejected(let provider, let code, let message) {
             XCTAssertEqual(provider, ImageTranslationProvider.baidu.displayName)
             XCTAssertEqual(code, 55002)
-            XCTAssertEqual(message, "Token 校验未通过")
+            XCTAssertTrue(message?.contains("Token 校验未通过") == true)
+            XCTAssertTrue(message?.contains("V2 Access Token") == true)
+            XCTAssertTrue(message?.contains("APP Secret") == true)
+            XCTAssertFalse(message?.localizedCaseInsensitiveContains("legacy") == true)
         }
     }
 
-    func testBaiduImageTranslationKeepsLegacySignedMultipartEndpointCompatible() async throws {
+    func testBaiduImageTranslationNormalizesDeprecatedEndpointToV2JSONRequest() async throws {
         configureTemporaryBaiduSecret()
 
         let imageData = Data("fake-png-data".utf8)
         let translatedImageBase64 = Data("translated-image".utf8).base64EncodedString()
         var capturedRequest: URLRequest?
-        var capturedBody = Data()
+        var capturedBody: [String: Any]?
 
         MockLLMURLProtocol.requestHandler = { request in
-            guard request.url?.absoluteString.hasPrefix("https://fanyi-api.baidu.com/api/trans/sdk/picture?") == true else {
+            guard request.url?.absoluteString == "https://fanyi-api.baidu.com/ait/api/picture/translate" else {
                 throw MockLLMURLProtocol.Error.unexpectedURL
             }
             guard request.httpMethod == "POST" else {
                 throw MockLLMURLProtocol.Error.unexpectedHeader
             }
-            guard request.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("multipart/form-data; boundary=") == true else {
+            guard request.value(forHTTPHeaderField: "Content-Type") == "application/json" else {
+                throw MockLLMURLProtocol.Error.unexpectedHeader
+            }
+            guard request.value(forHTTPHeaderField: "Authorization") == "Bearer test-secret" else {
                 throw MockLLMURLProtocol.Error.unexpectedHeader
             }
             capturedRequest = request
-            capturedBody = try request.rawBody()
+            capturedBody = try JSONSerialization.jsonObject(with: request.rawBody()) as? [String: Any]
 
             let response = """
-            {"error_code":"0","error_msg":"success","data":{"from":"en","to":"zh","sumSrc":"Hello","sumDst":"你好","pasteImg":"\(translatedImageBase64)","content":[]}}
+            {"from":"en","to":"zh","src":"Hello","dst":"你好","paste_img":"\(translatedImageBase64)","contents":[]}
             """
             return (
                 HTTPURLResponse(
@@ -555,34 +644,59 @@ final class ImageTranslationServiceTests: XCTestCase {
                 .queryItems?
                 .compactMap { item in item.value.map { (item.name, $0) } } ?? []
         )
-        XCTAssertEqual(queryItems["from"], "en")
-        XCTAssertEqual(queryItems["to"], "zh")
-        XCTAssertEqual(queryItems["appid"], "test-appid")
-        XCTAssertEqual(queryItems["cuid"], "APICUID")
-        XCTAssertEqual(queryItems["mac"], "mac")
-        XCTAssertEqual(queryItems["version"], "3")
-        XCTAssertEqual(queryItems["paste"], "1")
+        XCTAssertNil(queryItems["sign"])
+        XCTAssertNil(queryItems["access_token"])
 
-        let salt = try XCTUnwrap(queryItems["salt"])
-        let expectedSign = md5Hex("test-appid\(md5Hex(imageData))\(salt)APICUIDmactest-secret")
-        XCTAssertEqual(queryItems["sign"], expectedSign)
+        let body = try XCTUnwrap(capturedBody)
+        XCTAssertEqual(body["from"] as? String, "auto")
+        XCTAssertEqual(body["to"] as? String, "zh")
+        XCTAssertEqual(body["appid"] as? String, "test-appid")
+        XCTAssertEqual(body["content"] as? String, imageData.base64EncodedString())
+    }
 
-        let bodyText = String(decoding: capturedBody, as: UTF8.self)
-        XCTAssertTrue(bodyText.contains(#"name="image"; filename="capture.png""#))
-        XCTAssertTrue(capturedBody.contains(imageData))
+    func testBaiduImageTranslationRejectsDeprecatedResponseShape() async throws {
+        configureTemporaryBaiduSecret()
+
+        MockLLMURLProtocol.requestHandler = { request in
+            guard request.url?.absoluteString == "https://fanyi-api.baidu.com/ait/api/picture/translate" else {
+                throw MockLLMURLProtocol.Error.unexpectedURL
+            }
+
+            let response = """
+            {"error_code":"0","error_msg":"success","data":{"from":"en","to":"zh","sumSrc":"Hello","sumDst":"你好","pasteImg":"deprecated","content":[]}}
+            """
+            return (
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )!,
+                Data(response.utf8)
+            )
+        }
+
+        let service = ImageTranslationService(session: .mockLLM)
+
+        do {
+            _ = try await service.translate(
+                imageData: Data("fake-png-data".utf8),
+                provider: .baidu,
+                sourceLanguage: "en",
+                targetLanguage: "zh-Hans",
+                configuration: ImageTranslationProviderConfiguration(
+                    provider: .baidu,
+                    appID: "test-appid",
+                    endpoint: "https://fanyi-api.baidu.com/ait/api/picture/translate"
+                )
+            )
+            XCTFail("Expected V2 response validation to reject deprecated response shape")
+        } catch SentenceTranslationError.invalidResponse {
+        }
     }
 
     private func configureTemporaryBaiduSecret() {
         ImageTranslationCredentialStore.setTestSecretOverride("test-secret", for: .baidu)
-    }
-
-    private func md5Hex(_ input: String) -> String {
-        md5Hex(Data(input.utf8))
-    }
-
-    private func md5Hex(_ data: Data) -> String {
-        let digest = Insecure.MD5.hash(data: data)
-        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
 
