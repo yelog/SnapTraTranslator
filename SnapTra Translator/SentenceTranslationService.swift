@@ -2138,13 +2138,21 @@ enum ImageTranslationCredentialStore {
         let attributes = [kSecValueData as String: data]
 
         let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if updateStatus == errSecSuccess {
+        switch updateStatus {
+        case errSecSuccess:
             return true
+        case errSecItemNotFound:
+            // Item doesn't exist yet — add it
+            var addQuery = query
+            addQuery[kSecValueData as String] = data
+            return SecItemAdd(addQuery as CFDictionary, nil) == errSecSuccess
+        default:
+            // Unexpected error (e.g., errSecParam, auth failure) — delete then re-add
+            SecItemDelete(query as CFDictionary)
+            var addQuery = query
+            addQuery[kSecValueData as String] = data
+            return SecItemAdd(addQuery as CFDictionary, nil) == errSecSuccess
         }
-
-        var addQuery = query
-        addQuery[kSecValueData as String] = data
-        return SecItemAdd(addQuery as CFDictionary, nil) == errSecSuccess
     }
 
     @discardableResult

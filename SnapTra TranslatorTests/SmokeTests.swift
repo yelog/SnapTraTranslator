@@ -384,7 +384,7 @@ final class ImageTranslationServiceTests: XCTestCase {
         super.tearDown()
     }
 
-    func testBaiduImageTranslationFetchesAccessTokenWithAPIKeyAndSecretBeforeV2Request() async throws {
+    func testBaiduImageTranslationUsesStoredAccessTokenForV2Request() async throws {
         configureTemporaryBaiduSecret()
 
         let translatedImageBase64 = Data("translated-image".utf8).base64EncodedString()
@@ -393,38 +393,10 @@ final class ImageTranslationServiceTests: XCTestCase {
         MockLLMURLProtocol.requestHandler = { request in
             requestURLs.append(request.url?.absoluteString ?? "")
 
-            if request.url?.host == "aip.baidubce.com" {
-                guard request.url?.path == "/oauth/2.0/token" else {
-                    throw MockLLMURLProtocol.Error.unexpectedURL
-                }
-                guard request.httpMethod == "POST" else {
-                    throw MockLLMURLProtocol.Error.unexpectedHeader
-                }
-
-                let queryItems = Dictionary(
-                    uniqueKeysWithValues: URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
-                        .queryItems?
-                        .compactMap { item in item.value.map { (item.name, $0) } } ?? []
-                )
-                XCTAssertEqual(queryItems["grant_type"], "client_credentials")
-                XCTAssertEqual(queryItems["client_id"], "test-api-key")
-                XCTAssertEqual(queryItems["client_secret"], "test-secret")
-
-                return (
-                    HTTPURLResponse(
-                        url: request.url!,
-                        statusCode: 200,
-                        httpVersion: nil,
-                        headerFields: ["Content-Type": "application/json"]
-                    )!,
-                    Data(#"{"access_token":"oauth-access-token","expires_in":2592000}"#.utf8)
-                )
-            }
-
             guard request.url?.absoluteString == "https://fanyi-api.baidu.com/ait/api/picture/translate" else {
                 throw MockLLMURLProtocol.Error.unexpectedURL
             }
-            guard request.value(forHTTPHeaderField: "Authorization") == "Bearer oauth-access-token" else {
+            guard request.value(forHTTPHeaderField: "Authorization") == "Bearer test-secret" else {
                 throw MockLLMURLProtocol.Error.unexpectedHeader
             }
 
@@ -451,15 +423,12 @@ final class ImageTranslationServiceTests: XCTestCase {
             configuration: ImageTranslationProviderConfiguration(
                 provider: .baidu,
                 appID: "test-appid",
-                apiKey: "test-api-key",
                 endpoint: "https://fanyi-api.baidu.com/ait/api/picture/translate"
             )
         )
 
         XCTAssertEqual(result.translatedText, "你好")
-        XCTAssertEqual(requestURLs.count, 2)
-        XCTAssertEqual(requestURLs.first?.contains("https://aip.baidubce.com/oauth/2.0/token"), true)
-        XCTAssertEqual(requestURLs.last, "https://fanyi-api.baidu.com/ait/api/picture/translate")
+        XCTAssertEqual(requestURLs, ["https://fanyi-api.baidu.com/ait/api/picture/translate"])
     }
 
     func testBaiduImageTranslationUsesV2JSONRequestAndReturnsTranslatedImage() async throws {

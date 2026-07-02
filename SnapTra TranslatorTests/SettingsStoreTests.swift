@@ -485,6 +485,26 @@ final class DoubleTapSentenceTranslationPolicyTests: XCTestCase {
     }
 }
 
+final class ParagraphRegionLoadingOverlayPolicyTests: XCTestCase {
+    func testImageTranslationDoesNotShowParagraphLoadingOverlayAfterManualRegionSelection() {
+        XCTAssertTrue(
+            ParagraphRegionLoadingOverlayPolicy.shouldShowLoadingOverlay(
+                presentationMode: .overlayPanel
+            )
+        )
+        XCTAssertFalse(
+            ParagraphRegionLoadingOverlayPolicy.shouldShowLoadingOverlay(
+                presentationMode: .inPlace
+            )
+        )
+        XCTAssertFalse(
+            ParagraphRegionLoadingOverlayPolicy.shouldShowLoadingOverlay(
+                presentationMode: .imageTranslation
+            )
+        )
+    }
+}
+
 final class SentenceTranslationServiceSelectionTests: XCTestCase {
     func testNativeTranslationFollowsNativeSourceToggle() {
         let sources = [

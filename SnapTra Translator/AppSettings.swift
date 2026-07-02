@@ -194,6 +194,14 @@ enum SentenceTranslationPresentationMode: String, CaseIterable, Identifiable {
     }
 }
 
+enum ParagraphRegionLoadingOverlayPolicy {
+    static func shouldShowLoadingOverlay(
+        presentationMode: SentenceTranslationPresentationMode
+    ) -> Bool {
+        presentationMode == .overlayPanel
+    }
+}
+
 enum AppSettingKey {
     static let playPronunciation = "playPronunciation"
     static let playWordPronunciation = "playWordPronunciation"

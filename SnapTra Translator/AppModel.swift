@@ -864,10 +864,12 @@ final class AppModel: ObservableObject {
         overlayPreferredWidth = max(320, rect.width)
         paragraphHighlightWindowController.show(at: rect)
         setOverlayAnchor(CGPoint(x: rect.midX, y: rect.minY))
-        if settings.sentenceTranslationPresentationMode == .inPlace {
-            overlayWindowController.hideWindowOnly()
-        } else {
+        if ParagraphRegionLoadingOverlayPolicy.shouldShowLoadingOverlay(
+            presentationMode: settings.sentenceTranslationPresentationMode
+        ) {
             updateOverlay(state: .paragraphLoading, anchor: overlayAnchor)
+        } else {
+            overlayWindowController.hideWindowOnly()
         }
 
         lookupTask = Task { [weak self] in
@@ -1856,8 +1858,7 @@ final class AppModel: ObservableObject {
             content.translationState = .failed(message)
         }
 
-        activeInPlaceTranslationContent = content
-        inPlaceTranslationWindowController.show(content: content)
+        presentInPlaceTranslationContent(content)
     }
 
     func translateParagraphOriginal(to targetIdentifier: String) {
@@ -2083,8 +2084,7 @@ final class AppModel: ObservableObject {
         }
 
         content.translationState = .ready(translatedText)
-        activeInPlaceTranslationContent = content
-        inPlaceTranslationWindowController.show(content: content)
+        presentInPlaceTranslationContent(content)
     }
 
     private var usesImageSentenceTranslation: Bool {
@@ -2915,10 +2915,19 @@ final class AppModel: ObservableObject {
             bodyFontSize: bodyFontSize,
             style: style
         )
-        paragraphHighlightWindowController.hide()
-        activeInPlaceTranslationContent = content
-        inPlaceTranslationWindowController.show(content: content)
+        presentInPlaceTranslationContent(content)
         syncOverlayDismissalMonitoring()
+    }
+
+    private func presentInPlaceTranslationContent(_ content: InPlaceTranslationContent) {
+        activeInPlaceTranslationContent = content
+        if InPlaceTranslationPresentationPolicy.shouldShowWindow(for: content.translationState) {
+            paragraphHighlightWindowController.hide()
+            inPlaceTranslationWindowController.show(content: content)
+        } else {
+            paragraphHighlightWindowController.show(at: content.sourceRect)
+            inPlaceTranslationWindowController.hide()
+        }
     }
 
     private func showInPlaceImageTranslation(

@@ -135,6 +135,30 @@ final class InPlaceTranslationLayoutTests: XCTestCase {
         XCTAssertEqual(style.backgroundColor.alphaComponent, 1, accuracy: 0.001)
         XCTAssertGreaterThan(style.backgroundColor.relativeTestLuminance, 0.9)
     }
+
+    func testInPlacePresentationPolicyHidesLoadingWindow() {
+        XCTAssertFalse(InPlaceTranslationPresentationPolicy.shouldShowWindow(for: .loading))
+        XCTAssertTrue(InPlaceTranslationPresentationPolicy.shouldShowWindow(for: .ready("Translated text")))
+        XCTAssertTrue(InPlaceTranslationPresentationPolicy.shouldShowWindow(for: .failed("Failed")))
+    }
+
+    func testImageTranslationLoadingAppearanceDoesNotDimOriginalImage() {
+        XCTAssertEqual(InPlaceImageTranslationLoadingAppearance.backgroundOpacity, 0)
+        XCTAssertLessThanOrEqual(InPlaceImageTranslationLoadingAppearance.beamHaloPeakOpacity, 0.38)
+        XCTAssertLessThanOrEqual(InPlaceImageTranslationLoadingAppearance.beamCoreOpacity, 0.72)
+    }
+
+    func testImageTranslationLoadingScanBeamTravelsAcrossRegion() {
+        let width: CGFloat = 240
+        let start = InPlaceImageTranslationLoadingAppearance.beamCenterX(elapsed: 0, width: width)
+        let middle = InPlaceImageTranslationLoadingAppearance.beamCenterX(
+            elapsed: InPlaceImageTranslationLoadingAppearance.scanDuration,
+            width: width
+        )
+
+        XCTAssertLessThan(start, 0)
+        XCTAssertGreaterThan(middle, width)
+    }
 }
 
 private func makeSolidImage(red: CGFloat, green: CGFloat, blue: CGFloat) -> CGImage {

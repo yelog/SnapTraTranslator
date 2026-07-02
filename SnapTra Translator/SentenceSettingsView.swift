@@ -667,6 +667,9 @@ private struct ImageTranslationProviderRow: View {
                             .onChange(of: secretText) { _, newValue in
                                 ImageTranslationCredentialStore.setSecret(newValue, for: provider)
                             }
+                            .onAppear {
+                                loadSecret()
+                            }
                     }
 
                     imageFieldRow(title: L("Endpoint")) {

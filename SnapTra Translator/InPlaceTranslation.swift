@@ -21,6 +21,17 @@ enum InPlaceTranslationState: Equatable {
     case failed(String)
 }
 
+enum InPlaceTranslationPresentationPolicy {
+    static func shouldShowWindow(for state: InPlaceTranslationState) -> Bool {
+        switch state {
+        case .loading:
+            return false
+        case .ready, .failed:
+            return true
+        }
+    }
+}
+
 struct InPlaceTranslationStyle: Equatable {
     var backgroundColor: NSColor
     var foregroundColor: NSColor
@@ -273,6 +284,34 @@ enum InPlaceImageTranslationState: Equatable {
     case failed(String)
 }
 
+enum InPlaceImageTranslationLoadingAppearance {
+    static let backgroundOpacity: Double = 0
+    static let beamHaloPeakOpacity: Double = 0.34
+    static let beamCoreOpacity: Double = 0.68
+    static let cornerStrokeOpacity: Double = 0.82
+    static let scanDuration: TimeInterval = 1.4
+    static let beamHaloHalf: CGFloat = 28
+    static let beamCoreWidth: CGFloat = 2.5
+
+    static func beamCenterX(elapsed: TimeInterval, width: CGFloat) -> CGFloat {
+        guard width > 0 else { return 0 }
+
+        let travel = width + beamHaloHalf * 2
+        let period = scanDuration * 2
+        let t = elapsed.truncatingRemainder(dividingBy: period) / period
+        let raw = t < 0.5 ? t * 2 : (1 - t) * 2
+        let eased = raw < 0.5
+            ? 2 * raw * raw
+            : 1 - pow(-2 * raw + 2, 2) / 2
+
+        return -beamHaloHalf + eased * travel
+    }
+
+    static func cornerLength(for size: CGSize) -> CGFloat {
+        min(min(size.width, size.height) * 0.22, 22)
+    }
+}
+
 struct InPlaceImageTranslationView: View {
     let content: InPlaceImageTranslationContent
 
@@ -281,7 +320,7 @@ struct InPlaceImageTranslationView: View {
             ZStack {
                 switch content.state {
                 case .loading:
-                    fallbackContent(message: L("Translating"), size: proxy.size)
+                    InPlaceImageTranslationLoadingView()
                 case .ready(let imageData):
                     if let image = NSImage(data: imageData) {
                         Image(nsImage: image)
@@ -315,6 +354,131 @@ struct InPlaceImageTranslationView: View {
                 .lineLimit(3)
                 .padding(size.height < 32 ? 4 : 8)
         }
+    }
+}
+
+private struct InPlaceImageTranslationLoadingView: View {
+    private let accentColor = Color(red: 0.18, green: 0.88, blue: 0.42)
+
+    @State private var startDate: Date = .now
+
+    var body: some View {
+        GeometryReader { proxy in
+            let cornerRadius: CGFloat = proxy.size.height < 32 ? 4 : 7
+
+            TimelineView(.animation) { timeline in
+                Canvas { ctx, canvasSize in
+                    let elapsed = timeline.date.timeIntervalSince(startDate)
+                    let centerX = InPlaceImageTranslationLoadingAppearance.beamCenterX(
+                        elapsed: elapsed,
+                        width: canvasSize.width
+                    )
+
+                    drawBeam(ctx: ctx, canvasSize: canvasSize, centerX: centerX)
+                    drawCorners(ctx: ctx, canvasSize: canvasSize)
+                }
+            }
+            .background(Color.clear.opacity(InPlaceImageTranslationLoadingAppearance.backgroundOpacity))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .allowsHitTesting(false)
+            .accessibilityLabel(Text(L("Translating")))
+            .onAppear {
+                startDate = .now
+            }
+        }
+    }
+
+    private func drawBeam(ctx: GraphicsContext, canvasSize: CGSize, centerX: CGFloat) {
+        let totalHalf = InPlaceImageTranslationLoadingAppearance.beamHaloHalf
+            + InPlaceImageTranslationLoadingAppearance.beamCoreWidth / 2
+        let haloLeft = centerX - totalHalf
+        let haloRight = centerX + totalHalf
+        let clampedLeft = max(0, haloLeft)
+        let clampedRight = min(canvasSize.width, haloRight)
+
+        if clampedRight > clampedLeft {
+            let haloRect = CGRect(
+                x: clampedLeft,
+                y: 0,
+                width: clampedRight - clampedLeft,
+                height: canvasSize.height
+            )
+            let haloGradient = Gradient(stops: [
+                .init(color: accentColor.opacity(0), location: 0),
+                .init(
+                    color: accentColor.opacity(InPlaceImageTranslationLoadingAppearance.beamHaloPeakOpacity * 0.36),
+                    location: 0.25
+                ),
+                .init(
+                    color: accentColor.opacity(InPlaceImageTranslationLoadingAppearance.beamHaloPeakOpacity),
+                    location: 0.48
+                ),
+                .init(
+                    color: accentColor.opacity(InPlaceImageTranslationLoadingAppearance.beamHaloPeakOpacity),
+                    location: 0.52
+                ),
+                .init(
+                    color: accentColor.opacity(InPlaceImageTranslationLoadingAppearance.beamHaloPeakOpacity * 0.36),
+                    location: 0.75
+                ),
+                .init(color: accentColor.opacity(0), location: 1),
+            ])
+
+            ctx.fill(
+                Path(haloRect),
+                with: .linearGradient(
+                    haloGradient,
+                    startPoint: CGPoint(x: haloLeft, y: canvasSize.height / 2),
+                    endPoint: CGPoint(x: haloRight, y: canvasSize.height / 2)
+                )
+            )
+        }
+
+        let coreLeft = max(0, centerX - InPlaceImageTranslationLoadingAppearance.beamCoreWidth / 2)
+        let coreRight = min(canvasSize.width, centerX + InPlaceImageTranslationLoadingAppearance.beamCoreWidth / 2)
+        guard coreRight > coreLeft else { return }
+
+        let coreRect = CGRect(
+            x: coreLeft,
+            y: 0,
+            width: coreRight - coreLeft,
+            height: canvasSize.height
+        )
+        ctx.fill(
+            Path(coreRect),
+            with: .color(accentColor.opacity(InPlaceImageTranslationLoadingAppearance.beamCoreOpacity))
+        )
+    }
+
+    private func drawCorners(ctx: GraphicsContext, canvasSize: CGSize) {
+        let size = CGSize(width: canvasSize.width, height: canvasSize.height)
+        let cornerLength = InPlaceImageTranslationLoadingAppearance.cornerLength(for: size)
+        guard cornerLength > 0 else { return }
+
+        let rect = CGRect(origin: .zero, size: size)
+        var path = Path()
+
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY + cornerLength))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX + cornerLength, y: rect.minY))
+
+        path.move(to: CGPoint(x: rect.maxX - cornerLength, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + cornerLength))
+
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY - cornerLength))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + cornerLength, y: rect.maxY))
+
+        path.move(to: CGPoint(x: rect.maxX - cornerLength, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - cornerLength))
+
+        ctx.stroke(
+            path,
+            with: .color(accentColor.opacity(InPlaceImageTranslationLoadingAppearance.cornerStrokeOpacity)),
+            style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round)
+        )
     }
 }
 
@@ -391,6 +555,11 @@ final class InPlaceTranslationWindowController: NSWindowController {
 
     func show(content: InPlaceTranslationContent) {
         guard let window else { return }
+        guard InPlaceTranslationPresentationPolicy.shouldShowWindow(for: content.translationState) else {
+            hide()
+            return
+        }
+
         hostingView.rootView = AnyView(InPlaceTranslationView(content: content))
         window.setFrame(content.sourceRect, display: true)
         window.orderFrontRegardless()
