@@ -559,7 +559,7 @@ final class SettingsStore: ObservableObject {
         let doubleTapModeValue = defaults.string(forKey: AppSettingKey.doubleTapSentenceTranslationMode)
         doubleTapSentenceTranslationMode = DoubleTapSentenceTranslationMode(
             rawValue: doubleTapModeValue ?? ""
-        ) ?? .cursorParagraph
+        ) ?? .manualRegion
         selectedTextTranslationEnabled = sentenceTranslationSettings.selectedTextTranslationEnabled
         let clipboardFallbackValue = defaults.object(forKey: AppSettingKey.selectedTextClipboardFallback) as? Bool
         selectedTextClipboardFallback = clipboardFallbackValue ?? true

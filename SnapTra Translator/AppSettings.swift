@@ -187,7 +187,7 @@ enum SentenceTranslationPresentationMode: String, CaseIterable, Identifiable {
         case .overlayPanel:
             return L("Translation Panel")
         case .inPlace:
-            return L("In-place")
+            return L("In-place (Beta)")
         case .imageTranslation:
             return L("Image Translation")
         }

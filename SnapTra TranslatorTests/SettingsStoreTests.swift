@@ -245,15 +245,15 @@ final class SettingsStoreMigrationTests: XCTestCase {
         XCTAssertTrue(settings.selectedTextTranslationEnabled)
     }
 
-    func testDoubleTapSentenceTranslationModeDefaultsToCursorParagraph() {
+    func testDoubleTapSentenceTranslationModeDefaultsToManualRegion() {
         let defaults = makeDefaults()
 
         let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
 
-        XCTAssertEqual(settings.doubleTapSentenceTranslationMode, .cursorParagraph)
+        XCTAssertEqual(settings.doubleTapSentenceTranslationMode, .manualRegion)
         XCTAssertEqual(
             defaults.string(forKey: AppSettingKey.doubleTapSentenceTranslationMode),
-            DoubleTapSentenceTranslationMode.cursorParagraph.rawValue
+            DoubleTapSentenceTranslationMode.manualRegion.rawValue
         )
     }
 
@@ -375,6 +375,17 @@ final class SettingsStoreMigrationTests: XCTestCase {
 
         XCTAssertTrue(SentenceTranslationPresentationMode.allCases.contains(.imageTranslation))
         XCTAssertEqual(SentenceTranslationPresentationMode.imageTranslation.displayName, "Image Translation")
+    }
+
+    func testSentenceTranslationPresentationModeMarksInPlaceAsBeta() {
+        let localizationManager = LocalizationManager.shared
+        defer { localizationManager.setLanguage(.system) }
+
+        localizationManager.setLanguage(.english)
+        XCTAssertEqual(SentenceTranslationPresentationMode.inPlace.displayName, "In-place (Beta)")
+
+        localizationManager.setLanguage(.chineseSimplified)
+        XCTAssertEqual(SentenceTranslationPresentationMode.inPlace.displayName, "原文替换（Beta）")
     }
 
     func testImageTranslationSourceDefaultsToDisabledBaidu() {

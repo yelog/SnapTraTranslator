@@ -9511,36 +9511,36 @@
         }
       }
     },
-    "In-place": {
+    "In-place (Beta)": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "In-place"
+            "value": "In-place (Beta)"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "原文替换"
+            "value": "原文替换（Beta）"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "原文替換"
+            "value": "原文替換（Beta）"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "インプレース"
+            "value": "インプレース（Beta）"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "제자리"
+            "value": "제자리(Beta)"
           }
         }
       }
