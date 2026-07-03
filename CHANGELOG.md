@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.10-beta.1] - 2026-07-03
+
+### Added
+- add in-place translation overlay
+- support text selection and copy in in-place overlay
+- align in-place overlay text to source
+- style in-place overlay from capture
+- estimate in-place overlay colors
+- add animated loading beam for image translation
+- add Baidu image translation
+- support Baidu image translation v2
+- add Cmd+C clipboard fallback for apps without accessibility support
+- add double-tap sentence range mode
+
+### Fixed
+- show correct provider title for selected text in image translation mode
+- reduce in-place minimum rect thresholds from 120x24 to 40x14
+- refine clipboard fallback with bounds validation and source tracking
+- make clipboard fallback async to fix double-tap hotkey
+- make in-place overlay opaque
+- clarify sentence translation labels
+- accept initial manual region click
+- avoid activating app for manual region selection
+- honor system translation toggle
+- stabilize word header phonetic layout
+
 ## [1.3.10-beta.0] - 2026-06-29
 
 ### Added
