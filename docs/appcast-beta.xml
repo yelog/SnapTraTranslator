@@ -7,6 +7,15 @@
         <language>en</language>
         <sparkle:edPublicKey>OJo/oEqSjtmok1HYx+XgFHLq1FkUAJs8hsDms0+Uv98=</sparkle:edPublicKey>
         <item>
+            <title>Version 1.3.10-beta.1</title>
+            <pubDate>Fri, 03 Jul 2026 09:57:55 +0000</pubDate>
+            <sparkle:version>131001</sparkle:version>
+            <sparkle:shortVersionString>1.3.10-beta.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description>&lt;h2&gt;SnapTra Translator 1.3.10-beta.1&lt;/h2&gt;&lt;h4&gt;Added&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;add in-place translation overlay&lt;/li&gt;&lt;li&gt;support text selection and copy in in-place overlay&lt;/li&gt;&lt;li&gt;align in-place overlay text to source&lt;/li&gt;&lt;li&gt;style in-place overlay from capture&lt;/li&gt;&lt;li&gt;estimate in-place overlay colors&lt;/li&gt;&lt;li&gt;add animated loading beam for image translation&lt;/li&gt;&lt;li&gt;add Baidu image translation&lt;/li&gt;&lt;li&gt;support Baidu image translation v2&lt;/li&gt;&lt;li&gt;add Cmd+C clipboard fallback for apps without accessibility support&lt;/li&gt;&lt;li&gt;add double-tap sentence range mode&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Fixed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;show correct provider title for selected text in image translation mode&lt;/li&gt;&lt;li&gt;reduce in-place minimum rect thresholds from 120x24 to 40x14&lt;/li&gt;&lt;li&gt;refine clipboard fallback with bounds validation and source tracking&lt;/li&gt;&lt;li&gt;make clipboard fallback async to fix double-tap hotkey&lt;/li&gt;&lt;li&gt;make in-place overlay opaque&lt;/li&gt;&lt;li&gt;clarify sentence translation labels&lt;/li&gt;&lt;li&gt;accept initial manual region click&lt;/li&gt;&lt;li&gt;avoid activating app for manual region selection&lt;/li&gt;&lt;li&gt;honor system translation toggle&lt;/li&gt;&lt;li&gt;stabilize word header phonetic layout&lt;/li&gt;&lt;/ul&gt;</description>
+            <enclosure url="https://github.com/yelog/SnapTraTranslator/releases/download/v1.3.10-beta.1/SnapTra-Translator-1.3.10-beta.1.dmg" length="5880152" type="application/octet-stream" sparkle:edSignature="iWlhIILfT2szVJVYQn4/6edgBe8pmTXGnGvTHnsXYLmgjDNhn28TnbrI8j9Y7vPtLIqoSHOd+p47nram3mh7Bg==" />
+        </item>
+        <item>
             <title>Version 1.3.10-beta.0</title>
             <pubDate>Mon, 29 Jun 2026 07:19:45 +0000</pubDate>
             <sparkle:version>131000</sparkle:version>
