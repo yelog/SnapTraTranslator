@@ -34,6 +34,7 @@ final class LearningService: ObservableObject {
     private let modelContext: ModelContext
 
     @Published var visibleWords: [WordRecord] = []
+    @Published var visibleRows: [WordRecordRowModel] = []
     @Published var totalWordCount = 0
     @Published var pendingReviewCount = 0
     @Published var masteredCount = 0
@@ -44,6 +45,7 @@ final class LearningService: ObservableObject {
     private static let wordSortDescriptors = [
         SortDescriptor(\WordRecord.lookupCount, order: .reverse),
         SortDescriptor(\WordRecord.lastLookupDate, order: .reverse),
+        SortDescriptor(\WordRecord.word, order: .forward),
     ]
 
     private let pageSize = 100
@@ -80,10 +82,11 @@ final class LearningService: ObservableObject {
                 sortBy: [SortDescriptor(\WordRecord.sourceLanguageIdentifier)]
             )
             let records = try modelContext.fetch(descriptor)
+            var seenIdentifiers = Set<String>()
             availableLanguageIdentifiers = records.reduce(into: []) { result, record in
                 guard let identifier = record.sourceLanguageIdentifier,
                       !identifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                      !result.contains(identifier) else {
+                      seenIdentifiers.insert(identifier).inserted else {
                     return
                 }
                 result.append(identifier)
@@ -99,6 +102,8 @@ final class LearningService: ObservableObject {
         currentSourceLanguageIdentifier = Self.normalizedLanguageIdentifier(sourceLanguageIdentifier)
         currentOffset = 0
         hasMoreWords = false
+        visibleWords = []
+        visibleRows = []
         await loadMoreWords(replacingCurrentWords: true)
     }
 
@@ -123,17 +128,22 @@ final class LearningService: ObservableObject {
                 ),
                 sortBy: Self.wordSortDescriptors
             )
-            descriptor.fetchLimit = currentOffset + pageSize + 1
+            descriptor.fetchOffset = currentOffset
+            descriptor.fetchLimit = pageSize + 1
 
             let records = try modelContext.fetch(descriptor)
-            let page = Array(records.dropFirst(currentOffset).prefix(pageSize))
+            let page = Array(records.prefix(pageSize))
+            let now = Date()
+            let pageRows = page.map { WordRecordRowModel(record: $0, now: now) }
             if replacingCurrentWords {
                 visibleWords = page
+                visibleRows = pageRows
             } else {
-                visibleWords = visibleWords + page
+                visibleWords.append(contentsOf: page)
+                visibleRows.append(contentsOf: pageRows)
             }
             currentOffset += page.count
-            hasMoreWords = records.count > currentOffset
+            hasMoreWords = records.count > pageSize
         } catch {
             print("Failed to fetch learning words page: \(error)")
         }
@@ -233,6 +243,7 @@ final class LearningService: ObservableObject {
             try modelContext.delete(model: WordRecord.self)
             try modelContext.save()
             visibleWords = []
+            visibleRows = []
             availableLanguageIdentifiers = []
             totalWordCount = 0
             pendingReviewCount = 0

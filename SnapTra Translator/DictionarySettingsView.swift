@@ -401,30 +401,43 @@ struct DictionarySettingsView: View {
     @ViewBuilder
     private var rightContent: some View {
         GeometryReader { proxy in
-            ScrollView {
-                Group {
-                    switch selectedTab {
-                    case .dictionary:
-                        dictionarySection
-                    case .sentence:
-                        sentenceTranslationSection
-                    case .learning:
-                        learningSection
-                    case .wordPronunciation:
-                        wordPronunciationSection
-                    case .sentencePronunciation:
-                        sentencePronunciationSection
-                    }
-                }
-                .padding()
-                .frame(width: proxy.size.width, alignment: .topLeading)
-                .background(
-                    ScrollViewScrollerConfigurator(
-                        hidesVerticalScroller: hidesScrollIndicator
+            if selectedTab == .learning {
+                learningSection
+                    .padding()
+                    .frame(
+                        width: proxy.size.width,
+                        height: proxy.size.height,
+                        alignment: .topLeading
                     )
-                )
+            } else {
+                ScrollView {
+                    nonLearningSection
+                        .padding()
+                        .frame(width: proxy.size.width, alignment: .topLeading)
+                        .background(
+                            ScrollViewScrollerConfigurator(
+                                hidesVerticalScroller: hidesScrollIndicator
+                            )
+                        )
+                }
+                .scrollIndicators(hidesScrollIndicator ? .hidden : .automatic, axes: .vertical)
             }
-            .scrollIndicators(hidesScrollIndicator ? .hidden : .automatic, axes: .vertical)
+        }
+    }
+
+    @ViewBuilder
+    private var nonLearningSection: some View {
+        switch selectedTab {
+        case .dictionary:
+            dictionarySection
+        case .sentence:
+            sentenceTranslationSection
+        case .learning:
+            EmptyView()
+        case .wordPronunciation:
+            wordPronunciationSection
+        case .sentencePronunciation:
+            sentencePronunciationSection
         }
     }
     
@@ -690,7 +703,10 @@ struct DictionarySettingsView: View {
     }
 
     private var learningSection: some View {
-        LearningSettingsView(modelContext: model.modelContext)
+        LearningSettingsView(
+            modelContext: model.modelContext,
+            hidesScrollIndicator: hidesScrollIndicator
+        )
     }
 
     // MARK: - Private Helpers

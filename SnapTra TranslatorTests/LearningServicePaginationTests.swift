@@ -6,23 +6,25 @@ import XCTest
 final class LearningServicePaginationTests: XCTestCase {
     func testReloadLoadsFirstPageAndLoadMoreAppendsRemainingRecords() async throws {
         let context = try makeModelContext()
-        insertWords(count: 125, into: context)
+        try insertWords(count: 125, into: context)
 
         let service = LearningService(modelContext: context)
         await service.reloadWords(filter: .all, searchText: "")
 
         XCTAssertEqual(service.visibleWords.count, 100)
+        XCTAssertEqual(service.visibleRows.map(\.id), service.visibleWords.map(\.word))
         XCTAssertTrue(service.hasMoreWords)
 
         await service.loadMoreWords()
 
         XCTAssertEqual(service.visibleWords.count, 125)
+        XCTAssertEqual(service.visibleRows.map(\.id), service.visibleWords.map(\.word))
         XCTAssertFalse(service.hasMoreWords)
     }
 
     func testLoadMoreCanAppendMultiplePages() async throws {
         let context = try makeModelContext()
-        insertWords(count: 275, into: context)
+        try insertWords(count: 275, into: context)
 
         let service = LearningService(modelContext: context)
         await service.reloadWords(filter: .all, searchText: "")
@@ -31,16 +33,30 @@ final class LearningServicePaginationTests: XCTestCase {
 
         await service.loadMoreWords()
         XCTAssertEqual(service.visibleWords.count, 200)
+        XCTAssertEqual(service.visibleRows.count, 200)
         XCTAssertTrue(service.hasMoreWords)
 
         await service.loadMoreWords()
         XCTAssertEqual(service.visibleWords.count, 275)
+        XCTAssertEqual(service.visibleRows.map(\.id), service.visibleWords.map(\.word))
         XCTAssertFalse(service.hasMoreWords)
+    }
+
+    func testLargeStoreStillLoadsOnlyTheFirstPageInitially() async throws {
+        let context = try makeModelContext()
+        try insertWords(count: 5_000, into: context)
+
+        let service = LearningService(modelContext: context)
+        await service.reloadWords(filter: .all, searchText: "")
+
+        XCTAssertEqual(service.visibleWords.count, 100)
+        XCTAssertEqual(service.visibleRows.count, 100)
+        XCTAssertTrue(service.hasMoreWords)
     }
 
     func testSearchFindsRecordOutsideInitialPage() async throws {
         let context = try makeModelContext()
-        insertWords(count: 100, into: context)
+        try insertWords(count: 100, into: context)
         let needle = WordRecord(word: "needle")
         needle.lookupCount = 0
         context.insert(needle)
@@ -54,7 +70,7 @@ final class LearningServicePaginationTests: XCTestCase {
 
     func testLoadMoreSkipsWhileAlreadyLoading() async throws {
         let context = try makeModelContext()
-        insertWords(count: 125, into: context)
+        try insertWords(count: 125, into: context)
 
         let service = LearningService(modelContext: context)
         await service.reloadWords(filter: .all, searchText: "")
@@ -68,7 +84,7 @@ final class LearningServicePaginationTests: XCTestCase {
 
     func testDeleteReloadsRemainingWords() async throws {
         let context = try makeModelContext()
-        insertWords(count: 12, into: context)
+        try insertWords(count: 12, into: context)
 
         let service = LearningService(modelContext: context)
         await service.reloadWords(filter: .all, searchText: "")
@@ -98,6 +114,40 @@ final class LearningServicePaginationTests: XCTestCase {
         await service.reloadWords(filter: .all, searchText: "")
 
         XCTAssertEqual(service.visibleWords.map(\.word), ["newer", "older"])
+    }
+
+    func testSortUsesWordAsStableTieBreaker() async throws {
+        let context = try makeModelContext()
+        let sharedDate = Date(timeIntervalSince1970: 100)
+
+        let zulu = WordRecord(word: "zulu")
+        zulu.lookupCount = 3
+        zulu.lastLookupDate = sharedDate
+        context.insert(zulu)
+
+        let alpha = WordRecord(word: "alpha")
+        alpha.lookupCount = 3
+        alpha.lastLookupDate = sharedDate
+        context.insert(alpha)
+
+        try context.save()
+
+        let service = LearningService(modelContext: context)
+        await service.reloadWords(filter: .all, searchText: "")
+
+        XCTAssertEqual(service.visibleWords.map(\.word), ["alpha", "zulu"])
+    }
+
+    func testExportIncludesAllMatchingRecordsBeyondVisiblePage() async throws {
+        let context = try makeModelContext()
+        try insertWords(count: 125, into: context)
+
+        let service = LearningService(modelContext: context)
+        await service.reloadWords(filter: .all, searchText: "")
+        let exportRows = await service.exportRows(filter: .all, searchText: "")
+
+        XCTAssertEqual(service.visibleWords.count, 100)
+        XCTAssertEqual(exportRows.count, 125)
     }
 
     func testFiltersReturnExpectedRecords() async throws {
@@ -170,11 +220,12 @@ final class LearningServicePaginationTests: XCTestCase {
         return ModelContext(container)
     }
 
-    private func insertWords(count: Int, into context: ModelContext) {
+    private func insertWords(count: Int, into context: ModelContext) throws {
         for index in 0..<count {
             let record = WordRecord(word: "word-\(index)")
             record.lookupCount = count - index
             context.insert(record)
         }
+        try context.save()
     }
 }

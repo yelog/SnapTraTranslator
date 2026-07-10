@@ -6,74 +6,107 @@ import UniformTypeIdentifiers
 struct LearningSettingsView: View {
     @EnvironmentObject var model: AppModel
     @StateObject private var learningService: LearningService
+    let hidesScrollIndicator: Bool
     @State private var searchText = ""
     @State private var filterMode: LearningWordFilter = .all
     @State private var sourceLanguageFilter: String?
     @State private var showingClearConfirmation = false
     @State private var showingCleanupConfirmation = false
+    @State private var showingCleanupSettings = false
     @State private var cleanupResultMessage: String?
     @State private var exportResultMessage: String?
-    @State private var visibleRows: [WordRecordRowModel] = []
-    @State private var isBottomLoaderVisible = false
+    @State private var searchTask: Task<Void, Never>?
 
-    init(modelContext: ModelContext) {
+    init(modelContext: ModelContext, hidesScrollIndicator: Bool = false) {
         _learningService = StateObject(wrappedValue: LearningService(modelContext: modelContext))
+        self.hidesScrollIndicator = hidesScrollIndicator
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            headerSection
-            cleanupSettingsSection
-            statisticsCards
+        VStack(alignment: .leading, spacing: 12) {
+            headerRow
             searchAndFilterBar
             wordListView
         }
-        .padding()
         .onAppear {
             Task {
-                await learningService.refreshSummaryCounts()
-                await learningService.refreshAvailableLanguageIdentifiers()
                 await reloadWords()
+                await Task.yield()
+                await learningService.refreshSummaryCounts()
+                await Task.yield()
+                await learningService.refreshAvailableLanguageIdentifiers()
             }
         }
         .onChange(of: searchText) { _, _ in
-            Task {
-                await reloadWords()
-            }
+            scheduleSearchReload()
         }
         .onChange(of: filterMode) { _, _ in
-            Task {
-                await reloadWords()
-            }
+            reloadWordsImmediately()
         }
         .onChange(of: sourceLanguageFilter) { _, _ in
-            Task {
-                await reloadWords()
+            reloadWordsImmediately()
+        }
+        .onDisappear {
+            searchTask?.cancel()
+        }
+        .sheet(isPresented: $showingCleanupSettings) {
+            cleanupSettingsSheet
+        }
+        .confirmationDialog(
+            L("Cleanup Old Records?"),
+            isPresented: $showingCleanupConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(L("Cleanup"), role: .destructive) {
+                cleanupOldRecords()
             }
+            Button(L("Cancel"), role: .cancel) {}
+        } message: {
+            Text(L("This will delete mastered words older than %lld days and remove excess records beyond %lld.", model.settings.learningCleanupDays, model.settings.learningMaxRecords))
         }
-        .onReceive(learningService.$visibleWords) { newWords in
-            let now = Date()
-            visibleRows = newWords.map { WordRecordRowModel(record: $0, now: now) }
-        }
-        .onReceive(learningService.$isLoadingPage) { isLoading in
-            guard !isLoading else { return }
-            Task { requestNextPageIfNeeded() }
-        }
-        .onReceive(learningService.$hasMoreWords) { hasMoreWords in
-            guard hasMoreWords else { return }
-            Task { requestNextPageIfNeeded() }
+        .confirmationDialog(
+            L("Clear All Learning Data?"),
+            isPresented: $showingClearConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(L("Clear All"), role: .destructive) {
+                Task {
+                    await learningService.clearAllData()
+                }
+            }
+            Button(L("Cancel"), role: .cancel) {}
+        } message: {
+            Text(L("This will delete all word records. This action cannot be undone."))
         }
     }
 
-    private var cleanupSettingsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L("Auto Cleanup"))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+    private var cleanupSettingsSheet: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("Auto Cleanup"))
+                        .font(.headline)
+                    Text(L("This will delete mastered words older than %lld days and remove excess records beyond %lld.", model.settings.learningCleanupDays, model.settings.learningMaxRecords))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
-            ViewThatFits(in: .horizontal) {
-                cleanupControlsRow
-                cleanupControlsStack
+                Spacer()
+
+                Button(L("Close")) {
+                    showingCleanupSettings = false
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+
+            Divider()
+
+            cleanupToggle
+
+            HStack(alignment: .bottom, spacing: 16) {
+                cleanupFields
+                Spacer()
+                cleanupNowButton
             }
 
             if let message = cleanupResultMessage {
@@ -82,55 +115,8 @@ struct LearningSettingsView: View {
                 }
             }
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
-        )
-        .confirmationDialog(
-            L("Cleanup Old Records?"),
-            isPresented: $showingCleanupConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button(L("Cleanup"), role: .destructive) {
-                Task {
-                    let deleted = await learningService.cleanupOldRecords(
-                        maxRecords: model.settings.learningMaxRecords,
-                        cleanupDays: model.settings.learningCleanupDays
-                    )
-                    if deleted > 0 {
-                        cleanupResultMessage = L("Deleted %lld records", deleted)
-                    }
-                }
-            }
-            Button(L("Cancel"), role: .cancel) {}
-        } message: {
-            Text(L("This will delete mastered words older than %lld days and remove excess records beyond %lld.", model.settings.learningCleanupDays, model.settings.learningMaxRecords))
-        }
-    }
-
-    private var cleanupControlsRow: some View {
-        HStack(spacing: 16) {
-            cleanupToggle
-            cleanupFields
-            Spacer()
-            cleanupNowButton
-        }
-    }
-
-    private var cleanupControlsStack: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 16) {
-                cleanupToggle
-                Spacer()
-                cleanupNowButton
-            }
-            cleanupFields
-        }
+        .padding(20)
+        .frame(width: 420)
     }
 
     private var cleanupToggle: some View {
@@ -163,7 +149,7 @@ struct LearningSettingsView: View {
 
     private var cleanupNowButton: some View {
         Button {
-            showingCleanupConfirmation = true
+            presentCleanupConfirmation()
         } label: {
             Text(L("Cleanup Now"))
                 .font(.caption)
@@ -171,38 +157,19 @@ struct LearningSettingsView: View {
         .controlSize(.small)
     }
 
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(L("Word Learning"))
-                .font(.headline)
-            Text(L("Track words you've looked up and review them with spaced repetition."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
+    private var headerRow: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L("Word Learning"))
+                    .font(.headline)
+                Text(L("Track words you've looked up and review them with spaced repetition."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
-    private var statisticsCards: some View {
-        HStack(spacing: 12) {
-            StatCard(
-                title: L("Total Words"),
-                value: learningService.totalWordCount,
-                icon: "book.fill",
-                color: .blue
-            )
+            Spacer()
 
-            StatCard(
-                title: L("Pending Review"),
-                value: learningService.pendingReviewCount,
-                icon: "clock.fill",
-                color: .orange
-            )
-
-            StatCard(
-                title: L("Mastered"),
-                value: learningService.masteredCount,
-                icon: "checkmark.circle.fill",
-                color: .green
-            )
+            managementMenu
         }
     }
 
@@ -213,48 +180,17 @@ struct LearningSettingsView: View {
                 searchAndFilterControlsStack
             }
 
-            HStack(spacing: 8) {
-                Text(L("Export:"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button {
-                    exportWords(format: .plainText)
-                } label: {
-                    Label(L("TXT"), systemImage: "doc.text")
-                        .labelStyle(.titleAndIcon)
-                }
-                .controlSize(.small)
-                .disabled(visibleRows.isEmpty)
-                .help(L("Export matching words as TXT"))
-
-                Button {
-                    exportWords(format: .ankiTSV)
-                } label: {
-                    Label(L("Anki"), systemImage: "square.and.arrow.up")
-                        .labelStyle(.titleAndIcon)
-                }
-                .controlSize(.small)
-                .disabled(visibleRows.isEmpty)
-                .help(L("Export matching words for Anki"))
-
-                Button {
-                    exportWords(format: .csv)
-                } label: {
-                    Text(L("CSV"))
-                }
-                .controlSize(.small)
-                .disabled(visibleRows.isEmpty)
-                .help(L("Export matching words as CSV"))
-
-                Spacer()
-
-                clearLearningDataButton
-            }
+            filterPicker
 
             if let message = exportResultMessage {
                 statusMessage(message, color: message.hasPrefix(L("Export failed")) ? .red : .green) {
                     exportResultMessage = nil
+                }
+            }
+
+            if let message = cleanupResultMessage, !showingCleanupSettings {
+                statusMessage(message, color: .green) {
+                    cleanupResultMessage = nil
                 }
             }
         }
@@ -267,9 +203,6 @@ struct LearningSettingsView: View {
 
             languagePicker
                 .fixedSize(horizontal: true, vertical: false)
-
-            filterPicker
-                .fixedSize(horizontal: true, vertical: false)
         }
     }
 
@@ -277,9 +210,6 @@ struct LearningSettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             searchField
                 .frame(maxWidth: .infinity)
-
-            filterPicker
-                .frame(maxWidth: .infinity, alignment: .leading)
 
             languagePicker
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -311,7 +241,7 @@ struct LearningSettingsView: View {
     private var filterPicker: some View {
         Picker("", selection: $filterMode) {
             ForEach(LearningWordFilter.allCases, id: \.self) { mode in
-                Text(mode.title).tag(mode)
+                Text(filterTitle(for: mode)).tag(mode)
             }
         }
         .pickerStyle(.segmented)
@@ -329,87 +259,140 @@ struct LearningSettingsView: View {
         .frame(width: 130)
     }
 
-    private var clearLearningDataButton: some View {
-        Button {
-            showingClearConfirmation = true
-        } label: {
-            Image(systemName: "trash")
-                .foregroundStyle(.red)
-        }
-        .buttonStyle(.plain)
-        .help(L("Clear learning data"))
-        .confirmationDialog(
-            L("Clear All Learning Data?"),
-            isPresented: $showingClearConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button(L("Clear All"), role: .destructive) {
-                Task {
-                    await learningService.clearAllData()
+    private var managementMenu: some View {
+        Menu {
+            Menu(L("Export")) {
+                Button {
+                    exportWords(format: .plainText)
+                } label: {
+                    Label(L("TXT"), systemImage: "doc.text")
+                }
+
+                Button {
+                    exportWords(format: .ankiTSV)
+                } label: {
+                    Label(L("Anki"), systemImage: "square.and.arrow.up")
+                }
+
+                Button {
+                    exportWords(format: .csv)
+                } label: {
+                    Label(L("CSV"), systemImage: "tablecells")
                 }
             }
-            Button(L("Cancel"), role: .cancel) {}
-        } message: {
-            Text(L("This will delete all word records. This action cannot be undone."))
+            .disabled(learningService.visibleRows.isEmpty)
+
+            Divider()
+
+            Button {
+                showingCleanupSettings = true
+            } label: {
+                Label(L("Auto Cleanup"), systemImage: "clock.arrow.circlepath")
+            }
+
+            Button {
+                presentCleanupConfirmation()
+            } label: {
+                Label(L("Cleanup Now"), systemImage: "trash.slash")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                showingClearConfirmation = true
+            } label: {
+                Label(L("Clear learning data"), systemImage: "trash")
+            }
+        } label: {
+            Label(L("Manage"), systemImage: "ellipsis.circle")
         }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private func filterTitle(for mode: LearningWordFilter) -> String {
+        let count: Int
+        switch mode {
+        case .all:
+            count = learningService.totalWordCount
+        case .pendingReview:
+            count = learningService.pendingReviewCount
+        case .mastered:
+            count = learningService.masteredCount
+        }
+        return "\(mode.title) \(count)"
     }
 
     private var wordListView: some View {
         Group {
-            if visibleRows.isEmpty {
-                emptyStateView
+            if learningService.visibleRows.isEmpty {
+                if learningService.isLoadingPage {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    emptyStateView
+                }
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 6) {
-                        ForEach(visibleRows) { row in
-                            WordRecordRow(
-                                row: row,
-                                onMarkMastered: {
-                                    guard let record = learningService.wordRecord(for: row.id) else { return }
-                                    Task {
-                                        await learningService.markAsMastered(record)
-                                    }
-                                },
-                                onMarkReviewed: {
-                                    guard let record = learningService.wordRecord(for: row.id) else { return }
-                                    Task {
-                                        await learningService.markAsReviewed(record)
-                                    }
-                                },
-                                onReset: {
-                                    guard let record = learningService.wordRecord(for: row.id) else { return }
-                                    Task {
-                                        await learningService.resetReview(record)
-                                    }
-                                },
-                                onDelete: {
-                                    guard let record = learningService.wordRecord(for: row.id) else { return }
-                                    Task {
-                                        await learningService.deleteWord(record)
-                                    }
-                                }
-                            )
+                List {
+                    ForEach(learningService.visibleRows) { row in
+                        wordRow(for: row)
                             .equatable()
-                        }
+                            .onAppear {
+                                requestNextPageIfNeeded(after: row)
+                            }
+                    }
 
-                        if learningService.hasMoreWords || learningService.isLoadingPage {
+                    if learningService.isLoadingPage {
+                        HStack {
+                            Spacer()
                             ProgressView()
                                 .controlSize(.small)
-                                .padding(.vertical, 8)
-                                .onAppear {
-                                    isBottomLoaderVisible = true
-                                    requestNextPageIfNeeded()
-                                }
-                                .onDisappear {
-                                    isBottomLoaderVisible = false
-                                }
+                            Spacer()
                         }
+                        .listRowSeparator(.hidden)
                     }
-                    .padding(.horizontal, 4)
                 }
+                .listStyle(.bordered(alternatesRowBackgrounds: true))
+                .scrollIndicators(hidesScrollIndicator ? .hidden : .automatic, axes: .vertical)
+                .background(
+                    ScrollViewScrollerConfigurator(
+                        hidesVerticalScroller: hidesScrollIndicator
+                    )
+                )
             }
         }
         .frame(maxHeight: .infinity)
+    }
+
+    private func wordRow(for row: WordRecordRowModel) -> WordRecordRow {
+        WordRecordRow(
+            row: row,
+            onMarkMastered: {
+                guard let record = learningService.wordRecord(for: row.id) else { return }
+                Task {
+                    await learningService.markAsMastered(record)
+                }
+            },
+            onMarkReviewed: {
+                guard let record = learningService.wordRecord(for: row.id) else { return }
+                Task {
+                    await learningService.markAsReviewed(record)
+                }
+            },
+            onReset: {
+                guard let record = learningService.wordRecord(for: row.id) else { return }
+                Task {
+                    await learningService.resetReview(record)
+                }
+            },
+            onDelete: {
+                guard let record = learningService.wordRecord(for: row.id) else { return }
+                Task {
+                    await learningService.deleteWord(record)
+                }
+            }
+        )
     }
 
     private var emptyStateView: some View {
@@ -429,11 +412,22 @@ struct LearningSettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func requestNextPageIfNeeded() {
-        guard isBottomLoaderVisible, learningService.hasMoreWords, !learningService.isLoadingPage else { return }
+    private func requestNextPageIfNeeded(after row: WordRecordRowModel) {
+        guard row.id == paginationTriggerRowID else { return }
         Task {
             await learningService.loadMoreWords()
         }
+    }
+
+    private var paginationTriggerRowID: String? {
+        guard learningService.hasMoreWords,
+              !learningService.isLoadingPage,
+              !learningService.visibleRows.isEmpty else {
+            return nil
+        }
+
+        let triggerIndex = max(learningService.visibleRows.count - 10, 0)
+        return learningService.visibleRows[triggerIndex].id
     }
 
     private func reloadWords() async {
@@ -442,6 +436,49 @@ struct LearningSettingsView: View {
             searchText: searchText,
             sourceLanguageIdentifier: sourceLanguageFilter
         )
+    }
+
+    private func scheduleSearchReload() {
+        searchTask?.cancel()
+        searchTask = Task {
+            do {
+                try await Task.sleep(for: .milliseconds(300))
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            await reloadWords()
+        }
+    }
+
+    private func reloadWordsImmediately() {
+        searchTask?.cancel()
+        Task {
+            await reloadWords()
+        }
+    }
+
+    private func cleanupOldRecords() {
+        Task {
+            let deleted = await learningService.cleanupOldRecords(
+                maxRecords: model.settings.learningMaxRecords,
+                cleanupDays: model.settings.learningCleanupDays
+            )
+            cleanupResultMessage = L("Deleted %lld records", deleted)
+        }
+    }
+
+    private func presentCleanupConfirmation() {
+        guard showingCleanupSettings else {
+            showingCleanupConfirmation = true
+            return
+        }
+
+        showingCleanupSettings = false
+        DispatchQueue.main.async {
+            showingCleanupConfirmation = true
+        }
     }
 
     private func exportWords(format: LearningExportFormat) {
@@ -481,39 +518,6 @@ struct LearningSettingsView: View {
                     clear()
                 }
             }
-    }
-}
-
-struct StatCard: View {
-    let title: String
-    let value: Int
-    let icon: String
-    let color: Color
-
-    var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 14))
-                Text(title)
-                    .font(.system(size: 12))
-            }
-            .foregroundStyle(.secondary)
-
-            Text("\(value)")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundStyle(color)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
-        )
     }
 }
 
@@ -565,8 +569,6 @@ struct WordRecordRow: View, Equatable {
     let onReset: () -> Void
     let onDelete: () -> Void
 
-    @State private var isHovered = false
-
     static func == (lhs: WordRecordRow, rhs: WordRecordRow) -> Bool {
         lhs.row == rhs.row
     }
@@ -589,19 +591,19 @@ struct WordRecordRow: View, Equatable {
                     if row.isMastered {
                         Text(L("Mastered"))
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.green)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.green)
-                            .cornerRadius(4)
+                            .background(Color.green.opacity(0.12))
+                            .clipShape(Capsule())
                     } else if row.needsReview {
                         Text(L("Review"))
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.orange)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.orange)
-                            .cornerRadius(4)
+                            .background(Color.orange.opacity(0.12))
+                            .clipShape(Capsule())
                     }
                 }
 
@@ -610,7 +612,7 @@ struct WordRecordRow: View, Equatable {
                     Text(definitionText)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                 }
 
                 HStack(spacing: 12) {
@@ -628,29 +630,7 @@ struct WordRecordRow: View, Equatable {
 
             Spacer()
 
-            actionButtons
-                .opacity(isHovered ? 1 : 0)
-                .allowsHitTesting(isHovered)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
-        )
-        .onHover { hovering in
-            isHovered = hovering
-        }
-    }
-
-    @ViewBuilder
-    private var actionButtons: some View {
-        HStack(spacing: 8) {
-            if !row.isMastered {
+            HStack(spacing: 8) {
                 if row.needsReview {
                     Button {
                         onMarkReviewed()
@@ -660,35 +640,60 @@ struct WordRecordRow: View, Equatable {
                     }
                     .buttonStyle(.plain)
                     .help(L("Mark as reviewed"))
+                    .accessibilityLabel(L("Mark as reviewed"))
                 }
 
-                Button {
-                    onMarkMastered()
+                Menu {
+                    actionMenuItems
                 } label: {
-                    Image(systemName: "star.fill")
-                        .foregroundStyle(.yellow)
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
                 }
-                .buttonStyle(.plain)
-                .help(L("Mark as mastered"))
-            } else {
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help(L("More"))
+                .accessibilityLabel(L("More"))
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .contextMenu {
+            actionMenuItems
+        }
+    }
+
+    @ViewBuilder
+    private var actionMenuItems: some View {
+        if !row.isMastered {
+            if row.needsReview {
                 Button {
-                    onReset()
+                    onMarkReviewed()
                 } label: {
-                    Image(systemName: "arrow.counterclockwise")
-                        .foregroundStyle(.blue)
+                    Label(L("Mark as reviewed"), systemImage: "checkmark.circle")
                 }
-                .buttonStyle(.plain)
-                .help(L("Reset review progress"))
             }
 
             Button {
-                onDelete()
+                onMarkMastered()
             } label: {
-                Image(systemName: "trash")
-                    .foregroundStyle(.red)
+                Label(L("Mark as mastered"), systemImage: "star")
             }
-            .buttonStyle(.plain)
-            .help(L("Delete"))
+        } else {
+            Button {
+                onReset()
+            } label: {
+                Label(L("Reset review progress"), systemImage: "arrow.counterclockwise")
+            }
+        }
+
+        Divider()
+
+        Button(role: .destructive) {
+            onDelete()
+        } label: {
+            Label(L("Delete"), systemImage: "trash")
         }
     }
 }
