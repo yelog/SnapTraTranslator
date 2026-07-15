@@ -1172,6 +1172,12 @@ enum ParagraphOverlayLayout {
 // MARK: - Overlay Window Controller
 
 final class OverlayWindowController: NSWindowController {
+    private static let allSpacesCollectionBehavior: NSWindow.CollectionBehavior = [
+        .canJoinAllSpaces,
+        .fullScreenAuxiliary,
+        .stationary,
+    ]
+
     private let model: AppModel
     private let hostingView: NSHostingView<AnyView>
     private var measurementHostingView: NSHostingView<AnyView>?
@@ -1211,7 +1217,7 @@ final class OverlayWindowController: NSWindowController {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.level = .screenSaver
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.collectionBehavior = Self.allSpacesCollectionBehavior
         panel.ignoresMouseEvents = true
         panel.isMovableByWindowBackground = false
         super.init(window: panel)
@@ -1240,11 +1246,22 @@ final class OverlayWindowController: NSWindowController {
         return window.frame
     }
 
+    /// Reassert the panel's Space membership after Mission Control switches
+    /// Spaces. macOS can keep an ordered window marked as visible while it is
+    /// no longer frontmost in the newly active Space.
+    func reassertForActiveSpace() {
+        guard let window else { return }
+        window.collectionBehavior = Self.allSpacesCollectionBehavior
+        guard window.isVisible else { return }
+        window.orderFrontRegardless()
+    }
+
     func show(at anchor: CGPoint, makeKey: Bool = false) {
         guard let window else { return }
         lastAnchor = anchor
+        let wasVisible = window.isVisible
 
-        if !window.isVisible {
+        if !wasVisible {
             hostingView.rootView = overlayRootView(
                 paragraphOverlayMaxHeight: currentParagraphOverlayMaxHeight,
                 paragraphOverlayScrollingEnabled: currentParagraphOverlayScrollingEnabled
@@ -1252,16 +1269,21 @@ final class OverlayWindowController: NSWindowController {
         }
 
         let targetFrame = measuredFrame(for: anchor)
+        window.collectionBehavior = Self.allSpacesCollectionBehavior
 
-        if !window.isVisible {
+        if !wasVisible {
             cancelParagraphFrameAnimation()
             window.setFrame(targetFrame, display: true)
-            window.orderFrontRegardless()
-            if makeKey {
-                window.makeKey()
-            }
         } else {
             applyFrameIfNeeded(targetFrame)
+        }
+
+        // Reorder even when AppKit reports the window as visible. During a
+        // Space switch that state can refer to the previous Space, which used
+        // to make the overlay silently remain there.
+        window.orderFrontRegardless()
+        if makeKey {
+            window.makeKey()
         }
     }
 

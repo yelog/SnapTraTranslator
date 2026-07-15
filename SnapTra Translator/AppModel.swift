@@ -2469,6 +2469,12 @@ final class AppModel: ObservableObject {
 
         let workspaceNotifications = NSWorkspace.shared.notificationCenter
 
+        workspaceNotifications.publisher(for: NSWorkspace.activeSpaceDidChangeNotification)
+            .sink { [weak self] _ in
+                self?.handleActiveSpaceChange()
+            }
+            .store(in: &cancellables)
+
         workspaceNotifications.publisher(for: NSWorkspace.willSleepNotification)
             .sink { [weak self] _ in
                 self?.prepareForSystemSleep()
@@ -2504,6 +2510,19 @@ final class AppModel: ObservableObject {
                 self?.handleScreenConfigurationChange()
             }
             .store(in: &cancellables)
+    }
+
+    private func handleActiveSpaceChange() {
+        captureService.invalidateCache()
+
+        guard isHotkeyActive || isParagraphOverlayPresented || isTapKeptOverlayPresented else {
+            return
+        }
+
+        // Reassert the all-Spaces panel after Mission Control changes the
+        // active Space. The next OCR result will then be ordered in the new
+        // Space instead of being treated as already visible elsewhere.
+        overlayWindowController.reassertForActiveSpace()
     }
 
     private func prepareForSystemSleep() {
