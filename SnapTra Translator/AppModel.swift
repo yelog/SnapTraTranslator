@@ -390,10 +390,12 @@ final class AppModel: ObservableObject {
     private let speechService = SpeechService()
     private let sentenceTranslationService = SentenceTranslationService()
     private let imageTranslationService = ImageTranslationService()
+    private let lookupPerformanceReporter: any LookupPerformanceReporting = LookupPerformanceReporter()
     let dictionaryDownload: DictionaryDownloadManager
     private var cancellables = Set<AnyCancellable>()
     private var lookupTask: Task<Void, Never>?
     private var activeLookupID: UUID?
+    private var activeLookupTrace: LookupPerformanceTrace?
     private var isHotkeyActive = false
     private var activeLookupMode: ActiveLookupMode = .word
     private var lastAvailabilityKey: String?
@@ -822,9 +824,12 @@ final class AppModel: ObservableObject {
     private func startLookup() {
         activeLookupMode = .word
         hideInPlaceTranslation()
-        cancelActiveLookupWork()
+        cancelActiveLookupWork(outcome: .superseded)
         let lookupID = UUID()
+        let trace = LookupPerformanceTrace(lookupID: lookupID)
         activeLookupID = lookupID
+        activeLookupTrace = trace
+        lookupPerformanceReporter.beginLookup(trace)
         lookupTask = Task { [weak self] in
             await self?.performLookup(lookupID: lookupID)
         }
@@ -883,7 +888,18 @@ final class AppModel: ObservableObject {
         let mouseLocation = NSEvent.mouseLocation
         guard activeLookupID == lookupID else { return }
 
+        let performance = lookupPerformanceContext(for: lookupID)
+        performance?.begin(.routeResolution)
+        let probesAccessibility = supportsSelectedTextTranslation
+            && settings.selectedTextTranslationEnabled
+            && permissions.status.accessibility
+        if probesAccessibility {
+            performance?.begin(.accessibilityProbe)
+        }
         let resolution = resolveSinglePressLookupIntent(mouseLocation: mouseLocation)
+        if probesAccessibility {
+            performance?.end(.accessibilityProbe, outcome: .succeeded)
+        }
         let intent = resolution.intent
 
         // Clipboard fallback only participates when AX cannot provide a reliable selection route.
@@ -893,7 +909,9 @@ final class AppModel: ObservableObject {
            settings.selectedTextClipboardFallback,
            permissions.status.accessibility {
             selectedTextService.clipboardFallbackEnabled = true
+            performance?.begin(.clipboardFallback)
             if let clipboardSnapshot = await selectedTextService.clipboardFallbackSnapshot() {
+                performance?.end(.clipboardFallback, outcome: .succeeded)
                 guard !Task.isCancelled, activeLookupID == lookupID else { return }
                 debugSelectedTextRoute(
                     "clipboard fallback succeeded text=\"\(truncate(clipboardSnapshot.text))\""
@@ -906,6 +924,10 @@ final class AppModel: ObservableObject {
                     selectionSnapshot: clipboardSnapshot
                 )
                 if case .selectedTextSentence = clipboardIntent {
+                    performance?.end(.routeResolution, outcome: .succeeded)
+                    if let trace = performance?.trace {
+                        lookupPerformanceReporter.recordRoute(.clipboardSelection, trace: trace)
+                    }
                     activeLookupMode = .selectedTextSentence
                     await performSelectedTextSentenceLookup(
                         snapshot: clipboardSnapshot,
@@ -914,11 +936,17 @@ final class AppModel: ObservableObject {
                     )
                     return
                 }
+            } else {
+                performance?.end(.clipboardFallback, outcome: .failed)
             }
         }
 
+        performance?.end(.routeResolution, outcome: .succeeded)
         switch intent {
         case .selectedTextSentence(let snapshot):
+            if let trace = performance?.trace {
+                lookupPerformanceReporter.recordRoute(.accessibilitySelection, trace: trace)
+            }
             activeLookupMode = .selectedTextSentence
             await performSelectedTextSentenceLookup(
                 snapshot: snapshot,
@@ -926,6 +954,12 @@ final class AppModel: ObservableObject {
                 mouseLocation: mouseLocation
             )
         case .ocrWord:
+            if let trace = performance?.trace {
+                lookupPerformanceReporter.recordRoute(
+                    supportsSelectedTextTranslation ? .directOCR : .appStoreOCR,
+                    trace: trace
+                )
+            }
             activeLookupMode = .word
             await performOcrWordLookup(
                 lookupID: lookupID,
@@ -938,6 +972,7 @@ final class AppModel: ObservableObject {
         lookupID: UUID,
         mouseLocation: CGPoint
     ) async {
+        let performance = lookupPerformanceContext(for: lookupID)
         guard permissions.status.screenRecording else {
             updateOverlay(state: .error(L("Enable Screen Recording")), anchor: mouseLocation)
             return
@@ -948,7 +983,7 @@ final class AppModel: ObservableObject {
             updateOverlay(state: .loading(nil), anchor: mouseLocation)
         }
 
-        guard let capture = await captureService.captureAroundCursor() else {
+        guard let capture = await captureService.captureAroundCursor(performance: performance) else {
             debugOverlayWindowController.hide()
             if settings.debugShowOcrRegion {
                 updateOverlay(state: .error(L("Capture failed")), anchor: mouseLocation)
@@ -963,10 +998,12 @@ final class AppModel: ObservableObject {
         guard !Task.isCancelled, activeLookupID == lookupID else { return }
         let normalizedPoint = normalizedCursorPoint(mouseLocation, in: capture.region.rect)
         do {
+            performance?.begin(.ocr)
             let words = try await ocrService.recognizeWords(
                 in: capture.image,
                 language: settings.sourceLanguage
             )
+            performance?.end(.ocr, outcome: .succeeded)
             guard !Task.isCancelled, activeLookupID == lookupID else { return }
             if settings.debugShowOcrRegion {
                 let wordBoxes = words.map { $0.boundingBox }
@@ -1000,7 +1037,8 @@ final class AppModel: ObservableObject {
                     selected.text,
                     language: languageCode,
                     provider: settings.wordTTSProvider,
-                    useAmericanAccent: settings.englishAccent.isAmerican
+                    useAmericanAccent: settings.englishAccent.isAmerican,
+                    performance: performance
                 )
             }
 
@@ -1022,10 +1060,12 @@ final class AppModel: ObservableObject {
             updateOverlay(state: .result(initialContent), anchor: mouseLocation)
 
             Task {
+                performance?.begin(.learningRecord)
                 await learningService.recordLookup(
                     word: selected.text,
                     sourceLanguageIdentifier: languagePair.sourceIdentifier
                 )
+                performance?.end(.learningRecord, outcome: .succeeded)
             }
 
             await withTaskGroup(of: Void.self) { group in
@@ -1073,8 +1113,9 @@ final class AppModel: ObservableObject {
                 }
             }
         } catch is CancellationError {
-            // Task was cancelled, do nothing
+            performance?.end(.ocr, outcome: .cancelled)
         } catch {
+            performance?.end(.ocr, outcome: .failed)
             updateOverlay(state: .error(L("Translation failed: \(error.localizedDescription)")), anchor: mouseLocation)
         }
     }
@@ -1804,6 +1845,9 @@ final class AppModel: ObservableObject {
         }
 
         if let updatedContent {
+            if case .ready = state {
+                lookupPerformanceContext(for: lookupID)?.mark(.translationFirstReady)
+            }
             updateLearningDefinition(from: updatedContent)
         }
     }
@@ -2240,6 +2284,9 @@ final class AppModel: ObservableObject {
         }
 
         if let updatedContent {
+            if case .ready = result.state {
+                lookupPerformanceContext(for: lookupID)?.mark(.dictionaryFirstReady)
+            }
             updateLearningDefinition(from: updatedContent)
         }
     }
@@ -2247,12 +2294,17 @@ final class AppModel: ObservableObject {
     private func updateLearningDefinition(from content: OverlayContent) {
         let definitionText = Self.learningDefinitionText(from: content)
         guard definitionText != nil else { return }
+        let performance = activeLookupTrace.map {
+            LookupPerformanceContext(reporter: lookupPerformanceReporter, trace: $0)
+        }
 
         Task {
+            performance?.begin(.learningDefinition)
             await learningService.updateDefinition(
                 word: content.word,
                 definitionText: definitionText
             )
+            performance?.end(.learningDefinition, outcome: .succeeded)
         }
     }
 
@@ -2370,41 +2422,37 @@ final class AppModel: ObservableObject {
             setOverlayAnchor(anchor)
         }
 
+        let wasWindowVisible = overlayWindowController.isVisible
+
         switch state {
         case .error(let message):
             sendNotification(title: "SnapTra Translator", body: message)
         case .idle:
             break
         case .paragraphLoading, .paragraphResult:
-            if overlayState != state {
-                overlayState = state
-            }
+            publishOverlayStateIfNeeded(state, wasWindowVisible: wasWindowVisible)
             if overlayWindowController.isVisible {
                 refreshParagraphOverlayLayoutImmediately()
             } else {
-                overlayWindowController.show(at: overlayAnchor, makeKey: isParagraphOverlayPresented)
+                showOverlayWindowForActiveLookup(makeKey: isParagraphOverlayPresented)
             }
             overlayWindowController.setInteractive(true)
         case .result:
-            if overlayState != state {
-                overlayState = state
-            }
+            publishOverlayStateIfNeeded(state, wasWindowVisible: wasWindowVisible)
             if overlayWindowController.isVisible {
                 scheduleOverlayLayoutRefresh()
             } else {
-                overlayWindowController.show(at: overlayAnchor, makeKey: isParagraphOverlayPresented)
+                showOverlayWindowForActiveLookup(makeKey: isParagraphOverlayPresented)
             }
             if activeLookupMode == .ocrSentence || isTapKeptOverlayPresented || !settings.continuousTranslation {
                 overlayWindowController.setInteractive(true)
             }
         default:
-            if overlayState != state {
-                overlayState = state
-            }
+            publishOverlayStateIfNeeded(state, wasWindowVisible: wasWindowVisible)
             if overlayWindowController.isVisible {
                 scheduleOverlayLayoutRefresh()
             } else {
-                overlayWindowController.show(at: overlayAnchor, makeKey: isParagraphOverlayPresented)
+                showOverlayWindowForActiveLookup(makeKey: isParagraphOverlayPresented)
             }
             if activeLookupMode == .ocrSentence {
                 overlayWindowController.setInteractive(true)
@@ -2412,6 +2460,36 @@ final class AppModel: ObservableObject {
         }
 
         syncOverlayDismissalMonitoring()
+    }
+
+    private func publishOverlayStateIfNeeded(
+        _ state: OverlayState,
+        wasWindowVisible: Bool
+    ) {
+        guard overlayState != state else { return }
+        overlayState = state
+
+        guard let trace = activeLookupTrace else { return }
+        lookupPerformanceReporter.mark(.overlayStatePublished, trace: trace)
+        if wasWindowVisible {
+            lookupPerformanceReporter.endFirstPresentation(
+                .overlayStatePublished,
+                trace: trace,
+                outcome: .succeeded
+            )
+        }
+    }
+
+    private func showOverlayWindowForActiveLookup(makeKey: Bool) {
+        let trace = activeLookupTrace
+        overlayWindowController.show(
+            at: overlayAnchor,
+            makeKey: makeKey,
+            onOrderedFront: { [lookupPerformanceReporter] in
+                guard let trace else { return }
+                lookupPerformanceReporter.mark(.panelPresentation, trace: trace)
+            }
+        )
     }
 
     private func sendNotification(title: String, body: String) {
@@ -3201,7 +3279,18 @@ final class AppModel: ObservableObject {
         OCRService.selectWord(from: words, normalizedPoint: normalizedPoint)
     }
 
-    private func cancelActiveLookupWork() {
+    private func lookupPerformanceContext(for lookupID: UUID) -> LookupPerformanceContext? {
+        guard let trace = activeLookupTrace, trace.lookupID == lookupID else { return nil }
+        return LookupPerformanceContext(reporter: lookupPerformanceReporter, trace: trace)
+    }
+
+    private func cancelActiveLookupWork(
+        outcome: LookupPerformanceOutcome = .cancelled
+    ) {
+        if let trace = activeLookupTrace {
+            lookupPerformanceReporter.finishLookup(trace, outcome: outcome)
+            activeLookupTrace = nil
+        }
         lookupTask?.cancel()
         lookupTask = nil
         activeLookupID = nil

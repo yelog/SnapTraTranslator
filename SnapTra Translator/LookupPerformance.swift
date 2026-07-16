@@ -16,6 +16,7 @@ enum LookupPerformanceStage: String, Sendable {
     case captureMetadata
     case screenshot
     case ocr
+    case overlayStatePublished
     case panelPresentation
     case translationFirstReady
     case dictionaryFirstReady
@@ -47,6 +48,12 @@ protocol LookupPerformanceReporting: Sendable {
         outcome: LookupPerformanceOutcome
     )
     func mark(_ stage: LookupPerformanceStage, trace: LookupPerformanceTrace)
+    func endFirstPresentation(
+        _ stage: LookupPerformanceStage,
+        trace: LookupPerformanceTrace,
+        outcome: LookupPerformanceOutcome
+    )
+    func recordRoute(_ route: LookupPerformanceRoute, trace: LookupPerformanceTrace)
     func finishLookup(_ trace: LookupPerformanceTrace, outcome: LookupPerformanceOutcome)
 }
 
@@ -56,6 +63,28 @@ protocol LookupPerformanceClock: Sendable {
 
 protocol LookupPerformanceEventSinking: Sendable {
     func record(_ event: LookupPerformanceEvent)
+    func recordRoute(_ route: LookupPerformanceRoute, lookupID: UUID)
+}
+
+extension LookupPerformanceEventSinking {
+    func recordRoute(_ route: LookupPerformanceRoute, lookupID: UUID) {}
+}
+
+struct LookupPerformanceContext: Sendable {
+    let reporter: any LookupPerformanceReporting
+    let trace: LookupPerformanceTrace
+
+    func begin(_ stage: LookupPerformanceStage) {
+        reporter.begin(stage, trace: trace)
+    }
+
+    func end(_ stage: LookupPerformanceStage, outcome: LookupPerformanceOutcome) {
+        reporter.end(stage, trace: trace, outcome: outcome)
+    }
+
+    func mark(_ stage: LookupPerformanceStage) {
+        reporter.mark(stage, trace: trace)
+    }
 }
 
 struct LookupPerformanceEvent: Equatable, Sendable {
@@ -211,6 +240,40 @@ final class LookupPerformanceReporter: LookupPerformanceReporting, @unchecked Se
         lookups[trace.lookupID] = state
     }
 
+    func endFirstPresentation(
+        _ stage: LookupPerformanceStage,
+        trace: LookupPerformanceTrace,
+        outcome: LookupPerformanceOutcome
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard var state = lookups[trace.lookupID], !state.isFirstPresentationEnded else {
+            return
+        }
+
+        state.isFirstPresentationEnded = true
+        let endedAt = clock.nowNanoseconds()
+        lookups[trace.lookupID] = state
+        eventSink.record(
+            LookupPerformanceEvent(
+                kind: .firstPresentationEnded,
+                lookupID: trace.lookupID,
+                stage: stage,
+                outcome: outcome,
+                durationNanoseconds: Self.duration(from: state.startedAt, to: endedAt)
+            )
+        )
+    }
+
+    func recordRoute(_ route: LookupPerformanceRoute, trace: LookupPerformanceTrace) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard lookups[trace.lookupID] != nil else { return }
+        eventSink.recordRoute(route, lookupID: trace.lookupID)
+    }
+
     func finishLookup(_ trace: LookupPerformanceTrace, outcome: LookupPerformanceOutcome) {
         lock.lock()
         defer { lock.unlock() }
@@ -272,7 +335,7 @@ final class LookupPerformanceSystemEventSink:
 {
     private struct Interval {
         let id: OSSignpostID
-        let state: OSSignpostIntervalState
+        var state: OSSignpostIntervalState?
     }
 
     private struct StageKey: Hashable {
@@ -329,10 +392,13 @@ final class LookupPerformanceSystemEventSink:
                 let duration = event.durationNanoseconds
             else { return }
             let key = StageKey(lookupID: event.lookupID, stage: stage.rawValue)
-            guard let interval = stageIntervals.removeValue(forKey: key) else { return }
+            guard
+                let interval = stageIntervals.removeValue(forKey: key),
+                let state = interval.state
+            else { return }
             signposter.endInterval(
                 "LookupStage",
-                interval.state,
+                state,
                 "lookupID=\(lookupID, privacy: .public) stage=\(stage.rawValue, privacy: .public) outcome=\(outcome.rawValue, privacy: .public) duration_ns=\(duration, privacy: .public)"
             )
 
@@ -351,13 +417,16 @@ final class LookupPerformanceSystemEventSink:
             guard
                 let outcome = event.outcome,
                 let duration = event.durationNanoseconds,
-                let interval = lookupIntervals.removeValue(forKey: event.lookupID)
+                var interval = lookupIntervals[event.lookupID],
+                let state = interval.state
             else { return }
             signposter.endInterval(
                 "LookupToFirstPresentation",
-                interval.state,
+                state,
                 "lookupID=\(lookupID, privacy: .public) outcome=\(outcome.rawValue, privacy: .public) duration_ns=\(duration, privacy: .public)"
             )
+            interval.state = nil
+            lookupIntervals[event.lookupID] = interval
 
         case .lookupFinished:
             guard let outcome = event.outcome, let duration = event.durationNanoseconds else {
@@ -366,6 +435,23 @@ final class LookupPerformanceSystemEventSink:
             logger.debug(
                 "lookup finished lookupID=\(lookupID, privacy: .public) outcome=\(outcome.rawValue, privacy: .public) duration_ns=\(duration, privacy: .public)"
             )
+            lookupIntervals.removeValue(forKey: event.lookupID)
         }
+    }
+
+    func recordRoute(_ route: LookupPerformanceRoute, lookupID: UUID) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let id = lookupIntervals[lookupID]?.id ?? signposter.makeSignpostID()
+        let lookupIDString = lookupID.uuidString
+        signposter.emitEvent(
+            "LookupRoute",
+            id: id,
+            "lookupID=\(lookupIDString, privacy: .public) route=\(route.rawValue, privacy: .public)"
+        )
+        logger.debug(
+            "lookup route lookupID=\(lookupIDString, privacy: .public) route=\(route.rawValue, privacy: .public)"
+        )
     }
 }

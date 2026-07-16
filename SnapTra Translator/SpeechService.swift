@@ -15,7 +15,8 @@ final class SpeechService {
         _ text: String,
         language: String?,
         provider: TTSProvider = .apple,
-        useAmericanAccent: Bool = true
+        useAmericanAccent: Bool = true,
+        performance: LookupPerformanceContext? = nil
     ) {
         logger.info("🔊 Speaking with provider: \(provider.rawValue), text: \(text)")
         
@@ -25,7 +26,10 @@ final class SpeechService {
         switch provider {
         case .apple:
             logger.info("🎵 Using Apple System Voice")
+            performance?.begin(.ttsStart)
             speakWithApple(text, language: language)
+            performance?.end(.ttsStart, outcome: .succeeded)
+            performance?.mark(.ttsStart)
         case .youdao, .bing, .google, .baidu:
             logger.info("🌐 Using online TTS: \(provider.displayName)")
             Task {
@@ -33,7 +37,8 @@ final class SpeechService {
                     text,
                     language: language,
                     provider: provider,
-                    useAmericanAccent: useAmericanAccent
+                    useAmericanAccent: useAmericanAccent,
+                    performance: performance
                 )
             }
         }
@@ -90,16 +95,19 @@ final class SpeechService {
         _ text: String,
         language: String?,
         provider: TTSProvider,
-        useAmericanAccent: Bool
+        useAmericanAccent: Bool,
+        performance: LookupPerformanceContext?
     ) async {
         do {
             logger.info("📡 Fetching audio from \(provider.displayName)...")
+            performance?.begin(.ttsFetch)
             let audioData = try await ttsServiceFactory.fetchAudio(
                 text: text,
                 language: language,
                 provider: provider,
                 useAmericanAccent: useAmericanAccent
             )
+            performance?.end(.ttsFetch, outcome: .succeeded)
             
             logger.info("✅ Successfully fetched \(audioData.count) bytes from \(provider.displayName)")
             
@@ -114,6 +122,7 @@ final class SpeechService {
                 guard let self, !self.isCancelled else { return }
                 
                 self.analyzeAudioData(audioData, provider: provider)
+                performance?.begin(.ttsStart)
                 
                 do {
                     self.audioPlayer = try AVAudioPlayer(data: audioData)
@@ -128,24 +137,34 @@ final class SpeechService {
                     let success = self.audioPlayer?.play() ?? false
                     if success {
                         self.logger.info("▶️ Started playing audio")
+                        performance?.end(.ttsStart, outcome: .succeeded)
+                        performance?.mark(.ttsStart)
                     } else {
+                        performance?.end(.ttsStart, outcome: .failed)
                         self.logger.error("❌ AVAudioPlayer.play() returned false")
                         self.logger.error("📊 Audio data size: \(audioData.count) bytes")
                         self.speakWithApple(text, language: language)
+                        performance?.mark(.ttsStart)
                     }
                 } catch {
+                    performance?.end(.ttsStart, outcome: .failed)
                     self.logger.error("❌ Failed to create AVAudioPlayer: \(error)")
                     self.logger.error("📊 Audio data size: \(audioData.count) bytes")
                     self.logger.error("📄 First 20 bytes: \(audioData.prefix(20).map { String(format: "%02x", $0) }.joined(separator: " "))")
                     self.speakWithApple(text, language: language)
+                    performance?.mark(.ttsStart)
                 }
             }
         } catch {
+            performance?.end(.ttsFetch, outcome: .failed)
             logger.error("❌ TTS error: \(error)")
             logger.error("❌ Error details: \(error.localizedDescription)")
             logger.info("🔄 Falling back to Apple System Voice")
             // Fallback to Apple TTS
+            performance?.begin(.ttsStart)
             speakWithApple(text, language: language)
+            performance?.end(.ttsStart, outcome: .succeeded)
+            performance?.mark(.ttsStart)
         }
     }
 }

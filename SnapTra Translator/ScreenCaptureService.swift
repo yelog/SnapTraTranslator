@@ -26,7 +26,9 @@ final class ScreenCaptureService {
         self.exclusionRegistry = exclusionRegistry
     }
 
-    func captureAroundCursor() async -> (image: CGImage, region: CaptureRegion)? {
+    func captureAroundCursor(
+        performance: LookupPerformanceContext? = nil
+    ) async -> (image: CGImage, region: CaptureRegion)? {
         let mouseLocation = NSEvent.mouseLocation
         guard let screen = screen(containing: mouseLocation) else {
             return nil
@@ -40,14 +42,22 @@ final class ScreenCaptureService {
         let cgRect = convertToDisplayLocalCoordinates(rectInScreen, screen: screen)
 
         do {
-            let display = try await getDisplay(for: displayID)
-            guard let display else { return nil }
+            performance?.begin(.captureMetadata)
+            guard let display = try await getDisplay(for: displayID) else {
+                performance?.end(.captureMetadata, outcome: .failed)
+                return nil
+            }
+            performance?.end(.captureMetadata, outcome: .succeeded)
 
             let filter = SCContentFilter(display: display, excludingWindows: cachedExcludedWindows)
             let configuration = makeConfiguration(for: cgRect, scaleFactor: scaleFactor)
+            performance?.begin(.screenshot)
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+            performance?.end(.screenshot, outcome: .succeeded)
             return (image, CaptureRegion(rect: rectInScreen, screen: screen, displayID: displayID, scaleFactor: scaleFactor))
         } catch {
+            performance?.end(.captureMetadata, outcome: .failed)
+            performance?.end(.screenshot, outcome: .failed)
             return nil
         }
     }

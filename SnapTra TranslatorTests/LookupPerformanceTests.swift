@@ -88,6 +88,51 @@ final class LookupPerformanceTests: XCTestCase {
         XCTAssertEqual(event.durationNanoseconds, 12_500_000)
     }
 
+    func testVisiblePanelCanEndFirstPresentationAtStatePublication() throws {
+        let clock = TestLookupPerformanceClock()
+        let sink = RecordingLookupPerformanceEventSink()
+        let reporter = LookupPerformanceReporter(clock: clock, eventSink: sink)
+        let trace = LookupPerformanceTrace(lookupID: UUID())
+
+        reporter.beginLookup(trace)
+        clock.advance(by: 3_000_000)
+        reporter.mark(.overlayStatePublished, trace: trace)
+        reporter.endFirstPresentation(
+            .overlayStatePublished,
+            trace: trace,
+            outcome: .succeeded
+        )
+        reporter.endFirstPresentation(
+            .overlayStatePublished,
+            trace: trace,
+            outcome: .succeeded
+        )
+
+        let event = try XCTUnwrap(
+            sink.events.first { $0.kind == .firstPresentationEnded }
+        )
+        XCTAssertEqual(event.stage, .overlayStatePublished)
+        XCTAssertEqual(event.durationNanoseconds, 3_000_000)
+        XCTAssertEqual(
+            sink.events.filter { $0.kind == .firstPresentationEnded }.count,
+            1
+        )
+    }
+
+    func testRouteMetadataUsesTypedRouteAndLookupID() {
+        let sink = RecordingLookupPerformanceEventSink()
+        let reporter = LookupPerformanceReporter(eventSink: sink)
+        let trace = LookupPerformanceTrace(lookupID: UUID())
+
+        reporter.beginLookup(trace)
+        reporter.recordRoute(.directOCR, trace: trace)
+
+        XCTAssertEqual(
+            sink.routes,
+            [RecordedLookupPerformanceRoute(route: .directOCR, lookupID: trace.lookupID)]
+        )
+    }
+
     func testReporterAPIHasNoSourceTextOrCoordinateFields() {
         let trace = LookupPerformanceTrace(lookupID: UUID())
         let traceFields = Set(Mirror(reflecting: trace).children.compactMap(\.label))
@@ -166,9 +211,14 @@ private final class RecordingLookupPerformanceEventSink:
 {
     private let lock = NSLock()
     private var recordedEvents: [LookupPerformanceEvent] = []
+    private var recordedRoutes: [RecordedLookupPerformanceRoute] = []
 
     var events: [LookupPerformanceEvent] {
         lock.withLock { recordedEvents }
+    }
+
+    var routes: [RecordedLookupPerformanceRoute] {
+        lock.withLock { recordedRoutes }
     }
 
     func record(_ event: LookupPerformanceEvent) {
@@ -176,4 +226,17 @@ private final class RecordingLookupPerformanceEventSink:
             recordedEvents.append(event)
         }
     }
+
+    func recordRoute(_ route: LookupPerformanceRoute, lookupID: UUID) {
+        lock.withLock {
+            recordedRoutes.append(
+                RecordedLookupPerformanceRoute(route: route, lookupID: lookupID)
+            )
+        }
+    }
+}
+
+private struct RecordedLookupPerformanceRoute: Equatable {
+    let route: LookupPerformanceRoute
+    let lookupID: UUID
 }

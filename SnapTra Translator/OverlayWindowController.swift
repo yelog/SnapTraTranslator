@@ -1256,7 +1256,11 @@ final class OverlayWindowController: NSWindowController {
         window.orderFrontRegardless()
     }
 
-    func show(at anchor: CGPoint, makeKey: Bool = false) {
+    func show(
+        at anchor: CGPoint,
+        makeKey: Bool = false,
+        onOrderedFront: (() -> Void)? = nil
+    ) {
         guard let window else { return }
         lastAnchor = anchor
         let wasVisible = window.isVisible
@@ -1282,6 +1286,7 @@ final class OverlayWindowController: NSWindowController {
         // Space switch that state can refer to the previous Space, which used
         // to make the overlay silently remain there.
         window.orderFrontRegardless()
+        onOrderedFront?()
         if makeKey {
             window.makeKey()
         }
