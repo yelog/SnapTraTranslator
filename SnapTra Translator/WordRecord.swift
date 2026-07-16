@@ -35,7 +35,7 @@ final class WordRecord {
     func recordLookup(definitionText: String? = nil, sourceLanguageIdentifier: String? = nil) {
         lookupCount += 1
         lastLookupDate = Date()
-        updateDefinition(definitionText)
+        _ = updateDefinition(definitionText)
         updateSourceLanguage(sourceLanguageIdentifier)
     }
 
@@ -44,9 +44,14 @@ final class WordRecord {
         sourceLanguageIdentifier = normalized
     }
 
-    func updateDefinition(_ definitionText: String?) {
-        guard let normalized = Self.normalizedDefinitionText(definitionText) else { return }
+    @discardableResult
+    func updateDefinition(_ definitionText: String?) -> Bool {
+        guard let normalized = Self.normalizedDefinitionText(definitionText),
+              normalized != self.definitionText else {
+            return false
+        }
         self.definitionText = normalized
+        return true
     }
 
     func advanceReviewStage() {

@@ -213,6 +213,108 @@ final class LearningServicePaginationTests: XCTestCase {
         XCTAssertEqual(service.availableLanguageIdentifiers, ["en"])
     }
 
+    func testRecordLookupDoesNotRefreshLanguageSnapshot() async throws {
+        let context = try makeModelContext()
+        context.insert(WordRecord(word: "hello", sourceLanguageIdentifier: "en"))
+        try context.save()
+        let service = LearningService(modelContext: context)
+        await service.refreshAvailableLanguageIdentifiers()
+
+        await service.recordLookup(word: "bonjour", sourceLanguageIdentifier: "fr")
+
+        XCTAssertEqual(service.availableLanguageIdentifiers, ["en"])
+    }
+
+    func testExplicitLanguageRefreshSeesNewLookupLanguage() async throws {
+        let context = try makeModelContext()
+        let service = LearningService(modelContext: context)
+
+        await service.recordLookup(word: "bonjour", sourceLanguageIdentifier: "fr")
+        XCTAssertTrue(service.availableLanguageIdentifiers.isEmpty)
+
+        await service.refreshAvailableLanguageIdentifiers()
+
+        XCTAssertEqual(service.availableLanguageIdentifiers, ["fr"])
+    }
+
+    func testRecordLookupAtFiveThousandRecordsUpdatesOnlyTargetWord() async throws {
+        let context = try makeModelContext()
+        try insertWords(count: 5_000, into: context)
+        let untouchedDescriptor = FetchDescriptor<WordRecord>(
+            predicate: #Predicate { $0.word == "word-4999" }
+        )
+        let targetDescriptor = FetchDescriptor<WordRecord>(
+            predicate: #Predicate { $0.word == "word-0" }
+        )
+        let untouched = try XCTUnwrap(context.fetch(untouchedDescriptor).first)
+        let target = try XCTUnwrap(context.fetch(targetDescriptor).first)
+        let originalCount = untouched.lookupCount
+        let targetOriginalCount = target.lookupCount
+        let service = LearningService(modelContext: context)
+
+        await service.recordLookup(word: "word-0", sourceLanguageIdentifier: "en")
+
+        XCTAssertEqual(untouched.lookupCount, originalCount)
+        XCTAssertEqual(target.lookupCount, targetOriginalCount + 1)
+        XCTAssertEqual(target.sourceLanguageIdentifier, "en")
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<WordRecord>()), 5_000)
+    }
+
+    func testRecordLookupPreservesExistingAndNewWordLanguageSemantics() async throws {
+        let context = try makeModelContext()
+        context.insert(WordRecord(word: "hello", sourceLanguageIdentifier: "fr"))
+        try context.save()
+        let service = LearningService(modelContext: context)
+
+        await service.recordLookup(word: "hello", sourceLanguageIdentifier: "en")
+        await service.recordLookup(word: "bonjour", sourceLanguageIdentifier: "fr")
+        await service.reloadWords(filter: .all, searchText: "")
+
+        let records = Dictionary(uniqueKeysWithValues: service.visibleWords.map { ($0.word, $0) })
+        XCTAssertEqual(records["hello"]?.lookupCount, 2)
+        XCTAssertEqual(records["hello"]?.sourceLanguageIdentifier, "en")
+        XCTAssertEqual(records["bonjour"]?.lookupCount, 1)
+        XCTAssertEqual(records["bonjour"]?.sourceLanguageIdentifier, "fr")
+    }
+
+    func testIdenticalDefinitionUpdateReportsUnchanged() async throws {
+        let context = try makeModelContext()
+        context.insert(WordRecord(word: "hello", definitionText: "greeting"))
+        try context.save()
+        let service = LearningService(modelContext: context)
+
+        let result = await service.updateDefinition(
+            word: "hello",
+            definitionText: "  greeting  "
+        )
+
+        XCTAssertEqual(result, .unchanged)
+    }
+
+    func testDefinitionUpdateReportsInsertedUpdatedAndUnchanged() async throws {
+        let context = try makeModelContext()
+        let service = LearningService(modelContext: context)
+
+        let inserted = await service.updateDefinition(word: "hello", definitionText: "greeting")
+        let updated = await service.updateDefinition(word: "hello", definitionText: "salutation")
+        let unchanged = await service.updateDefinition(word: "hello", definitionText: nil)
+
+        XCTAssertEqual(inserted, .inserted)
+        XCTAssertEqual(updated, .updated)
+        XCTAssertEqual(unchanged, .unchanged)
+        await service.reloadWords(filter: .all, searchText: "hello")
+        XCTAssertEqual(service.visibleWords.first?.definitionText, "salutation")
+    }
+
+    func testWordRecordDefinitionMutationReportsNoOp() {
+        let record = WordRecord(word: "hello", definitionText: "greeting")
+
+        XCTAssertFalse(record.updateDefinition(nil))
+        XCTAssertFalse(record.updateDefinition("  greeting  "))
+        XCTAssertTrue(record.updateDefinition("salutation"))
+        XCTAssertEqual(record.definitionText, "salutation")
+    }
+
     private func makeModelContext() throws -> ModelContext {
         let schema = Schema([WordRecord.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)

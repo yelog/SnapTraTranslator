@@ -29,6 +29,12 @@ enum LearningLanguageDisplay {
     }
 }
 
+enum LearningDefinitionUpdateResult: Equatable {
+    case inserted
+    case updated
+    case unchanged
+}
+
 @MainActor
 final class LearningService: ObservableObject {
     private let modelContext: ModelContext
@@ -172,29 +178,37 @@ final class LearningService: ObservableObject {
             }
 
             try modelContext.save()
-            await refreshAvailableLanguageIdentifiers()
         } catch {
             print("Failed to record word lookup: \(error)")
         }
     }
 
-    func updateDefinition(word: String, definitionText: String?) async {
+    @discardableResult
+    func updateDefinition(
+        word: String,
+        definitionText: String?
+    ) async -> LearningDefinitionUpdateResult {
         let normalizedWord = word.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedWord.isEmpty else { return }
+        guard !normalizedWord.isEmpty else { return .unchanged }
 
         do {
             let descriptor = FetchDescriptor<WordRecord>(
                 predicate: #Predicate { $0.word == normalizedWord }
             )
             if let record = try modelContext.fetch(descriptor).first {
-                record.updateDefinition(definitionText)
+                guard record.updateDefinition(definitionText) else { return .unchanged }
+                try modelContext.save()
+                return .updated
             } else {
-                modelContext.insert(WordRecord(word: normalizedWord, definitionText: definitionText))
+                let record = WordRecord(word: normalizedWord, definitionText: definitionText)
+                guard record.definitionText != nil else { return .unchanged }
+                modelContext.insert(record)
+                try modelContext.save()
+                return .inserted
             }
-
-            try modelContext.save()
         } catch {
             print("Failed to update word definition: \(error)")
+            return .unchanged
         }
     }
 

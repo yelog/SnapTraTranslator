@@ -10,26 +10,35 @@ struct CaptureRegion {
 }
 
 final class ScreenCaptureService {
+    private typealias ContentSnapshot = ScreenCaptureMetadataSnapshot<SCDisplay, SCWindow>
+
+    private struct CaptureSourceMetadata: @unchecked Sendable {
+        let display: SCDisplay
+        let excludedWindows: [SCWindow]
+    }
+
     let captureSize = CGSize(width: 520, height: 140)
     let paragraphCaptureScale: CGFloat = 0.6
 
-    private var cachedExcludedWindows: [SCWindow] = []
     private let exclusionRegistry: CaptureExclusionRegistry
+    private let contentCache: ScreenCaptureContentCache<ContentSnapshot>
 
     @MainActor
     init() {
         self.exclusionRegistry = CaptureExclusionRegistry.shared
+        self.contentCache = Self.makeContentCache()
     }
 
     @MainActor
     init(exclusionRegistry: CaptureExclusionRegistry) {
         self.exclusionRegistry = exclusionRegistry
+        self.contentCache = Self.makeContentCache()
     }
 
     func captureAroundCursor(
+        at mouseLocation: CGPoint,
         performance: LookupPerformanceContext? = nil
     ) async -> (image: CGImage, region: CaptureRegion)? {
-        let mouseLocation = NSEvent.mouseLocation
         guard let screen = screen(containing: mouseLocation) else {
             return nil
         }
@@ -42,22 +51,16 @@ final class ScreenCaptureService {
         let cgRect = convertToDisplayLocalCoordinates(rectInScreen, screen: screen)
 
         do {
-            performance?.begin(.captureMetadata)
-            guard let display = try await getDisplay(for: displayID) else {
-                performance?.end(.captureMetadata, outcome: .failed)
+            let configuration = makeConfiguration(for: cgRect, scaleFactor: scaleFactor)
+            guard let image = try await captureImage(
+                displayID: displayID,
+                configuration: configuration,
+                performance: performance
+            ) else {
                 return nil
             }
-            performance?.end(.captureMetadata, outcome: .succeeded)
-
-            let filter = SCContentFilter(display: display, excludingWindows: cachedExcludedWindows)
-            let configuration = makeConfiguration(for: cgRect, scaleFactor: scaleFactor)
-            performance?.begin(.screenshot)
-            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-            performance?.end(.screenshot, outcome: .succeeded)
             return (image, CaptureRegion(rect: rectInScreen, screen: screen, displayID: displayID, scaleFactor: scaleFactor))
         } catch {
-            performance?.end(.captureMetadata, outcome: .failed)
-            performance?.end(.screenshot, outcome: .failed)
             return nil
         }
     }
@@ -77,16 +80,17 @@ final class ScreenCaptureService {
         let cgRect = convertToDisplayLocalCoordinates(rectInScreen, screen: screen)
 
         do {
-            let display = try await getDisplay(for: displayID)
-            guard let display else { return nil }
-
-            let filter = SCContentFilter(display: display, excludingWindows: cachedExcludedWindows)
             let configuration = makeConfiguration(
                 for: cgRect,
                 scaleFactor: scaleFactor,
                 resolutionScale: paragraphCaptureScale
             )
-            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+            guard let image = try await captureImage(
+                displayID: displayID,
+                configuration: configuration
+            ) else {
+                return nil
+            }
             return (image, CaptureRegion(rect: rectInScreen, screen: screen, displayID: displayID, scaleFactor: scaleFactor))
         } catch {
             return nil
@@ -116,12 +120,13 @@ final class ScreenCaptureService {
         let cgRect = convertToDisplayLocalCoordinates(rectInScreen, screen: screen)
 
         do {
-            let display = try await getDisplay(for: displayID)
-            guard let display else { return nil }
-
-            let filter = SCContentFilter(display: display, excludingWindows: cachedExcludedWindows)
             let configuration = makeConfiguration(for: cgRect, scaleFactor: scaleFactor)
-            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+            guard let image = try await captureImage(
+                displayID: displayID,
+                configuration: configuration
+            ) else {
+                return nil
+            }
             return (image, CaptureRegion(rect: rectInScreen, screen: screen, displayID: displayID, scaleFactor: scaleFactor))
         } catch {
             return nil
@@ -129,31 +134,116 @@ final class ScreenCaptureService {
     }
 
     func invalidateCache() {
-        cachedExcludedWindows = []
+        contentCache.invalidate()
     }
 
-    private func getDisplay(for displayID: CGDirectDisplayID) async throws -> SCDisplay? {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    private func captureImage(
+        displayID: CGDirectDisplayID,
+        configuration: SCStreamConfiguration,
+        performance: LookupPerformanceContext? = nil
+    ) async throws -> CGImage? {
+        var refreshBudget = ScreenCaptureRefreshBudget()
 
-        guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
-            return nil
-        }
+        while true {
+            try Task.checkCancellation()
+            performance?.begin(.captureMetadata)
 
-        // Only exclude SnapTra auxiliary overlays. Regular app windows such as
-        // Settings remain capturable so OCR works on all visible user content.
-        let registeredWindowNumbers = await MainActor.run {
-            exclusionRegistry.registeredWindowNumbers()
-        }
-        let visibleWindowNumbers = content.windows.map { Int($0.windowID) }
-        let excludedWindowNumbers = CaptureExclusionRegistry.excludedWindowNumbers(
-            registeredWindowNumbers: registeredWindowNumbers,
-            visibleWindowNumbers: visibleWindowNumbers
-        )
-        cachedExcludedWindows = content.windows.filter {
-            return excludedWindowNumbers.contains(Int($0.windowID))
-        }
+            let exclusionSnapshot = await MainActor.run {
+                exclusionRegistry.snapshot()
+            }
+            let metadata: ScreenCaptureContentCacheResult<CaptureSourceMetadata>?
+            do {
+                metadata = try await contentCache.resolvedContent(
+                    exclusionGeneration: exclusionSnapshot.generation,
+                    refreshBudget: &refreshBudget
+                ) { content in
+                    guard let display = content.display(for: displayID) else {
+                        return nil
+                    }
+                    return CaptureSourceMetadata(
+                        display: display,
+                        excludedWindows: content.windows(
+                            withNumbers: exclusionSnapshot.windowNumbers
+                        )
+                    )
+                }
+            } catch {
+                performance?.end(
+                    .captureMetadata,
+                    outcome: Self.isCancellation(error) ? .cancelled : .failed
+                )
+                throw error
+            }
 
-        return display
+            guard let metadata else {
+                performance?.end(
+                    .captureMetadata,
+                    outcome: Task.isCancelled ? .cancelled : .failed
+                )
+                return nil
+            }
+            guard !Task.isCancelled else {
+                performance?.end(.captureMetadata, outcome: .cancelled)
+                throw CancellationError()
+            }
+            performance?.end(
+                .captureMetadata,
+                outcome: metadata.source == .cacheHit ? .cacheHit : .cacheMiss
+            )
+
+            try Task.checkCancellation()
+            let filter = SCContentFilter(
+                display: metadata.value.display,
+                excludingWindows: metadata.value.excludedWindows
+            )
+            performance?.begin(.screenshot)
+            do {
+                let image = try await SCScreenshotManager.captureImage(
+                    contentFilter: filter,
+                    configuration: configuration
+                )
+                try Task.checkCancellation()
+                performance?.end(.screenshot, outcome: .succeeded)
+                return image
+            } catch {
+                let isCancellation = Self.isCancellation(error)
+                performance?.end(
+                    .screenshot,
+                    outcome: isCancellation ? .cancelled : .failed
+                )
+                guard !isCancellation else { throw error }
+                guard Self.isStaleCaptureSourceError(error),
+                      refreshBudget.consumeRefresh() else {
+                    throw error
+                }
+                contentCache.invalidate()
+            }
+        }
+    }
+
+    private static func makeContentCache() -> ScreenCaptureContentCache<ContentSnapshot> {
+        ScreenCaptureContentCache {
+            let content = try await SCShareableContent.excludingDesktopWindows(
+                false,
+                onScreenWindowsOnly: false
+            )
+            return ContentSnapshot(
+                displays: content.displays.map { ($0.displayID, $0) },
+                windows: content.windows.map { (Int($0.windowID), $0) }
+            )
+        }
+    }
+
+    private nonisolated static func isStaleCaptureSourceError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == SCStreamErrorDomain else { return false }
+        return [-3813, -3814, -3815].contains(nsError.code)
+    }
+
+    private nonisolated static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        return Task.isCancelled
     }
 
     private func screen(containing point: CGPoint) -> NSScreen? {

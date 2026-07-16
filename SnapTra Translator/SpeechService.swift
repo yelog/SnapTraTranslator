@@ -4,13 +4,158 @@ import Foundation
 import os.log
 
 @MainActor
-final class SpeechService {
+protocol TTSServiceFetching: AnyObject {
+    func fetchAudio(
+        text: String,
+        language: String?,
+        provider: TTSProvider,
+        useAmericanAccent: Bool,
+        disableCache: Bool
+    ) async throws -> Data
+}
+
+@MainActor
+protocol SpeechAudioOutput: AnyObject {
+    func stop()
+    func playApple(text: String, language: String?)
+    func playOnlineAudio(_ data: Data) throws -> Bool
+}
+
+@MainActor
+protocol SpeechAudioStartObserving: AnyObject {
+    func setAppleDidStartHandler(_ handler: @escaping @MainActor () -> Void)
+}
+
+protocol TTSDebugAudioDumping: Sendable {
+    func dump(_ data: Data, provider: TTSProvider, generation: UInt64) async
+}
+
+actor TTSDebugAudioDumper: TTSDebugAudioDumping {
+    private let directory: URL
+
+    init(
+        directory: URL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SnapTraTranslator/TTS", isDirectory: true)
+    ) {
+        self.directory = directory
+    }
+
+    func dump(_ data: Data, provider: TTSProvider, generation: UInt64) async {
+        #if DEBUG
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            let url = directory.appendingPathComponent(
+                "\(provider.rawValue)-\(generation)-\(UUID().uuidString).mp3"
+            )
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // Debug artifacts must never affect speech playback.
+        }
+        #endif
+    }
+}
+
+@MainActor
+final class AVFoundationSpeechAudioOutput: NSObject, SpeechAudioOutput, SpeechAudioStartObserving {
     private let synthesizer = AVSpeechSynthesizer()
     private var audioPlayer: AVAudioPlayer?
-    private let ttsServiceFactory = TTSServiceFactory()
+    private var nextAppleDidStartHandler: (@MainActor () -> Void)?
+    private var appleDidStartHandlers: [ObjectIdentifier: @MainActor () -> Void] = [:]
+
+    override init() {
+        super.init()
+        synthesizer.delegate = self
+    }
+
+    func stop() {
+        synthesizer.stopSpeaking(at: .immediate)
+        appleDidStartHandlers.removeAll()
+        nextAppleDidStartHandler = nil
+        audioPlayer?.stop()
+        audioPlayer = nil
+    }
+
+    func setAppleDidStartHandler(_ handler: @escaping @MainActor () -> Void) {
+        nextAppleDidStartHandler = handler
+    }
+
+    func playApple(text: String, language: String?) {
+        let utterance = AVSpeechUtterance(string: text)
+        if let language {
+            utterance.voice = AVSpeechSynthesisVoice(language: language)
+        }
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        if let handler = nextAppleDidStartHandler {
+            appleDidStartHandlers[ObjectIdentifier(utterance)] = handler
+        }
+        nextAppleDidStartHandler = nil
+        synthesizer.speak(utterance)
+    }
+
+    func playOnlineAudio(_ data: Data) throws -> Bool {
+        let player = try AVAudioPlayer(data: data)
+        player.prepareToPlay()
+        guard player.play(), player.isPlaying else {
+            player.stop()
+            return false
+        }
+        audioPlayer = player
+        return true
+    }
+
+    private func handleAppleDidStart(identifier: ObjectIdentifier) {
+        let handler = appleDidStartHandlers.removeValue(forKey: identifier)
+        handler?()
+    }
+}
+
+extension AVFoundationSpeechAudioOutput: AVSpeechSynthesizerDelegate {
+    nonisolated func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        didStart utterance: AVSpeechUtterance
+    ) {
+        let identifier = ObjectIdentifier(utterance)
+        Task { @MainActor [weak self] in
+            self?.handleAppleDidStart(identifier: identifier)
+        }
+    }
+}
+
+@MainActor
+final class SpeechService {
+    private let fetcher: any TTSServiceFetching
+    private let output: any SpeechAudioOutput
+    private let debugDumper: (any TTSDebugAudioDumping)?
     private let logger = Logger(subsystem: "com.yelog.SnapTra-Translator", category: "SpeechService")
-    private var isCancelled = false
-    
+    private var activeTask: Task<Void, Never>?
+    private var requestGeneration: UInt64 = 0
+
+    convenience init() {
+        #if DEBUG
+        let debugDumper: (any TTSDebugAudioDumping)? = TTSDebugAudioDumper()
+        #else
+        let debugDumper: (any TTSDebugAudioDumping)? = nil
+        #endif
+        self.init(
+            fetcher: TTSServiceFactory(),
+            output: AVFoundationSpeechAudioOutput(),
+            debugDumper: debugDumper
+        )
+    }
+
+    init(
+        fetcher: any TTSServiceFetching,
+        output: any SpeechAudioOutput,
+        debugDumper: (any TTSDebugAudioDumping)?
+    ) {
+        self.fetcher = fetcher
+        self.output = output
+        self.debugDumper = debugDumper
+    }
+
     func speak(
         _ text: String,
         language: String?,
@@ -18,41 +163,55 @@ final class SpeechService {
         useAmericanAccent: Bool = true,
         performance: LookupPerformanceContext? = nil
     ) {
-        logger.info("🔊 Speaking with provider: \(provider.rawValue), text: \(text)")
-        
-        stopSpeaking()
-        isCancelled = false
-        
+        logger.info("🔊 Speaking with provider: \(provider.rawValue)")
+        let generation = beginRequest()
+
         switch provider {
         case .apple:
             logger.info("🎵 Using Apple System Voice")
-            performance?.begin(.ttsStart)
-            speakWithApple(text, language: language)
-            performance?.end(.ttsStart, outcome: .succeeded)
-            performance?.mark(.ttsStart)
+            submitAppleSpeech(
+                text,
+                language: language,
+                generation: generation,
+                performance: performance
+            )
         case .youdao, .bing, .google, .baidu:
             logger.info("🌐 Using online TTS: \(provider.displayName)")
-            Task {
+            performance?.begin(.ttsFetch)
+            let task = Task { [weak self] in
+                guard let self else { return }
                 await speakWithOnlineService(
                     text,
                     language: language,
                     provider: provider,
                     useAmericanAccent: useAmericanAccent,
+                    generation: generation,
                     performance: performance
                 )
             }
+            activeTask = task
         }
     }
-    
+
     func stopSpeaking() {
-        isCancelled = true
-        if synthesizer.isSpeaking {
-            synthesizer.stopSpeaking(at: .immediate)
-        }
-        audioPlayer?.stop()
-        audioPlayer = nil
+        requestGeneration &+= 1
+        activeTask?.cancel()
+        activeTask = nil
+        output.stop()
     }
-    
+
+    private func beginRequest() -> UInt64 {
+        requestGeneration &+= 1
+        activeTask?.cancel()
+        activeTask = nil
+        output.stop()
+        return requestGeneration
+    }
+
+    private func isCurrent(_ generation: UInt64) -> Bool {
+        requestGeneration == generation && !Task.isCancelled
+    }
+
     private func analyzeAudioData(_ data: Data, provider: TTSProvider) {
         guard data.count >= 4 else {
             logger.error("❌ Audio data too small: \(data.count) bytes")
@@ -82,97 +241,144 @@ final class SpeechService {
         }
     }
     
-    private func speakWithApple(_ text: String, language: String?) {
-        let utterance = AVSpeechUtterance(string: text)
-        if let language {
-            utterance.voice = AVSpeechSynthesisVoice(language: language)
+    private func submitAppleSpeech(
+        _ text: String,
+        language: String?,
+        generation: UInt64,
+        performance: LookupPerformanceContext?
+    ) {
+        guard isCurrent(generation) else { return }
+
+        performance?.begin(.ttsStart)
+        if let observer = output as? any SpeechAudioStartObserving {
+            observer.setAppleDidStartHandler { [weak self] in
+                guard let self, self.isCurrent(generation) else { return }
+                performance?.end(.ttsStart, outcome: .succeeded)
+                performance?.markAudioStart(.appleDidStart)
+            }
         }
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        synthesizer.speak(utterance)
+        output.playApple(text: text, language: language)
+
+        // Custom outputs that cannot report didStart retain the old submission proxy.
+        if !(output is any SpeechAudioStartObserving) {
+            performance?.end(.ttsStart, outcome: .succeeded)
+            performance?.markAudioStart(.appleSubmissionProxy)
+        }
     }
-    
+
     private func speakWithOnlineService(
         _ text: String,
         language: String?,
         provider: TTSProvider,
         useAmericanAccent: Bool,
+        generation: UInt64,
         performance: LookupPerformanceContext?
     ) async {
+        defer {
+            if requestGeneration == generation {
+                activeTask = nil
+            }
+        }
+
         do {
             logger.info("📡 Fetching audio from \(provider.displayName)...")
-            performance?.begin(.ttsFetch)
-            let audioData = try await ttsServiceFactory.fetchAudio(
+            let audioData = try await fetcher.fetchAudio(
                 text: text,
                 language: language,
                 provider: provider,
-                useAmericanAccent: useAmericanAccent
+                useAmericanAccent: useAmericanAccent,
+                disableCache: false
             )
+            guard isCurrent(generation) else {
+                performance?.end(.ttsFetch, outcome: .superseded)
+                return
+            }
             performance?.end(.ttsFetch, outcome: .succeeded)
-            
+
             logger.info("✅ Successfully fetched \(audioData.count) bytes from \(provider.displayName)")
-            
-            // Debug: Save audio to file for inspection
-            #if DEBUG
-            let debugURL = FileManager.default.temporaryDirectory.appendingPathComponent("tts_\(provider.rawValue).mp3")
-            try? audioData.write(to: debugURL)
-            logger.debug("💾 Debug: Audio saved to \(debugURL.path)")
-            #endif
-            
-            await MainActor.run { [weak self] in
-                guard let self, !self.isCancelled else { return }
-                
-                self.analyzeAudioData(audioData, provider: provider)
-                performance?.begin(.ttsStart)
-                
-                do {
-                    self.audioPlayer = try AVAudioPlayer(data: audioData)
-                    self.audioPlayer?.prepareToPlay()
-                    
-                    if let player = self.audioPlayer {
-                        self.logger.info("🔊 Audio format: \(player.format)")
-                        self.logger.info("⏱️ Duration: \(player.duration) seconds")
-                        self.logger.info("🔢 Number of channels: \(player.numberOfChannels)")
-                    }
-                    
-                    let success = self.audioPlayer?.play() ?? false
-                    if success {
-                        self.logger.info("▶️ Started playing audio")
-                        performance?.end(.ttsStart, outcome: .succeeded)
-                        performance?.mark(.ttsStart)
-                    } else {
-                        performance?.end(.ttsStart, outcome: .failed)
-                        self.logger.error("❌ AVAudioPlayer.play() returned false")
-                        self.logger.error("📊 Audio data size: \(audioData.count) bytes")
-                        self.speakWithApple(text, language: language)
-                        performance?.mark(.ttsStart)
-                    }
-                } catch {
+
+            analyzeAudioData(audioData, provider: provider)
+            performance?.begin(.ttsStart)
+
+            do {
+                let playAccepted = try output.playOnlineAudio(audioData)
+                guard isCurrent(generation) else { return }
+                if playAccepted {
+                    logger.info("▶️ Online audio playback accepted")
+                    performance?.end(.ttsStart, outcome: .succeeded)
+                    performance?.markAudioStart(.playAccepted)
+                } else {
+                    logger.error("❌ Online audio playback was not accepted")
                     performance?.end(.ttsStart, outcome: .failed)
-                    self.logger.error("❌ Failed to create AVAudioPlayer: \(error)")
-                    self.logger.error("📊 Audio data size: \(audioData.count) bytes")
-                    self.logger.error("📄 First 20 bytes: \(audioData.prefix(20).map { String(format: "%02x", $0) }.joined(separator: " "))")
-                    self.speakWithApple(text, language: language)
-                    performance?.mark(.ttsStart)
+                    submitAppleSpeech(
+                        text,
+                        language: language,
+                        generation: generation,
+                        performance: performance
+                    )
                 }
+                scheduleDebugDump(audioData, provider: provider, generation: generation)
+            } catch {
+                let cancelled = Self.isCancellation(error) || Task.isCancelled
+                performance?.end(
+                    .ttsStart,
+                    outcome: cancelled ? .cancelled : .failed
+                )
+                guard isCurrent(generation), !cancelled else { return }
+                logger.error("❌ Failed to create or play online audio: \(error.localizedDescription)")
+                submitAppleSpeech(
+                    text,
+                    language: language,
+                    generation: generation,
+                    performance: performance
+                )
+                scheduleDebugDump(audioData, provider: provider, generation: generation)
             }
         } catch {
-            performance?.end(.ttsFetch, outcome: .failed)
+            let cancelled = Self.isCancellation(error) || Task.isCancelled
+            let outcome: LookupPerformanceOutcome = isCurrent(generation)
+                ? (cancelled ? .cancelled : .failed)
+                : .superseded
+            performance?.end(.ttsFetch, outcome: outcome)
+
+            guard isCurrent(generation), !cancelled else { return }
             logger.error("❌ TTS error: \(error)")
-            logger.error("❌ Error details: \(error.localizedDescription)")
             logger.info("🔄 Falling back to Apple System Voice")
-            // Fallback to Apple TTS
-            performance?.begin(.ttsStart)
-            speakWithApple(text, language: language)
-            performance?.end(.ttsStart, outcome: .succeeded)
-            performance?.mark(.ttsStart)
+            submitAppleSpeech(
+                text,
+                language: language,
+                generation: generation,
+                performance: performance
+            )
         }
+    }
+
+    private func scheduleDebugDump(
+        _ data: Data,
+        provider: TTSProvider,
+        generation: UInt64
+    ) {
+        guard isCurrent(generation), let debugDumper else { return }
+        Task(priority: .utility) {
+            await debugDumper.dump(data, provider: provider, generation: generation)
+        }
+    }
+
+    private nonisolated static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        if let ttsError = error as? TTSError,
+           case .networkError(let underlying) = ttsError {
+            return isCancellation(underlying)
+        }
+        return false
     }
 }
 
 // MARK: - TTS Service Factory
 
 @MainActor
-final class TTSServiceFactory {
+final class TTSServiceFactory: TTSServiceFetching {
     private let youdaoService = YoudaoTTSService()
     private let bingService = BingTTSService()
     private let googleService = GoogleTTSService()
@@ -257,7 +463,17 @@ enum TTSError: Error, LocalizedError {
 final class YoudaoTTSService {
     private let baseURL = "https://dict.youdao.com/dictvoice"
     private let logger = Logger(subsystem: "com.yelog.SnapTra-Translator", category: "YoudaoTTS")
-    
+    private let session: URLSession
+    private let uncachedSession: URLSession
+
+    init(
+        session: URLSession = .shared,
+        uncachedSession: URLSession = SharedURLSession.uncached
+    ) {
+        self.session = session
+        self.uncachedSession = uncachedSession
+    }
+
     func fetchAudio(
         text: String,
         language: String?,
@@ -275,8 +491,8 @@ final class YoudaoTTSService {
         
         logger.info("📡 Requesting Youdao TTS: \(url.absoluteString)")
         
-        let session = disableCache ? SharedURLSession.uncached : URLSession.shared
-        let (data, response) = try await session.data(from: url)
+        let selectedSession = disableCache ? uncachedSession : session
+        let (data, response) = try await selectedSession.data(from: url)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             logger.error("❌ Invalid response type")
@@ -329,7 +545,17 @@ final class YoudaoTTSService {
 final class BaiduTTSService {
     private let baseURL = "https://fanyi.baidu.com/gettts"
     private let logger = Logger(subsystem: "com.yelog.SnapTra-Translator", category: "BaiduTTS")
-    
+    private let session: URLSession
+    private let uncachedSession: URLSession
+
+    init(
+        session: URLSession = .shared,
+        uncachedSession: URLSession = SharedURLSession.uncached
+    ) {
+        self.session = session
+        self.uncachedSession = uncachedSession
+    }
+
     func fetchAudio(
         text: String,
         language: String?,
@@ -356,8 +582,8 @@ final class BaiduTTSService {
         
         logger.info("📡 Requesting Baidu TTS: \(url.absoluteString)")
         
-        let session = disableCache ? SharedURLSession.uncached : URLSession.shared
-        let (data, response) = try await session.data(from: url)
+        let selectedSession = disableCache ? uncachedSession : session
+        let (data, response) = try await selectedSession.data(from: url)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             logger.error("❌ Invalid response type")
@@ -409,14 +635,48 @@ final class BaiduTTSService {
 // correctly, unlike NWConnection which caused POSIX 53 errors through
 // Clash/V2Ray.
 
+protocol TTSWebSocketTasking: AnyObject, Sendable {
+    nonisolated func resume()
+    nonisolated func send(_ message: URLSessionWebSocketTask.Message) async throws
+    nonisolated func receive() async throws -> URLSessionWebSocketTask.Message
+    nonisolated func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?)
+}
+
+protocol TTSWebSocketTaskCreating: Sendable {
+    nonisolated func makeTask(for request: URLRequest) -> any TTSWebSocketTasking
+}
+
+extension URLSessionWebSocketTask: TTSWebSocketTasking {}
+
+struct URLSessionTTSWebSocketTaskFactory: TTSWebSocketTaskCreating {
+    let session: URLSession
+
+    nonisolated init(session: URLSession = .shared) {
+        self.session = session
+    }
+
+    nonisolated func makeTask(for request: URLRequest) -> any TTSWebSocketTasking {
+        session.webSocketTask(with: request)
+    }
+}
+
 final class EdgeTTSService {
     private let logger = Logger(subsystem: "com.yelog.SnapTra-Translator", category: "EdgeTTS")
+    private let taskFactory: any TTSWebSocketTaskCreating
+    private let timeoutNanoseconds: UInt64
 
     private let trustedClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
-    private let chromiumFullVersion = "143.0.3650.75"
     private let secMsGecVersion = "1-143.0.3650.75"
     private let userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         + " (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0"
+
+    init(
+        taskFactory: any TTSWebSocketTaskCreating = URLSessionTTSWebSocketTaskFactory(),
+        timeoutNanoseconds: UInt64 = 30_000_000_000
+    ) {
+        self.taskFactory = taskFactory
+        self.timeoutNanoseconds = timeoutNanoseconds
+    }
 
     func fetchAudio(text: String, language: String?, useAmericanAccent: Bool = true) async throws -> Data {
         logger.info("🌐 Starting Edge TTS (URLSession WebSocket)...")
@@ -444,39 +704,64 @@ final class EdgeTTSService {
         request.setValue(connectionId, forHTTPHeaderField: "X-ConnectionId")
         request.setValue("MUID=\(muid)", forHTTPHeaderField: "Cookie")
 
-        let task = URLSession.shared.webSocketTask(with: request)
-        task.resume()
+        let socket = taskFactory.makeTask(for: request)
+        socket.resume()
 
-        return try await withThrowingTaskGroup(of: Data.self) { group in
+        return try await withTaskCancellationHandler {
+            defer { socket.cancel(with: .normalClosure, reason: nil) }
+            return try await raceAudioAgainstTimeout(
+                socket: socket,
+                text: text,
+                language: language,
+                useAmericanAccent: useAmericanAccent
+            )
+        } onCancel: {
+            socket.cancel(with: .goingAway, reason: nil)
+        }
+    }
+
+    private func raceAudioAgainstTimeout(
+        socket: any TTSWebSocketTasking,
+        text: String,
+        language: String?,
+        useAmericanAccent: Bool
+    ) async throws -> Data {
+        try await withThrowingTaskGroup(of: Data.self) { group in
             group.addTask {
-                defer { task.cancel(with: .goingAway, reason: nil) }
-
-                // Send config
-                try await task.send(.string(self.createConfigMessage()))
+                try await socket.send(.string(self.createConfigMessage()))
                 self.logger.debug("📤 Config sent")
 
-                // Send SSML
-                let voiceName = Self.getVoiceName(language: language, useAmericanAccent: useAmericanAccent)
+                let voiceName = Self.getVoiceName(
+                    language: language,
+                    useAmericanAccent: useAmericanAccent
+                )
                 let ssml = Self.generateSSML(text: text, voiceName: voiceName)
-                try await task.send(.string(self.createSSMLMessage(ssml: ssml)))
+                try await socket.send(.string(self.createSSMLMessage(ssml: ssml)))
                 self.logger.debug("📤 SSML sent")
 
-                // Receive audio
                 self.logger.info("⏳ Receiving audio frames...")
-                return try await self.receiveAudio(task)
+                return try await self.receiveAudio(socket)
             }
 
             group.addTask {
-                try await Task.sleep(nanoseconds: 30_000_000_000)
-                self.logger.error("⏰ Edge TTS timed out after 30s")
+                try await Task.sleep(nanoseconds: self.timeoutNanoseconds)
+                self.logger.error("⏰ Edge TTS timed out")
+                // Closing the socket before throwing is what unblocks a pending receive.
+                socket.cancel(with: .goingAway, reason: nil)
                 throw TTSError.networkError(URLError(.timedOut))
             }
 
-            defer { group.cancelAll() }
-            guard let result = try await group.next() else {
-                throw TTSError.invalidResponse
+            do {
+                guard let result = try await group.next() else {
+                    throw TTSError.invalidResponse
+                }
+                group.cancelAll()
+                return result
+            } catch {
+                socket.cancel(with: .goingAway, reason: nil)
+                group.cancelAll()
+                throw error
             }
-            return result
         }
     }
 
@@ -500,7 +785,7 @@ final class EdgeTTSService {
 
     // MARK: - Audio Reception
 
-    private func receiveAudio(_ task: URLSessionWebSocketTask) async throws -> Data {
+    private func receiveAudio(_ task: any TTSWebSocketTasking) async throws -> Data {
         var audioData = Data()
         var msgCount = 0
 
@@ -626,7 +911,12 @@ final class EdgeTTSService {
 
 final class BingTTSService {
     private let logger = Logger(subsystem: "com.yelog.SnapTra-Translator", category: "BingTTS")
-    
+    private let edgeService: EdgeTTSService
+
+    init(edgeService: EdgeTTSService = EdgeTTSService()) {
+        self.edgeService = edgeService
+    }
+
     func fetchAudio(
         text: String,
         language: String?,
@@ -634,7 +924,6 @@ final class BingTTSService {
         disableCache: Bool = false
     ) async throws -> Data {
         logger.info("🔄 Bing TTS using Edge TTS backend")
-        let edgeService = EdgeTTSService()
         return try await edgeService.fetchAudio(text: text, language: language, useAmericanAccent: useAmericanAccent)
     }
 }
@@ -643,6 +932,16 @@ final class BingTTSService {
 
 final class GoogleTTSService {
     private let logger = Logger(subsystem: "com.yelog.SnapTra-Translator", category: "GoogleTTS")
+    private let session: URLSession
+    private let uncachedSession: URLSession
+
+    init(
+        session: URLSession = .shared,
+        uncachedSession: URLSession = SharedURLSession.uncached
+    ) {
+        self.session = session
+        self.uncachedSession = uncachedSession
+    }
 
     func fetchAudio(
         text: String,
@@ -671,8 +970,8 @@ final class GoogleTTSService {
         )
         request.setValue("https://translate.google.com/", forHTTPHeaderField: "Referer")
 
-        let session = disableCache ? SharedURLSession.uncached : URLSession.shared
-        let (data, response) = try await session.data(for: request)
+        let selectedSession = disableCache ? uncachedSession : session
+        let (data, response) = try await selectedSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw TTSError.invalidResponse

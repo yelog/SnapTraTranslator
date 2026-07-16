@@ -72,6 +72,52 @@ struct OverlayContent: Equatable {
     }
 }
 
+nonisolated struct LearningDefinitionCommit: Equatable, Sendable {
+    let word: String
+    let definitionText: String
+}
+
+nonisolated struct OverlayStatePublicationDecision: Equatable, Sendable {
+    let shouldUpdateState: Bool
+    let shouldEndFirstPresentation: Bool
+
+    static func make(isStateChanged: Bool, wasWindowVisible: Bool) -> Self {
+        Self(
+            shouldUpdateState: isStateChanged,
+            shouldEndFirstPresentation: wasWindowVisible
+        )
+    }
+}
+
+@MainActor
+enum LearningLookupPersistenceCoordinator {
+    static func run(
+        recordLookup: @escaping @MainActor @Sendable () async -> Void,
+        awaitResults: @escaping @MainActor () async -> Void,
+        isCurrent: @escaping @MainActor () -> Bool,
+        makeFinalCommit: @escaping @MainActor () -> LearningDefinitionCommit?,
+        updateDefinition: @escaping @MainActor (LearningDefinitionCommit) async -> Void
+    ) async {
+        let recordTask = Task {
+            await recordLookup()
+        }
+
+        await awaitResults()
+
+        guard !Task.isCancelled, isCurrent() else { return }
+
+        await recordTask.value
+
+        guard !Task.isCancelled,
+              isCurrent(),
+              let commit = makeFinalCommit() else {
+            return
+        }
+
+        await updateDefinition(commit)
+    }
+}
+
 enum OverlayPrimaryTranslationState: Equatable {
     case loading
     case ready(String, isFallback: Bool)
@@ -355,9 +401,19 @@ enum ParagraphOverlayControlPolicy {
     }
 }
 
-private struct SinglePressLookupResolution {
-    let intent: SinglePressLookupIntent
-    let shouldTryClipboardFallback: Bool
+private struct OcrWordCandidate: Sendable {
+    let text: String
+    let captureRect: CGRect
+    let wordBoxes: [CGRect]
+}
+
+private enum OcrWordCandidateLoadResult: Sendable {
+    case missingScreenRecordingPermission
+    case captureFailed
+    case noWord(captureRect: CGRect, wordBoxes: [CGRect])
+    case word(OcrWordCandidate)
+    case failed(message: String)
+    case cancelled
 }
 
 @MainActor
@@ -532,7 +588,7 @@ final class AppModel: ObservableObject {
         setOverlayAnchor(mouseLocation)
         overlayWindowController.setInteractive(false)
         startMouseTracking()
-        startLookup()
+        startLookup(at: mouseLocation)
     }
 
     func handleHotkeyRelease() {
@@ -797,10 +853,10 @@ final class AppModel: ObservableObject {
                 self.lastOcrPosition = currentPosition
                 self.setOverlayAnchor(currentPosition)
                 if case .idle = self.overlayState {
-                    self.startLookup()
+                    self.startLookup(at: currentPosition)
                 } else {
                     self.overlayWindowController.move(to: currentPosition)
-                    self.startLookup()
+                    self.startLookup(at: currentPosition)
                 }
             }
         }
@@ -821,7 +877,7 @@ final class AppModel: ObservableObject {
         dismissOverlay()
     }
 
-    private func startLookup() {
+    private func startLookup(at mouseLocation: CGPoint) {
         activeLookupMode = .word
         hideInPlaceTranslation()
         cancelActiveLookupWork(outcome: .superseded)
@@ -830,8 +886,25 @@ final class AppModel: ObservableObject {
         activeLookupID = lookupID
         activeLookupTrace = trace
         lookupPerformanceReporter.beginLookup(trace)
+
+        let selectedTextEnabled = settings.selectedTextTranslationEnabled
+        let hasAccessibilityPermission = permissions.status.accessibility
+        let selectedTextProbeRequest = supportsSelectedTextTranslation
+            && selectedTextEnabled
+            && hasAccessibilityPermission
+            ? SelectedTextProbeRequest.capture(mouseLocation: mouseLocation)
+            : nil
+        let request = SinglePressLookupRequest(
+            lookupID: lookupID,
+            mouseLocation: mouseLocation,
+            supportsSelectedText: supportsSelectedTextTranslation,
+            selectedTextEnabled: selectedTextEnabled,
+            clipboardFallbackEnabled: settings.selectedTextClipboardFallback,
+            hasAccessibilityPermission: hasAccessibilityPermission,
+            selectedTextProbeRequest: selectedTextProbeRequest
+        )
         lookupTask = Task { [weak self] in
-            await self?.performLookup(lookupID: lookupID)
+            await self?.performLookup(request: request)
         }
     }
 
@@ -882,120 +955,130 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func performLookup(lookupID: UUID) async {
+    func performLookup(request: SinglePressLookupRequest) async {
+        let lookupID = request.lookupID
         guard !Task.isCancelled, activeLookupID == lookupID else { return }
-
-        let mouseLocation = NSEvent.mouseLocation
-        guard activeLookupID == lookupID else { return }
-
         let performance = lookupPerformanceContext(for: lookupID)
         performance?.begin(.routeResolution)
-        let probesAccessibility = supportsSelectedTextTranslation
-            && settings.selectedTextTranslationEnabled
-            && permissions.status.accessibility
-        if probesAccessibility {
-            performance?.begin(.accessibilityProbe)
-        }
-        let resolution = resolveSinglePressLookupIntent(mouseLocation: mouseLocation)
-        if probesAccessibility {
-            performance?.end(.accessibilityProbe, outcome: .succeeded)
-        }
-        let intent = resolution.intent
+        let selectedTextProbeRequest = request.selectedTextProbeRequest
 
-        // Clipboard fallback only participates when AX cannot provide a reliable selection route.
-        if resolution.shouldTryClipboardFallback,
-           supportsSelectedTextTranslation,
-           settings.selectedTextTranslationEnabled,
-           settings.selectedTextClipboardFallback,
-           permissions.status.accessibility {
-            selectedTextService.clipboardFallbackEnabled = true
-            performance?.begin(.clipboardFallback)
-            if let clipboardSnapshot = await selectedTextService.clipboardFallbackSnapshot() {
-                performance?.end(.clipboardFallback, outcome: .succeeded)
-                guard !Task.isCancelled, activeLookupID == lookupID else { return }
-                debugSelectedTextRoute(
-                    "clipboard fallback succeeded text=\"\(truncate(clipboardSnapshot.text))\""
-                )
-                let clipboardIntent = SinglePressLookupRouter.resolve(
-                    mouseLocation: mouseLocation,
-                    isSelectedTextTranslationSupported: supportsSelectedTextTranslation,
-                    isSelectedTextTranslationEnabled: settings.selectedTextTranslationEnabled,
-                    hasAccessibilityPermission: permissions.status.accessibility,
-                    selectionSnapshot: clipboardSnapshot
-                )
-                if case .selectedTextSentence = clipboardIntent {
-                    performance?.end(.routeResolution, outcome: .succeeded)
-                    if let trace = performance?.trace {
-                        lookupPerformanceReporter.recordRoute(.clipboardSelection, trace: trace)
-                    }
-                    activeLookupMode = .selectedTextSentence
-                    await performSelectedTextSentenceLookup(
-                        snapshot: clipboardSnapshot,
-                        lookupID: lookupID,
-                        mouseLocation: mouseLocation
+        let decision = await SinglePressLookupCoordinator.resolve(
+            request: request,
+            accessibilityProbe: { [weak self] probeRequest in
+                guard let self else {
+                    return SinglePressLookupResolution(
+                        intent: .ocrWord,
+                        shouldTryClipboardFallback: false
                     )
-                    return
                 }
-            } else {
-                performance?.end(.clipboardFallback, outcome: .failed)
+                guard let selectedTextProbeRequest else {
+                    return SinglePressLookupResolution(
+                        intent: .ocrWord,
+                        shouldTryClipboardFallback: false
+                    )
+                }
+                performance?.begin(.accessibilityProbe)
+                let resolution = await self.resolveSinglePressLookupIntent(
+                    request: probeRequest,
+                    selectedTextProbeRequest: selectedTextProbeRequest
+                )
+                let remainsActive = !Task.isCancelled
+                    && self.activeLookupID == probeRequest.lookupID
+                performance?.end(
+                    .accessibilityProbe,
+                    outcome: remainsActive ? .succeeded : .cancelled
+                )
+                return resolution
+            },
+            clipboardProbe: { [weak self] probeRequest in
+                guard let self else { return nil }
+                performance?.begin(.clipboardFallback)
+                let snapshot = await self.selectedTextService.clipboardFallbackSnapshot(
+                    isEnabled: probeRequest.clipboardFallbackEnabled
+                )
+                let remainsActive = !Task.isCancelled
+                    && self.activeLookupID == probeRequest.lookupID
+                performance?.end(
+                    .clipboardFallback,
+                    outcome: remainsActive
+                        ? (snapshot == nil ? .failed : .succeeded)
+                        : .cancelled
+                )
+                if let snapshot {
+                    self.debugSelectedTextRoute(
+                        "clipboard fallback succeeded text=\"\(self.truncate(snapshot.text))\""
+                    )
+                }
+                return snapshot
+            },
+            loadOCRCandidate: { [weak self] candidateRequest in
+                guard let self else { return OcrWordCandidateLoadResult.cancelled }
+                return await self.loadOcrWordCandidate(request: candidateRequest)
+            },
+            routeResolved: { [weak self] route in
+                guard let self else { return }
+                performance?.end(.routeResolution, outcome: .succeeded)
+                guard let trace = performance?.trace else { return }
+                switch route {
+                case .selectedText(let source):
+                    self.lookupPerformanceReporter.recordRoute(
+                        source == .clipboard
+                            ? .clipboardSelection
+                            : .accessibilitySelection,
+                        trace: trace
+                    )
+                case .ocr:
+                    self.lookupPerformanceReporter.recordRoute(
+                        request.supportsSelectedText ? .directOCR : .appStoreOCR,
+                        trace: trace
+                    )
+                }
             }
+        )
+
+        guard !Task.isCancelled, activeLookupID == lookupID else {
+            performance?.end(.routeResolution, outcome: .cancelled)
+            return
         }
 
-        performance?.end(.routeResolution, outcome: .succeeded)
-        switch intent {
-        case .selectedTextSentence(let snapshot):
-            if let trace = performance?.trace {
-                lookupPerformanceReporter.recordRoute(.accessibilitySelection, trace: trace)
-            }
+        switch decision {
+        case .selectedText(let snapshot):
             activeLookupMode = .selectedTextSentence
             await performSelectedTextSentenceLookup(
                 snapshot: snapshot,
                 lookupID: lookupID,
-                mouseLocation: mouseLocation
+                mouseLocation: request.mouseLocation
             )
-        case .ocrWord:
-            if let trace = performance?.trace {
-                lookupPerformanceReporter.recordRoute(
-                    supportsSelectedTextTranslation ? .directOCR : .appStoreOCR,
-                    trace: trace
-                )
-            }
+
+        case .ocr(let candidate):
             activeLookupMode = .word
-            await performOcrWordLookup(
-                lookupID: lookupID,
-                mouseLocation: mouseLocation
-            )
+            await presentOcrWordCandidate(candidate, request: request)
+
+        case .cancelled:
+            performance?.end(.routeResolution, outcome: .cancelled)
         }
     }
 
-    private func performOcrWordLookup(
-        lookupID: UUID,
-        mouseLocation: CGPoint
-    ) async {
+    private func loadOcrWordCandidate(
+        request: SinglePressLookupRequest
+    ) async -> OcrWordCandidateLoadResult {
+        let lookupID = request.lookupID
+        let mouseLocation = request.mouseLocation
         let performance = lookupPerformanceContext(for: lookupID)
         guard permissions.status.screenRecording else {
-            updateOverlay(state: .error(L("Enable Screen Recording")), anchor: mouseLocation)
-            return
+            return .missingScreenRecordingPermission
         }
 
-        // 只在调试模式下显示初始 loading 状态
-        if settings.debugShowOcrRegion {
-            updateOverlay(state: .loading(nil), anchor: mouseLocation)
+        guard let capture = await captureService.captureAroundCursor(
+            at: mouseLocation,
+            performance: performance
+        ) else {
+            return Task.isCancelled || activeLookupID != lookupID
+                ? .cancelled
+                : .captureFailed
         }
+        guard !Task.isCancelled, activeLookupID == lookupID else { return .cancelled }
 
-        guard let capture = await captureService.captureAroundCursor(performance: performance) else {
-            debugOverlayWindowController.hide()
-            if settings.debugShowOcrRegion {
-                updateOverlay(state: .error(L("Capture failed")), anchor: mouseLocation)
-            }
-            return
-        }
-        if settings.debugShowOcrRegion {
-            debugOverlayWindowController.show(at: capture.region.rect)
-        } else {
-            debugOverlayWindowController.hide()
-        }
-        guard !Task.isCancelled, activeLookupID == lookupID else { return }
         let normalizedPoint = normalizedCursorPoint(mouseLocation, in: capture.region.rect)
         do {
             performance?.begin(.ocr)
@@ -1003,130 +1086,238 @@ final class AppModel: ObservableObject {
                 in: capture.image,
                 language: settings.sourceLanguage
             )
+            guard !Task.isCancelled, activeLookupID == lookupID else {
+                performance?.end(.ocr, outcome: .cancelled)
+                return .cancelled
+            }
             performance?.end(.ocr, outcome: .succeeded)
-            guard !Task.isCancelled, activeLookupID == lookupID else { return }
-            if settings.debugShowOcrRegion {
-                let wordBoxes = words.map { $0.boundingBox }
-                debugOverlayWindowController.show(at: capture.region.rect, wordBoxes: wordBoxes)
-            }
+
+            let wordBoxes = words.map(\.boundingBox)
             guard let selected = selectWord(from: words, normalizedPoint: normalizedPoint) else {
-                // 只在调试模式下显示 "No word detected" 气泡
-                if settings.debugShowOcrRegion {
-                    updateOverlay(state: .noWord, anchor: mouseLocation)
-                } else {
-                    // 非调试模式下，隐藏气泡
-                    hideOverlay()
-                }
-                return
+                return .noWord(
+                    captureRect: capture.region.rect,
+                    wordBoxes: wordBoxes
+                )
             }
-            guard activeLookupID == lookupID else { return }
-
-            guard shouldPerformLookup(for: selected.text) else {
-                hideOverlay()
-                return
+            return .word(
+                OcrWordCandidate(
+                    text: selected.text,
+                    captureRect: capture.region.rect,
+                    wordBoxes: wordBoxes
+                )
+            )
+        } catch is CancellationError {
+            performance?.end(.ocr, outcome: .cancelled)
+            return .cancelled
+        } catch {
+            guard !Task.isCancelled, activeLookupID == lookupID else {
+                performance?.end(.ocr, outcome: .cancelled)
+                return .cancelled
             }
+            performance?.end(.ocr, outcome: .failed)
+            return .failed(
+                message: L("Translation failed: \(error.localizedDescription)")
+            )
+        }
+    }
 
-            let languagePair = resolveLookupLanguagePair(for: selected.text)
-            let sourceLanguage = languagePair.sourceLanguage
-            let targetLanguage = languagePair.targetLanguage
-            let supportedDictionarySources = dictionarySources(for: languagePair)
+    private func presentOcrWordCandidate(
+        _ result: OcrWordCandidateLoadResult,
+        request: SinglePressLookupRequest
+    ) async {
+        guard !Task.isCancelled, activeLookupID == request.lookupID else { return }
 
-            if settings.playWordPronunciation {
-                let languageCode = sourceLanguage.languageCode?.identifier
-                speechService.speak(
-                    selected.text,
-                    language: languageCode,
-                    provider: settings.wordTTSProvider,
-                    useAmericanAccent: settings.englishAccent.isAmerican,
-                    performance: performance
+        switch result {
+        case .missingScreenRecordingPermission:
+            updateOverlay(
+                state: .error(L("Enable Screen Recording")),
+                anchor: request.mouseLocation
+            )
+
+        case .captureFailed:
+            debugOverlayWindowController.hide()
+            if settings.debugShowOcrRegion {
+                updateOverlay(
+                    state: .error(L("Capture failed")),
+                    anchor: request.mouseLocation
                 )
             }
 
-            if settings.copyWord {
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(selected.text, forType: .string)
+        case .noWord(let captureRect, let wordBoxes):
+            if settings.debugShowOcrRegion {
+                debugOverlayWindowController.show(
+                    at: captureRect,
+                    wordBoxes: wordBoxes
+                )
+                updateOverlay(state: .noWord, anchor: request.mouseLocation)
+            } else {
+                debugOverlayWindowController.hide()
+                hideOverlay()
             }
-            guard !Task.isCancelled, activeLookupID == lookupID else { return }
 
-            let initialContent = makeInitialOverlayContent(
-                word: selected.text,
-                sources: supportedDictionarySources,
-                primaryTranslationState: languagePair.isSameLanguage
-                    ? .ready(selected.text, isFallback: false)
-                    : .loading,
-                sourceLanguageIdentifier: languagePair.sourceIdentifier
+        case .word(let candidate):
+            if settings.debugShowOcrRegion {
+                debugOverlayWindowController.show(
+                    at: candidate.captureRect,
+                    wordBoxes: candidate.wordBoxes
+                )
+            } else {
+                debugOverlayWindowController.hide()
+            }
+            await performResolvedOcrWordLookup(
+                word: candidate.text,
+                request: request
             )
-            updateOverlay(state: .result(initialContent), anchor: mouseLocation)
 
-            Task {
+        case .failed(let message):
+            updateOverlay(state: .error(message), anchor: request.mouseLocation)
+
+        case .cancelled:
+            return
+        }
+    }
+
+    private func performResolvedOcrWordLookup(
+        word: String,
+        request: SinglePressLookupRequest
+    ) async {
+        let lookupID = request.lookupID
+        let mouseLocation = request.mouseLocation
+        let performance = lookupPerformanceContext(for: lookupID)
+
+        guard !Task.isCancelled, activeLookupID == lookupID else { return }
+
+        guard shouldPerformLookup(for: word) else {
+            hideOverlay()
+            return
+        }
+
+        let languagePair = resolveLookupLanguagePair(for: word)
+        let sourceLanguage = languagePair.sourceLanguage
+        let targetLanguage = languagePair.targetLanguage
+        let supportedDictionarySources = dictionarySources(for: languagePair)
+
+        if settings.playWordPronunciation {
+            let languageCode = sourceLanguage.languageCode?.identifier
+            speechService.speak(
+                word,
+                language: languageCode,
+                provider: settings.wordTTSProvider,
+                useAmericanAccent: settings.englishAccent.isAmerican,
+                performance: performance
+            )
+        }
+
+        if settings.copyWord {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(word, forType: .string)
+        }
+        guard !Task.isCancelled, activeLookupID == lookupID else { return }
+
+        let initialContent = makeInitialOverlayContent(
+            word: word,
+            sources: supportedDictionarySources,
+            primaryTranslationState: languagePair.isSameLanguage
+                ? .ready(word, isFallback: false)
+                : .loading,
+            sourceLanguageIdentifier: languagePair.sourceIdentifier
+        )
+        updateOverlay(state: .result(initialContent), anchor: mouseLocation)
+
+        await LearningLookupPersistenceCoordinator.run(
+            recordLookup: { [learningService] in
                 performance?.begin(.learningRecord)
                 await learningService.recordLookup(
-                    word: selected.text,
+                    word: word,
                     sourceLanguageIdentifier: languagePair.sourceIdentifier
                 )
                 performance?.end(.learningRecord, outcome: .succeeded)
-            }
+            },
+            awaitResults: { [weak self, dictionaryService, translationBridge] in
+                guard let self else { return }
+                await withTaskGroup(of: Void.self) { group in
+                    if !languagePair.isSameLanguage {
+                        if #available(macOS 15.0, *) {
+                            group.addTask { [weak self, translationBridge] in
+                                guard let self else { return }
+                                let translationState = await self.loadPrimaryTranslationState(
+                                    word: word,
+                                    languagePair: languagePair,
+                                    sourceLanguage: sourceLanguage,
+                                    targetLanguage: targetLanguage,
+                                    translationBridge: translationBridge
+                                )
+                                await self.applyPrimaryTranslationState(
+                                    translationState,
+                                    lookupID: lookupID,
+                                    anchor: mouseLocation
+                                )
+                            }
+                            await Task.yield()
+                        }
+                    }
 
-            await withTaskGroup(of: Void.self) { group in
-                if !languagePair.isSameLanguage {
-                    if #available(macOS 15.0, *) {
-                        group.addTask { [weak self, translationBridge] in
+                    for source in supportedDictionarySources {
+                        group.addTask { [weak self, dictionaryService, translationBridge] in
                             guard let self else { return }
-                            let translationState = await self.loadPrimaryTranslationState(
-                                word: selected.text,
-                                languagePair: languagePair,
+                            let result = await Self.lookupDictionarySection(
+                                word: word,
+                                source: source,
+                                dictionaryService: dictionaryService,
+                                sourceIdentifier: languagePair.sourceIdentifier,
+                                targetIdentifier: languagePair.targetIdentifier,
+                                preferEnglish: languagePair.targetIsEnglish,
                                 sourceLanguage: sourceLanguage,
                                 targetLanguage: targetLanguage,
                                 translationBridge: translationBridge
                             )
-                            await self.applyPrimaryTranslationState(
-                                translationState,
+                            await self.applyDictionarySectionResult(
+                                result,
                                 lookupID: lookupID,
                                 anchor: mouseLocation
                             )
                         }
-                        await Task.yield()
                     }
                 }
-
-                for source in supportedDictionarySources {
-                    group.addTask { [weak self, dictionaryService, translationBridge] in
-                        guard let self else { return }
-                        let result = await Self.lookupDictionarySection(
-                            word: selected.text,
-                            source: source,
-                            dictionaryService: dictionaryService,
-                            sourceIdentifier: languagePair.sourceIdentifier,
-                            targetIdentifier: languagePair.targetIdentifier,
-                            preferEnglish: languagePair.targetIsEnglish,
-                            sourceLanguage: sourceLanguage,
-                            targetLanguage: targetLanguage,
-                            translationBridge: translationBridge
-                        )
-                        await self.applyDictionarySectionResult(
-                            result,
-                            lookupID: lookupID,
-                            anchor: mouseLocation
-                        )
-                    }
+            },
+            isCurrent: { [weak self] in
+                guard let self else { return false }
+                return self.activeLookupID == lookupID
+            },
+            makeFinalCommit: { [weak self] in
+                guard let self,
+                      case .result(let finalContent) = self.overlayState,
+                      let definitionText = Self.learningDefinitionText(from: finalContent) else {
+                    return nil
                 }
+                return LearningDefinitionCommit(
+                    word: finalContent.word,
+                    definitionText: definitionText
+                )
+            },
+            updateDefinition: { [learningService] commit in
+                performance?.begin(.learningDefinition)
+                _ = await learningService.updateDefinition(
+                    word: commit.word,
+                    definitionText: commit.definitionText
+                )
+                performance?.end(.learningDefinition, outcome: .succeeded)
             }
-        } catch is CancellationError {
-            performance?.end(.ocr, outcome: .cancelled)
-        } catch {
-            performance?.end(.ocr, outcome: .failed)
-            updateOverlay(state: .error(L("Translation failed: \(error.localizedDescription)")), anchor: mouseLocation)
-        }
+        )
     }
 
-    private func resolveSinglePressLookupIntent(mouseLocation: CGPoint) -> SinglePressLookupResolution {
+    private func resolveSinglePressLookupIntent(
+        request: SinglePressLookupRequest,
+        selectedTextProbeRequest: SelectedTextProbeRequest
+    ) async -> SinglePressLookupResolution {
+        let mouseLocation = request.mouseLocation
         debugSelectedTextRoute(
             """
             start mouse=\(describe(point: mouseLocation)) \
-            selectedTextSupported=\(supportsSelectedTextTranslation) \
-            selectedTextEnabled=\(settings.selectedTextTranslationEnabled) \
-            accessibility=\(permissions.status.accessibility) \
+            selectedTextSupported=\(request.supportsSelectedText) \
+            selectedTextEnabled=\(request.selectedTextEnabled) \
+            accessibility=\(request.hasAccessibilityPermission) \
             likelySandboxed=\(isLikelySandboxedRuntime()) \
             bundlePath=\(Bundle.main.bundlePath) \
             home=\(NSHomeDirectory()) \
@@ -1134,23 +1325,24 @@ final class AppModel: ObservableObject {
             """
         )
 
-        guard supportsSelectedTextTranslation else {
+        guard request.supportsSelectedText else {
             debugSelectedTextRoute("decision=ocrWord reason=unsupportedChannel")
             return SinglePressLookupResolution(intent: .ocrWord, shouldTryClipboardFallback: false)
         }
 
-        guard settings.selectedTextTranslationEnabled else {
+        guard request.selectedTextEnabled else {
             debugSelectedTextRoute("decision=ocrWord reason=featureDisabled")
             return SinglePressLookupResolution(intent: .ocrWord, shouldTryClipboardFallback: false)
         }
 
-        guard permissions.status.accessibility else {
+        guard request.hasAccessibilityPermission else {
             debugSelectedTextRoute("decision=ocrWord reason=missingAccessibility")
             return SinglePressLookupResolution(intent: .ocrWord, shouldTryClipboardFallback: false)
         }
 
-        selectedTextService.clipboardFallbackEnabled = settings.selectedTextClipboardFallback
-        let selectionSnapshot = selectedTextService.currentSelectionSnapshot(mouseLocation: mouseLocation)
+        let selectionSnapshot = await selectedTextService.currentSelectionSnapshot(
+            request: selectedTextProbeRequest
+        )
         var selectionRejectionReason: String?
         if let selectionSnapshot {
             debugSelectedTextRoute(
@@ -1169,7 +1361,7 @@ final class AppModel: ObservableObject {
 
         let intent = SinglePressLookupRouter.resolve(
             mouseLocation: mouseLocation,
-            isSelectedTextTranslationSupported: supportsSelectedTextTranslation,
+            isSelectedTextTranslationSupported: request.supportsSelectedText,
             isSelectedTextTranslationEnabled: true,
             hasAccessibilityPermission: true,
             selectionSnapshot: selectionSnapshot
@@ -1844,11 +2036,10 @@ final class AppModel: ObservableObject {
             updatedContent = content
         }
 
-        if let updatedContent {
+        if updatedContent != nil {
             if case .ready = state {
                 lookupPerformanceContext(for: lookupID)?.mark(.translationFirstReady)
             }
-            updateLearningDefinition(from: updatedContent)
         }
     }
 
@@ -2283,28 +2474,10 @@ final class AppModel: ObservableObject {
             updatedContent = content
         }
 
-        if let updatedContent {
+        if updatedContent != nil {
             if case .ready = result.state {
                 lookupPerformanceContext(for: lookupID)?.mark(.dictionaryFirstReady)
             }
-            updateLearningDefinition(from: updatedContent)
-        }
-    }
-
-    private func updateLearningDefinition(from content: OverlayContent) {
-        let definitionText = Self.learningDefinitionText(from: content)
-        guard definitionText != nil else { return }
-        let performance = activeLookupTrace.map {
-            LookupPerformanceContext(reporter: lookupPerformanceReporter, trace: $0)
-        }
-
-        Task {
-            performance?.begin(.learningDefinition)
-            await learningService.updateDefinition(
-                word: content.word,
-                definitionText: definitionText
-            )
-            performance?.end(.learningDefinition, outcome: .succeeded)
         }
     }
 
@@ -2466,12 +2639,17 @@ final class AppModel: ObservableObject {
         _ state: OverlayState,
         wasWindowVisible: Bool
     ) {
-        guard overlayState != state else { return }
-        overlayState = state
+        let decision = OverlayStatePublicationDecision.make(
+            isStateChanged: overlayState != state,
+            wasWindowVisible: wasWindowVisible
+        )
+        if decision.shouldUpdateState {
+            overlayState = state
+        }
 
         guard let trace = activeLookupTrace else { return }
         lookupPerformanceReporter.mark(.overlayStatePublished, trace: trace)
-        if wasWindowVisible {
+        if decision.shouldEndFirstPresentation {
             lookupPerformanceReporter.endFirstPresentation(
                 .overlayStatePublished,
                 trace: trace,
@@ -2604,6 +2782,7 @@ final class AppModel: ObservableObject {
     }
 
     private func prepareForSystemSleep() {
+        captureService.invalidateCache()
         isHotkeyActive = false
         hotkeyManager.resetState()
         stopMouseTracking()
@@ -3294,6 +3473,7 @@ final class AppModel: ObservableObject {
         lookupTask?.cancel()
         lookupTask = nil
         activeLookupID = nil
+        speechService.stopSpeaking()
         translationBridge.cancelAllPendingRequests()
         cancelPendingOverlayLayoutRefresh()
     }
@@ -3546,9 +3726,9 @@ final class AppModel: ObservableObject {
         return true
     }
 
-    private func debugSelectedTextRoute(_ message: String) {
+    private func debugSelectedTextRoute(_ message: @autoclosure () -> String) {
 #if DEBUG
-        print("[SelectedTextRoute] \(message)")
+        print("[SelectedTextRoute] \(message())")
 #endif
     }
 

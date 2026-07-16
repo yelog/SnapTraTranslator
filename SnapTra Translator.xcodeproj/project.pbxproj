@@ -16,6 +16,7 @@
 		640DFE2655144E1B8253C7CE /* SelectedTextPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC1D9ED0A1A4609A236359B /* SelectedTextPerformanceTests.swift */; };
 		ACEEECDABF8040D4B09377C9 /* LookupPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D1C751B70E94ABC9BCA765A /* LookupPerformanceTests.swift */; };
 		9B7C1A1D4F9F4A5A9F7D0001 /* LearningServicePaginationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B7C1A1C4F9F4A5A9F7D0001 /* LearningServicePaginationTests.swift */; };
+		A7C81D2E3F405162738495A7 /* SpeechServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C81D2E3F405162738495A6 /* SpeechServiceTests.swift */; };
 		D300F5E82F67AE35007DD703 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = E1SPARKLE000000000000002 /* Sparkle */; };
 		E1A111111111111111111111 /* HotkeyManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B111111111111111111111 /* HotkeyManagerTests.swift */; };
 		E1A222222222222222222222 /* OCRParagraphGroupingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B222222222222222222222 /* OCRParagraphGroupingTests.swift */; };
@@ -40,6 +41,7 @@
 		5D5A00000000000000000002 /* InPlaceTranslationLayoutTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InPlaceTranslationLayoutTests.swift; sourceTree = "<group>"; };
 		6753B831E5133F53A37B1D3A /* LookupDirectionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LookupDirectionTests.swift; sourceTree = "<group>"; };
 		9B7C1A1C4F9F4A5A9F7D0001 /* LearningServicePaginationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LearningServicePaginationTests.swift; sourceTree = "<group>"; };
+		A7C81D2E3F405162738495A6 /* SpeechServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpeechServiceTests.swift; sourceTree = "<group>"; };
 		A9757C4D27EFDE23144043C9 /* SettingsStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		CA9FDDCF14665092D5945F0C /* SnapTra TranslatorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "SnapTra TranslatorTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0878597B29F37191DDAD9BF /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
@@ -125,6 +127,7 @@
 				423F1844E7A13D4E51660DC4 /* SmokeTests.swift */,
 				6753B831E5133F53A37B1D3A /* LookupDirectionTests.swift */,
 				9B7C1A1C4F9F4A5A9F7D0001 /* LearningServicePaginationTests.swift */,
+				A7C81D2E3F405162738495A6 /* SpeechServiceTests.swift */,
 				A9757C4D27EFDE23144043C9 /* SettingsStoreTests.swift */,
 				5D5A00000000000000000002 /* InPlaceTranslationLayoutTests.swift */,
 				E1B111111111111111111111 /* HotkeyManagerTests.swift */,
@@ -310,6 +313,7 @@
 				42600FB0442E5C482935C055 /* LookupDirectionTests.swift in Sources */,
 				5D5A00000000000000000001 /* InPlaceTranslationLayoutTests.swift in Sources */,
 				9B7C1A1D4F9F4A5A9F7D0001 /* LearningServicePaginationTests.swift in Sources */,
+				A7C81D2E3F405162738495A7 /* SpeechServiceTests.swift in Sources */,
 				246061597EB29A21F9316CDF /* SettingsStoreTests.swift in Sources */,
 				E1A111111111111111111111 /* HotkeyManagerTests.swift in Sources */,
 				E1A222222222222222222222 /* OCRParagraphGroupingTests.swift in Sources */,

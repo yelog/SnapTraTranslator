@@ -119,6 +119,26 @@ final class LookupPerformanceTests: XCTestCase {
         )
     }
 
+    func testVisiblePanelEndsFirstPresentationEvenWhenOverlayStateIsUnchanged() {
+        let decision = OverlayStatePublicationDecision.make(
+            isStateChanged: false,
+            wasWindowVisible: true
+        )
+
+        XCTAssertFalse(decision.shouldUpdateState)
+        XCTAssertTrue(decision.shouldEndFirstPresentation)
+    }
+
+    func testHiddenPanelWithChangedStateWaitsForWindowPresentation() {
+        let decision = OverlayStatePublicationDecision.make(
+            isStateChanged: true,
+            wasWindowVisible: false
+        )
+
+        XCTAssertTrue(decision.shouldUpdateState)
+        XCTAssertFalse(decision.shouldEndFirstPresentation)
+    }
+
     func testRouteMetadataUsesTypedRouteAndLookupID() {
         let sink = RecordingLookupPerformanceEventSink()
         let reporter = LookupPerformanceReporter(eventSink: sink)
@@ -130,6 +150,34 @@ final class LookupPerformanceTests: XCTestCase {
         XCTAssertEqual(
             sink.routes,
             [RecordedLookupPerformanceRoute(route: .directOCR, lookupID: trace.lookupID)]
+        )
+    }
+
+    func testAudioStartMetadataUsesTypedKindAndIsRecordedOnlyOnce() {
+        let sink = RecordingLookupPerformanceEventSink()
+        let reporter = LookupPerformanceReporter(eventSink: sink)
+        let trace = LookupPerformanceTrace(lookupID: UUID())
+
+        reporter.beginLookup(trace)
+        reporter.markAudioStart(.playAccepted, trace: trace)
+        reporter.markAudioStart(.appleDidStart, trace: trace)
+
+        XCTAssertEqual(
+            sink.audioStarts,
+            [
+                LookupPerformanceAudioStartMetadata(
+                    kind: .playAccepted,
+                    lookupID: trace.lookupID
+                ),
+            ]
+        )
+        XCTAssertEqual(
+            sink.events.filter {
+                $0.kind == .milestone
+                    && $0.lookupID == trace.lookupID
+                    && $0.stage == .ttsStart
+            }.count,
+            1
         )
     }
 
@@ -212,6 +260,7 @@ private final class RecordingLookupPerformanceEventSink:
     private let lock = NSLock()
     private var recordedEvents: [LookupPerformanceEvent] = []
     private var recordedRoutes: [RecordedLookupPerformanceRoute] = []
+    private var recordedAudioStarts: [LookupPerformanceAudioStartMetadata] = []
 
     var events: [LookupPerformanceEvent] {
         lock.withLock { recordedEvents }
@@ -219,6 +268,10 @@ private final class RecordingLookupPerformanceEventSink:
 
     var routes: [RecordedLookupPerformanceRoute] {
         lock.withLock { recordedRoutes }
+    }
+
+    var audioStarts: [LookupPerformanceAudioStartMetadata] {
+        lock.withLock { recordedAudioStarts }
     }
 
     func record(_ event: LookupPerformanceEvent) {
@@ -232,6 +285,12 @@ private final class RecordingLookupPerformanceEventSink:
             recordedRoutes.append(
                 RecordedLookupPerformanceRoute(route: route, lookupID: lookupID)
             )
+        }
+    }
+
+    func recordAudioStart(_ metadata: LookupPerformanceAudioStartMetadata) {
+        lock.withLock {
+            recordedAudioStarts.append(metadata)
         }
     }
 }

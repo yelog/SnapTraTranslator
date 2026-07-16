@@ -1,13 +1,14 @@
 import AppKit
 import ApplicationServices
+import Dispatch
 import Foundation
 
-enum SelectedTextSnapshotSource: Equatable {
+nonisolated enum SelectedTextSnapshotSource: Equatable, Sendable {
     case accessibility
     case clipboard
 }
 
-struct SelectedTextSnapshot: Equatable {
+nonisolated struct SelectedTextSnapshot: Equatable, Sendable {
     let text: String
     let selectedRange: NSRange
     let bounds: CGRect?
@@ -29,7 +30,7 @@ struct SelectedTextSnapshot: Equatable {
     }
 }
 
-enum ClipboardFallbackPolicy {
+nonisolated enum ClipboardFallbackPolicy {
     static func shouldReadCopiedText(
         originalChangeCount: Int,
         currentChangeCount: Int
@@ -47,192 +48,284 @@ enum ClipboardFallbackPolicy {
     }
 }
 
-final class SelectedTextService {
-    private struct CandidateElement {
-        let element: AXUIElement
-        let source: String
-        let depth: Int
+nonisolated final class SelectedTextService: @unchecked Sendable {
+    private let probeExecutor: SelectedTextProbeExecutor
+    private let diagnostics: SelectedTextDiagnostics
+    private let probeObserver: @Sendable (SelectedTextProbeObservation) -> Void
+
+    init(
+        probeExecutor: SelectedTextProbeExecutor = .shared,
+        diagnostics: SelectedTextDiagnostics = .system,
+        probeObserver: @escaping @Sendable (SelectedTextProbeObservation) -> Void = { _ in }
+    ) {
+        self.probeExecutor = probeExecutor
+        self.diagnostics = diagnostics
+        self.probeObserver = probeObserver
     }
 
-    /// Whether to fall back to Cmd+C clipboard simulation when AXUIElement fails.
-    var clipboardFallbackEnabled = true
+    @MainActor
+    func currentSelectionSnapshot(mouseLocation: CGPoint) async -> SelectedTextSnapshot? {
+        let request = SelectedTextProbeRequest.capture(mouseLocation: mouseLocation)
+        return await currentSelectionSnapshot(request: request)
+    }
 
-    func currentSelectionSnapshot(mouseLocation: CGPoint) -> SelectedTextSnapshot? {
-        axSelectionSnapshot(mouseLocation: mouseLocation)
+    func currentSelectionSnapshot(request: SelectedTextProbeRequest) async -> SelectedTextSnapshot? {
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+        let snapshot: SelectedTextSnapshot?
+
+        do {
+            snapshot = try await probeExecutor.execute { [self] cancellation in
+                axSelectionSnapshot(
+                    request: request,
+                    cancellation: cancellation
+                )
+            }
+        } catch {
+            snapshot = nil
+        }
+
+        let endedAt = DispatchTime.now().uptimeNanoseconds
+        return SelectedTextProbeSoftBudget.observe(
+            snapshot,
+            durationNanoseconds: endedAt >= startedAt ? endedAt - startedAt : 0,
+            observer: probeObserver
+        )
     }
 
     /// Clipboard-based fallback that uses Cmd+C simulation.
     /// Must be called from an async context to avoid blocking the main thread.
-    func clipboardFallbackSnapshot() async -> SelectedTextSnapshot? {
-        guard clipboardFallbackEnabled else { return nil }
+    @MainActor
+    func clipboardFallbackSnapshot(isEnabled: Bool) async -> SelectedTextSnapshot? {
+        guard isEnabled else { return nil }
         debugLog("trying clipboard fallback")
         return await clipboardSelectionSnapshot()
     }
 
-    private func axSelectionSnapshot(mouseLocation: CGPoint) -> SelectedTextSnapshot? {
+    private func axSelectionSnapshot(
+        request: SelectedTextProbeRequest,
+        cancellation: SelectedTextProbeCancellation
+    ) -> SelectedTextSnapshot? {
+        guard !cancellation.isCancelled else { return nil }
         let systemWideElement = AXUIElementCreateSystemWide()
         configureMessagingTimeout(for: systemWideElement)
 
-        let frontmostApplication = NSWorkspace.shared.frontmostApplication
-        let sourceAppIdentifier = frontmostApplication?.bundleIdentifier
-        let frontmostAppElement = frontmostApplication.map { applicationElement(for: $0) }
+        guard !cancellation.isCancelled else { return nil }
+        let frontmostAppElement = request.frontmostApplicationProcessIdentifier.map {
+            AXUIElementCreateApplication($0)
+        }
         if let frontmostAppElement {
             configureMessagingTimeout(for: frontmostAppElement)
         }
 
-        let candidates = candidateElements(
-            from: systemWideElement,
+        let candidates = candidateSequence(
+            systemWideElement: systemWideElement,
             frontmostAppElement: frontmostAppElement,
-            mouseLocation: mouseLocation
+            request: request,
+            cancellation: cancellation
         )
 
         debugLog(
-            "start mouse=\(describe(point: mouseLocation)) frontmostApp=\(sourceAppIdentifier ?? "nil") candidates=\(candidates.count)"
+            "start mouse=\(describe(point: request.mouseLocation)) frontmostApp=\(request.sourceAppIdentifier ?? "nil")"
         )
 
-        for (index, candidate) in candidates.enumerated() {
-            let context = "candidate[\(index)] \(candidate.source)#\(candidate.depth)"
-            debugLog("\(context) \(debugSummary(of: candidate.element))")
-            if let snapshot = snapshot(
-                from: candidate.element,
-                sourceAppIdentifier: sourceAppIdentifier,
-                debugContext: context
-            ) {
-                debugLog(
-                    "\(context) success text=\"\(truncate(snapshot.text))\" bounds=\(snapshot.bounds.map { describe(rect: $0) } ?? "nil")"
-                )
-                return snapshot
-            }
-            debugLog("\(context) no usable snapshot")
-        }
-
-        debugLog("no selection snapshot from AXUIElement")
-        return nil
+        let snapshot = SelectedTextProbePolicy.snapshot(
+            candidates: candidates,
+            sourceAppIdentifier: request.sourceAppIdentifier,
+            normalizeBounds: request.normalizedScreenRect,
+            diagnostics: diagnostics,
+            isCancelled: { cancellation.isCancelled }
+        )
+        debugLog(
+            snapshot.map {
+                "success text=\"\(truncate($0.text))\" bounds=\($0.bounds.map { describe(rect: $0) } ?? "nil")"
+            } ?? "no selection snapshot from AXUIElement"
+        )
+        return snapshot
     }
 
-    private func candidateElements(
-        from systemWideElement: AXUIElement,
+    private func candidateSequence(
+        systemWideElement: AXUIElement,
         frontmostAppElement: AXUIElement?,
-        mouseLocation: CGPoint
-    ) -> [CandidateElement] {
-        var elements: [CandidateElement] = []
+        request: SelectedTextProbeRequest,
+        cancellation: SelectedTextProbeCancellation,
+        maxDepth: Int = 8
+    ) -> AnySequence<SelectedTextProbeCandidate> {
+        let rootProviders: [(source: String, element: () -> AXUIElement?)] = [
+            (
+                "frontmostApp-hovered",
+                { [self] in
+                    guard let frontmostAppElement else { return nil }
+                    return element(
+                        at: request.accessibilityPoint,
+                        from: frontmostAppElement,
+                        source: "frontmostApp"
+                    )
+                }
+            ),
+            (
+                "systemWide-hovered",
+                { [self] in
+                    element(
+                        at: request.accessibilityPoint,
+                        from: systemWideElement,
+                        source: "systemWide"
+                    )
+                }
+            ),
+            (
+                "frontmostApp-focusedElement",
+                { [self] in
+                    guard let frontmostAppElement else { return nil }
+                    return focusedElement(from: frontmostAppElement, source: "frontmostApp")
+                }
+            ),
+            (
+                "frontmostApp-focusedWindow",
+                { [self] in
+                    guard let frontmostAppElement else { return nil }
+                    return focusedWindow(from: frontmostAppElement)
+                }
+            ),
+            (
+                "systemWide-focusedApplication",
+                { [self] in focusedApplication(from: systemWideElement) }
+            ),
+            (
+                "systemWide-focusedElement",
+                { [self] in focusedElement(from: systemWideElement, source: "systemWide") }
+            ),
+        ]
 
-        if let frontmostAppElement,
-           let hoveredElement = element(at: mouseLocation, from: frontmostAppElement, source: "frontmostApp") {
-            appendUnique(
-                elementChain(startingFrom: hoveredElement, source: "frontmostApp-hovered"),
-                to: &elements
-            )
+        return AnySequence { [self] in
+            var rootIndex = 0
+            var activeElement: AXUIElement?
+            var activeSource = ""
+            var activeDepth = 0
+            var shouldAdvanceToParent = false
+            var seenElements: [AXUIElement] = []
+            var candidateIndex = 0
+
+            return AnyIterator<SelectedTextProbeCandidate> { [self] in
+                while !cancellation.isCancelled {
+                    if shouldAdvanceToParent, let currentElement = activeElement {
+                        guard activeDepth + 1 < maxDepth else {
+                            activeElement = nil
+                            shouldAdvanceToParent = false
+                            continue
+                        }
+
+                        guard !cancellation.isCancelled else { return nil }
+                        guard let parentElement = parent(of: currentElement) else {
+                            activeElement = nil
+                            shouldAdvanceToParent = false
+                            continue
+                        }
+                        guard !cancellation.isCancelled else { return nil }
+
+                        activeElement = parentElement
+                        activeDepth += 1
+                    } else {
+                        guard rootIndex < rootProviders.count else { return nil }
+                        let provider = rootProviders[rootIndex]
+                        rootIndex += 1
+
+                        guard !cancellation.isCancelled else { return nil }
+                        guard let rootElement = provider.element() else { continue }
+                        guard !cancellation.isCancelled else { return nil }
+
+                        activeElement = rootElement
+                        activeSource = provider.source
+                        activeDepth = 0
+                        shouldAdvanceToParent = true
+                    }
+
+                    guard let candidateElement = activeElement else { continue }
+                    guard !seenElements.contains(where: { CFEqual($0, candidateElement) }) else {
+                        continue
+                    }
+                    seenElements.append(candidateElement)
+
+                    let context = "candidate[\(candidateIndex)] \(activeSource)#\(activeDepth)"
+                    candidateIndex += 1
+                    return probeCandidate(
+                        element: candidateElement,
+                        context: context
+                    )
+                }
+
+                return nil
+            }
         }
-
-        if let hoveredElement = element(at: mouseLocation, from: systemWideElement, source: "systemWide") {
-            appendUnique(
-                elementChain(startingFrom: hoveredElement, source: "systemWide-hovered"),
-                to: &elements
-            )
-        }
-
-        if let frontmostAppElement,
-           let focusedElement = focusedElement(from: frontmostAppElement, source: "frontmostApp") {
-            appendUnique(
-                elementChain(startingFrom: focusedElement, source: "frontmostApp-focusedElement"),
-                to: &elements
-            )
-        }
-
-        if let frontmostAppElement,
-           let focusedWindow = focusedWindow(from: frontmostAppElement) {
-            appendUnique(
-                elementChain(startingFrom: focusedWindow, source: "frontmostApp-focusedWindow"),
-                to: &elements
-            )
-        }
-
-        if let focusedApplication = focusedApplication(from: systemWideElement) {
-            appendUnique(
-                elementChain(startingFrom: focusedApplication, source: "systemWide-focusedApplication"),
-                to: &elements
-            )
-        }
-
-        if let focusedElement = focusedElement(from: systemWideElement, source: "systemWide") {
-            appendUnique(
-                elementChain(startingFrom: focusedElement, source: "systemWide-focusedElement"),
-                to: &elements
-            )
-        }
-
-        return elements
     }
 
-    private func snapshot(
-        from element: AXUIElement,
-        sourceAppIdentifier: String?,
-        debugContext: String
-    ) -> SelectedTextSnapshot? {
-        let directText = selectedText(from: element, debugContext: debugContext)
-        let rangeResult = selectedRange(from: element, debugContext: debugContext)
-        let markerRange = selectedTextMarkerRange(from: element, debugContext: debugContext)
-        let rangeText = rangeResult.flatMap { string(for: $0.axValue, in: element, debugContext: debugContext) }
-        let markerText = markerRange.flatMap {
-            string(forTextMarkerRange: $0, in: element, debugContext: debugContext)
-        }
-        let markerAttributedText = markerRange.flatMap {
-            attributedString(forTextMarkerRange: $0, in: element, debugContext: debugContext)?.string
-        }
+    private func probeCandidate(
+        element: AXUIElement,
+        context: String
+    ) -> SelectedTextProbeCandidate {
+        SelectedTextProbeCandidate(
+            context: context,
+            debugSummary: { [self] in debugSummary(of: element) },
+            selectedText: { [self] in
+                selectedText(from: element, debugContext: context)
+            },
+            selectedRange: { [self] in
+                guard let result = selectedRange(
+                    from: element,
+                    debugContext: context
+                ) else {
+                    return nil
+                }
 
-        debugLog(
-            "\(debugContext) directText=\(directText != nil) range=\(describe(range: rangeResult?.range)) markerRange=\(markerRange != nil)"
-        )
+                return SelectedTextProbeRange(
+                    range: result.range,
+                    string: { [self] in
+                        string(
+                            for: result.axValue,
+                            in: element,
+                            debugContext: context
+                        )
+                    },
+                    bounds: { [self] in
+                        bounds(
+                            for: result.axValue,
+                            in: element,
+                            debugContext: context
+                        )
+                    }
+                )
+            },
+            selectedTextMarkerRange: { [self] in
+                guard let markerRange = selectedTextMarkerRange(
+                    from: element,
+                    debugContext: context
+                ) else {
+                    return nil
+                }
 
-        guard let text = directText
-            ?? rangeText
-            ?? markerText
-            ?? markerAttributedText else {
-            debugLog("\(debugContext) no selected text value")
-            return nil
-        }
-
-        let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedText.isEmpty else {
-            debugLog("\(debugContext) selected text empty after trim")
-            return nil
-        }
-
-        debugLog("\(debugContext) resolved text=\"\(truncate(normalizedText))\"")
-
-        let selectedRange = rangeResult?.range ?? NSRange(location: NSNotFound, length: normalizedText.utf16.count)
-
-        // Try to obtain bounds via AXBoundsForRange first, then AXBoundsForTextMarkerRange.
-        var resolvedBounds: CGRect?
-
-        if let rangeResult,
-           let rawBounds = bounds(for: rangeResult.axValue, in: element, debugContext: debugContext) {
-            let normalized = normalizedScreenRect(for: rawBounds)
-            if normalized.width > 0, normalized.height > 0 {
-                resolvedBounds = normalized
-                debugLog("\(debugContext) using range bounds raw=\(describe(rect: rawBounds)) normalized=\(describe(rect: normalized))")
+                return SelectedTextProbeMarkerRange(
+                    string: { [self] in
+                        string(
+                            forTextMarkerRange: markerRange,
+                            in: element,
+                            debugContext: context
+                        )
+                    },
+                    attributedString: { [self] in
+                        attributedString(
+                            forTextMarkerRange: markerRange,
+                            in: element,
+                            debugContext: context
+                        )
+                    },
+                    bounds: { [self] in
+                        bounds(
+                            forTextMarkerRange: markerRange,
+                            in: element,
+                            debugContext: context
+                        )
+                    }
+                )
             }
-        }
-
-        if resolvedBounds == nil, let markerRange,
-           let rawBounds = bounds(forTextMarkerRange: markerRange, in: element, debugContext: debugContext) {
-            let normalized = normalizedScreenRect(for: rawBounds)
-            if normalized.width > 0, normalized.height > 0 {
-                resolvedBounds = normalized
-                debugLog("\(debugContext) using marker bounds raw=\(describe(rect: rawBounds)) normalized=\(describe(rect: normalized))")
-            }
-        }
-
-        if resolvedBounds == nil {
-            debugLog("\(debugContext) no usable bounds, creating snapshot without bounds")
-        }
-
-        return SelectedTextSnapshot(
-            text: normalizedText,
-            selectedRange: selectedRange,
-            bounds: resolvedBounds,
-            sourceAppIdentifier: sourceAppIdentifier
         )
     }
 
@@ -298,12 +391,11 @@ final class SelectedTextService {
         return unsafeBitCast(value, to: AXUIElement.self)
     }
 
-    private func applicationElement(for application: NSRunningApplication) -> AXUIElement {
-        AXUIElementCreateApplication(application.processIdentifier)
-    }
-
-    private func element(at mouseLocation: CGPoint, from rootElement: AXUIElement, source: String) -> AXUIElement? {
-        let accessibilityPoint = accessibilityPoint(for: mouseLocation)
+    private func element(
+        at accessibilityPoint: CGPoint,
+        from rootElement: AXUIElement,
+        source: String
+    ) -> AXUIElement? {
         var element: AXUIElement?
         let result = AXUIElementCopyElementAtPosition(
             rootElement,
@@ -313,34 +405,11 @@ final class SelectedTextService {
         )
         guard result == .success else {
             debugLog(
-                "\(source) hovered element lookup failed mouse=\(describe(point: mouseLocation)) axPoint=\(describe(point: accessibilityPoint)) error=\(String(describing: result))"
+                "\(source) hovered element lookup failed axPoint=\(describe(point: accessibilityPoint)) error=\(String(describing: result))"
             )
             return nil
         }
         return element
-    }
-
-    private func elementChain(
-        startingFrom element: AXUIElement,
-        source: String,
-        maxDepth: Int = 8
-    ) -> [CandidateElement] {
-        var chain: [CandidateElement] = []
-        var current: AXUIElement? = element
-
-        for depth in 0..<maxDepth {
-            guard let currentElement = current else { break }
-            chain.append(
-                CandidateElement(
-                    element: currentElement,
-                    source: source,
-                    depth: depth
-                )
-            )
-            current = parent(of: currentElement)
-        }
-
-        return chain
     }
 
     private func parent(of element: AXUIElement) -> AXUIElement? {
@@ -580,40 +649,10 @@ final class SelectedTextService {
         return rect
     }
 
-    private func accessibilityPoint(for point: CGPoint) -> CGPoint {
-        guard let globalMaxY = NSScreen.screens.map(\.frame.maxY).max() else {
-            return point
-        }
-
-        return CGPoint(
-            x: point.x,
-            y: globalMaxY - point.y
-        )
-    }
-
-    private func normalizedScreenRect(for rect: CGRect) -> CGRect {
-        guard let globalMaxY = NSScreen.screens.map(\.frame.maxY).max() else {
-            return rect
-        }
-
-        return CGRect(
-            x: rect.minX,
-            y: globalMaxY - rect.maxY,
-            width: rect.width,
-            height: rect.height
-        )
-    }
-
     private func configureMessagingTimeout(for element: AXUIElement, timeout: Float = 1.5) {
         let result = AXUIElementSetMessagingTimeout(element, timeout)
         if result != .success {
             debugLog("set timeout failed error=\(String(describing: result)) timeout=\(timeout)")
-        }
-    }
-
-    private func appendUnique(_ newCandidates: [CandidateElement], to candidates: inout [CandidateElement]) {
-        for candidate in newCandidates where !candidates.contains(where: { CFEqual($0.element, candidate.element) }) {
-            candidates.append(candidate)
         }
     }
 
@@ -643,11 +682,6 @@ final class SelectedTextService {
         "x=\(format(rect.origin.x)) y=\(format(rect.origin.y)) w=\(format(rect.width)) h=\(format(rect.height))"
     }
 
-    private func describe(range: NSRange?) -> String {
-        guard let range else { return "nil" }
-        return "{\(range.location), \(range.length)}"
-    }
-
     private func format(_ value: CGFloat) -> String {
         String(format: "%.1f", value)
     }
@@ -659,28 +693,41 @@ final class SelectedTextService {
 
     // MARK: - Clipboard Fallback
 
+    @MainActor
     private func clipboardSelectionSnapshot() async -> SelectedTextSnapshot? {
         let pasteboard = NSPasteboard.general
 
         // Save current clipboard state
         let originalChangeCount = pasteboard.changeCount
         let originalItems = savePasteboardItems(from: pasteboard)
+        defer {
+            restorePasteboard(items: originalItems, to: pasteboard)
+        }
 
         // Simulate Cmd+C
         simulateCmdC()
 
         // Wait for clipboard to update (up to 150ms) using async sleep to avoid blocking main thread
         for _ in 0..<15 {
+            guard !Task.isCancelled else {
+                debugLog("clipboard fallback: cancelled")
+                return nil
+            }
             if pasteboard.changeCount != originalChangeCount { break }
-            try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
+            do {
+                try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+            } catch {
+                debugLog("clipboard fallback: cancelled while waiting")
+                return nil
+            }
         }
 
+        guard !Task.isCancelled else { return nil }
         guard ClipboardFallbackPolicy.shouldReadCopiedText(
             originalChangeCount: originalChangeCount,
             currentChangeCount: pasteboard.changeCount
         ) else {
             debugLog("clipboard fallback: pasteboard unchanged")
-            restorePasteboard(items: originalItems, to: pasteboard)
             return nil
         }
 
@@ -688,7 +735,6 @@ final class SelectedTextService {
         guard let text = pasteboard.string(forType: .string),
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             debugLog("clipboard fallback: no text on pasteboard")
-            restorePasteboard(items: originalItems, to: pasteboard)
             return nil
         }
 
@@ -702,9 +748,6 @@ final class SelectedTextService {
             sourceAppIdentifier: frontmostApp?.bundleIdentifier,
             source: .clipboard
         )
-
-        // Restore original clipboard
-        restorePasteboard(items: originalItems, to: pasteboard)
 
         return snapshot
     }
@@ -765,9 +808,7 @@ final class SelectedTextService {
         }
     }
 
-    private func debugLog(_ message: String) {
-#if DEBUG
-        print("[SelectedText] \(message)")
-#endif
+    private func debugLog(_ message: @autoclosure () -> String) {
+        diagnostics.log(message())
     }
 }

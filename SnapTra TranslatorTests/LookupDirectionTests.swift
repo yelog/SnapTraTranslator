@@ -431,6 +431,53 @@ final class OverlayPrimaryTranslationStateTests: XCTestCase {
         XCTAssertEqual(state, .ready("管理员", isFallback: false))
     }
 
+    func testFinalLearningDefinitionUsesStableDictionarySectionOrder() {
+        let content = OverlayContent(
+            word: "administrator",
+            phonetic: nil,
+            primaryTranslationState: .ready("管理员", isFallback: false),
+            usesCompactPrimaryTranslationStyle: false,
+            dictionarySections: [
+                OverlayDictionarySection(
+                    sourceType: .google,
+                    state: .ready(Self.dictionaryEntry(translation: "管理人员"))
+                ),
+                OverlayDictionarySection(
+                    sourceType: .system,
+                    state: .ready(Self.dictionaryEntry(translation: "行政人员"))
+                ),
+            ],
+            sourceLanguageIdentifier: "en"
+        )
+
+        XCTAssertEqual(
+            AppModel.learningDefinitionText(from: content),
+            "管理员\nn.. 管理人员\nn.. 行政人员"
+        )
+    }
+
+    func testFinalLearningDefinitionDeduplicatesRepeatedResults() {
+        let content = OverlayContent(
+            word: "administrator",
+            phonetic: nil,
+            primaryTranslationState: .ready("管理员", isFallback: false),
+            usesCompactPrimaryTranslationStyle: false,
+            dictionarySections: [
+                OverlayDictionarySection(
+                    sourceType: .system,
+                    state: .ready(Self.dictionaryEntry(translation: "管理员"))
+                ),
+                OverlayDictionarySection(
+                    sourceType: .google,
+                    state: .ready(Self.dictionaryEntry(translation: "管理员"))
+                ),
+            ],
+            sourceLanguageIdentifier: "en"
+        )
+
+        XCTAssertEqual(AppModel.learningDefinitionText(from: content), "管理员\nn.. 管理员")
+    }
+
     private static func dictionaryEntry(translation: String) -> DictionaryEntry {
         DictionaryEntry(
             word: "Administrator",
@@ -447,6 +494,114 @@ final class OverlayPrimaryTranslationStateTests: XCTestCase {
             source: .systemDictionary,
             synonyms: []
         )
+    }
+}
+
+@MainActor
+final class LearningLookupPersistenceCoordinatorTests: XCTestCase {
+    func testMultipleResultArrivalsProduceOneFinalDefinitionCommit() async {
+        let recorder = LearningPersistenceRecorder()
+
+        await LearningLookupPersistenceCoordinator.run(
+            recordLookup: {
+                recorder.recordLookupCount += 1
+            },
+            awaitResults: {
+                recorder.currentCommit = LearningDefinitionCommit(
+                    word: "administrator",
+                    definitionText: "管理员"
+                )
+                XCTAssertTrue(recorder.definitionCommits.isEmpty)
+                await Task.yield()
+
+                recorder.currentCommit = LearningDefinitionCommit(
+                    word: "administrator",
+                    definitionText: "管理员\nn. 管理人员"
+                )
+                XCTAssertTrue(recorder.definitionCommits.isEmpty)
+                await Task.yield()
+
+                recorder.currentCommit = LearningDefinitionCommit(
+                    word: "administrator",
+                    definitionText: "管理员\nn. 管理人员\nn. 行政人员"
+                )
+                XCTAssertTrue(recorder.definitionCommits.isEmpty)
+            },
+            isCurrent: { true },
+            makeFinalCommit: { recorder.currentCommit },
+            updateDefinition: { recorder.definitionCommits.append($0) }
+        )
+
+        XCTAssertEqual(recorder.recordLookupCount, 1)
+        XCTAssertEqual(
+            recorder.definitionCommits,
+            [
+                LearningDefinitionCommit(
+                    word: "administrator",
+                    definitionText: "管理员\nn. 管理人员\nn. 行政人员"
+                ),
+            ]
+        )
+    }
+
+    func testSupersededLookupKeepsLookupCountButSkipsPartialDefinition() async {
+        let recordStarted = LearningRecordGate()
+        let allowRecordCompletion = LearningRecordGate()
+        let recorder = LearningPersistenceRecorder()
+        let task = Task { @MainActor in
+            await LearningLookupPersistenceCoordinator.run(
+                recordLookup: {
+                    await recordStarted.open()
+                    await allowRecordCompletion.wait()
+                    recorder.recordLookupCount += 1
+                },
+                awaitResults: {
+                    recorder.currentCommit = LearningDefinitionCommit(
+                        word: "administrator",
+                        definitionText: "partial"
+                    )
+                },
+                isCurrent: { recorder.isCurrent },
+                makeFinalCommit: { recorder.currentCommit },
+                updateDefinition: { recorder.definitionCommits.append($0) }
+            )
+        }
+
+        await recordStarted.wait()
+        recorder.isCurrent = false
+        task.cancel()
+        await allowRecordCompletion.open()
+        await task.value
+
+        XCTAssertEqual(recorder.recordLookupCount, 1)
+        XCTAssertTrue(recorder.definitionCommits.isEmpty)
+    }
+}
+
+@MainActor
+private final class LearningPersistenceRecorder {
+    var recordLookupCount = 0
+    var isCurrent = true
+    var currentCommit: LearningDefinitionCommit?
+    var definitionCommits: [LearningDefinitionCommit] = []
+}
+
+private actor LearningRecordGate {
+    private var isOpen = false
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
+
+    func open() {
+        isOpen = true
+        let pending = continuations
+        continuations.removeAll()
+        pending.forEach { $0.resume() }
     }
 }
 

@@ -2,14 +2,14 @@ import Dispatch
 import Foundation
 import os
 
-enum LookupPerformanceRoute: String, Sendable {
+nonisolated enum LookupPerformanceRoute: String, Sendable {
     case appStoreOCR
     case directOCR
     case accessibilitySelection
     case clipboardSelection
 }
 
-enum LookupPerformanceStage: String, Sendable {
+nonisolated enum LookupPerformanceStage: String, Sendable {
     case routeResolution
     case accessibilityProbe
     case clipboardFallback
@@ -26,7 +26,7 @@ enum LookupPerformanceStage: String, Sendable {
     case ttsStart
 }
 
-enum LookupPerformanceOutcome: String, Sendable {
+nonisolated enum LookupPerformanceOutcome: String, Sendable {
     case succeeded
     case cancelled
     case superseded
@@ -35,11 +35,22 @@ enum LookupPerformanceOutcome: String, Sendable {
     case cacheMiss
 }
 
-struct LookupPerformanceTrace: Hashable, Sendable {
+nonisolated enum LookupPerformanceAudioStartKind: String, Sendable {
+    case appleDidStart
+    case playAccepted
+    case appleSubmissionProxy
+}
+
+nonisolated struct LookupPerformanceAudioStartMetadata: Equatable, Sendable {
+    let kind: LookupPerformanceAudioStartKind
     let lookupID: UUID
 }
 
-protocol LookupPerformanceReporting: Sendable {
+nonisolated struct LookupPerformanceTrace: Hashable, Sendable {
+    let lookupID: UUID
+}
+
+nonisolated protocol LookupPerformanceReporting: Sendable {
     func beginLookup(_ trace: LookupPerformanceTrace)
     func begin(_ stage: LookupPerformanceStage, trace: LookupPerformanceTrace)
     func end(
@@ -48,6 +59,10 @@ protocol LookupPerformanceReporting: Sendable {
         outcome: LookupPerformanceOutcome
     )
     func mark(_ stage: LookupPerformanceStage, trace: LookupPerformanceTrace)
+    func markAudioStart(
+        _ kind: LookupPerformanceAudioStartKind,
+        trace: LookupPerformanceTrace
+    )
     func endFirstPresentation(
         _ stage: LookupPerformanceStage,
         trace: LookupPerformanceTrace,
@@ -57,20 +72,22 @@ protocol LookupPerformanceReporting: Sendable {
     func finishLookup(_ trace: LookupPerformanceTrace, outcome: LookupPerformanceOutcome)
 }
 
-protocol LookupPerformanceClock: Sendable {
+nonisolated protocol LookupPerformanceClock: Sendable {
     func nowNanoseconds() -> UInt64
 }
 
-protocol LookupPerformanceEventSinking: Sendable {
+nonisolated protocol LookupPerformanceEventSinking: Sendable {
     func record(_ event: LookupPerformanceEvent)
     func recordRoute(_ route: LookupPerformanceRoute, lookupID: UUID)
+    func recordAudioStart(_ metadata: LookupPerformanceAudioStartMetadata)
 }
 
 extension LookupPerformanceEventSinking {
     func recordRoute(_ route: LookupPerformanceRoute, lookupID: UUID) {}
+    func recordAudioStart(_ metadata: LookupPerformanceAudioStartMetadata) {}
 }
 
-struct LookupPerformanceContext: Sendable {
+nonisolated struct LookupPerformanceContext: Sendable {
     let reporter: any LookupPerformanceReporting
     let trace: LookupPerformanceTrace
 
@@ -85,9 +102,13 @@ struct LookupPerformanceContext: Sendable {
     func mark(_ stage: LookupPerformanceStage) {
         reporter.mark(stage, trace: trace)
     }
+
+    func markAudioStart(_ kind: LookupPerformanceAudioStartKind) {
+        reporter.markAudioStart(kind, trace: trace)
+    }
 }
 
-struct LookupPerformanceEvent: Equatable, Sendable {
+nonisolated struct LookupPerformanceEvent: Equatable, Sendable {
     enum Kind: Equatable, Sendable {
         case lookupBegan
         case stageBegan
@@ -104,13 +125,13 @@ struct LookupPerformanceEvent: Equatable, Sendable {
     let durationNanoseconds: UInt64?
 }
 
-struct LookupPerformanceSystemClock: LookupPerformanceClock {
+nonisolated struct LookupPerformanceSystemClock: LookupPerformanceClock {
     func nowNanoseconds() -> UInt64 {
         DispatchTime.now().uptimeNanoseconds
     }
 }
 
-final class LookupPerformanceReporter: LookupPerformanceReporting, @unchecked Sendable {
+nonisolated final class LookupPerformanceReporter: LookupPerformanceReporting, @unchecked Sendable {
     private struct OpenStage {
         let stage: LookupPerformanceStage
         let startedAt: UInt64
@@ -240,6 +261,37 @@ final class LookupPerformanceReporter: LookupPerformanceReporting, @unchecked Se
         lookups[trace.lookupID] = state
     }
 
+    func markAudioStart(
+        _ kind: LookupPerformanceAudioStartKind,
+        trace: LookupPerformanceTrace
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard var state = lookups[trace.lookupID] else { return }
+        guard state.recordedMilestones.insert(LookupPerformanceStage.ttsStart.rawValue).inserted else {
+            return
+        }
+
+        let markedAt = clock.nowNanoseconds()
+        eventSink.record(
+            LookupPerformanceEvent(
+                kind: .milestone,
+                lookupID: trace.lookupID,
+                stage: .ttsStart,
+                outcome: nil,
+                durationNanoseconds: Self.duration(from: state.startedAt, to: markedAt)
+            )
+        )
+        eventSink.recordAudioStart(
+            LookupPerformanceAudioStartMetadata(
+                kind: kind,
+                lookupID: trace.lookupID
+            )
+        )
+        lookups[trace.lookupID] = state
+    }
+
     func endFirstPresentation(
         _ stage: LookupPerformanceStage,
         trace: LookupPerformanceTrace,
@@ -329,7 +381,7 @@ final class LookupPerformanceReporter: LookupPerformanceReporting, @unchecked Se
     }
 }
 
-final class LookupPerformanceSystemEventSink:
+nonisolated final class LookupPerformanceSystemEventSink:
     LookupPerformanceEventSinking,
     @unchecked Sendable
 {
@@ -452,6 +504,22 @@ final class LookupPerformanceSystemEventSink:
         )
         logger.debug(
             "lookup route lookupID=\(lookupIDString, privacy: .public) route=\(route.rawValue, privacy: .public)"
+        )
+    }
+
+    func recordAudioStart(_ metadata: LookupPerformanceAudioStartMetadata) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let id = lookupIntervals[metadata.lookupID]?.id ?? signposter.makeSignpostID()
+        let lookupID = metadata.lookupID.uuidString
+        signposter.emitEvent(
+            "LookupAudioStart",
+            id: id,
+            "lookupID=\(lookupID, privacy: .public) kind=\(metadata.kind.rawValue, privacy: .public)"
+        )
+        logger.debug(
+            "lookup audio start lookupID=\(lookupID, privacy: .public) kind=\(metadata.kind.rawValue, privacy: .public)"
         )
     }
 }

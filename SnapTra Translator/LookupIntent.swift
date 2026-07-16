@@ -1,12 +1,12 @@
 import CoreGraphics
 import Foundation
 
-enum SinglePressLookupIntent: Equatable {
+nonisolated enum SinglePressLookupIntent: Equatable, Sendable {
     case ocrWord
     case selectedTextSentence(SelectedTextSnapshot)
 }
 
-enum SinglePressLookupRouter {
+nonisolated enum SinglePressLookupRouter {
     private static let selectionHitSlop: CGFloat = 8
     private static let maximumSelectionBoundsArea: CGFloat = 180_000
     private static let maximumSelectionBoundsHeight: CGFloat = 320
