@@ -308,20 +308,17 @@ enum ParagraphOutsideClickDismissalPolicy {
 
     static func shouldDismiss(
         mouseLocation: CGPoint,
-        isParagraphOverlayPresented: Bool,
+        isSentenceTranslationPresented: Bool,
         isParagraphOverlayPinned: Bool,
         isRegionInteractionActive: Bool,
-        overlayFrame: CGRect?,
-        highlightFrame: CGRect?,
-        activeParagraphRect: CGRect?
+        protectedFrames: [CGRect?]
     ) -> Bool {
-        guard isParagraphOverlayPresented,
+        guard isSentenceTranslationPresented,
               isParagraphOverlayPinned,
               !isRegionInteractionActive else {
             return false
         }
 
-        let protectedFrames = [overlayFrame, highlightFrame, activeParagraphRect]
         return !protectedFrames.contains { frame in
             guard let frame, !frame.isNull, !frame.isEmpty else { return false }
             return frame.insetBy(dx: -protectedInset, dy: -protectedInset).contains(mouseLocation)
@@ -401,6 +398,27 @@ enum ParagraphOverlayControlPolicy {
     }
 }
 
+enum PersistentSentencePresentationAction: Equatable {
+    case presentNow
+    case deferUntilRegionCompletes
+    case discard
+}
+
+enum PersistentSentencePresentationPolicy {
+    static func resolve(
+        isSentenceTranslationPresented: Bool,
+        isRegionInteractionActive: Bool
+    ) -> PersistentSentencePresentationAction {
+        if isSentenceTranslationPresented {
+            return .presentNow
+        }
+        if isRegionInteractionActive {
+            return .deferUntilRegionCompletes
+        }
+        return .discard
+    }
+}
+
 private struct OcrWordCandidate: Sendable {
     let text: String
     let captureRect: CGRect
@@ -473,6 +491,7 @@ final class AppModel: ObservableObject {
     private var translationServiceInitialized = false
     private var isParagraphRegionInteractionActive = false
     private var shouldRestoreParagraphOverlayAfterManualRegionCancel = true
+    private var isPersistentSentencePresentationPending = false
     private let debounceInterval: TimeInterval = 0.1
     private let overlayLayoutRefreshInterval: TimeInterval = 0.04
     private let positionThreshold: CGFloat = 10.0
@@ -578,6 +597,7 @@ final class AppModel: ObservableObject {
         isHotkeyActive = true
         activeLookupMode = .word
         isParagraphOverlayPinned = false
+        isPersistentSentencePresentationPending = false
         isTapKeptOverlayPresented = false
         hideInPlaceTranslation()
         tapKeptOverlayReleaseLocation = nil
@@ -600,7 +620,7 @@ final class AppModel: ObservableObject {
     }
 
     private func finishHotkeyRelease(allowWordOverlayPersistence: Bool) {
-        let shouldKeepSentenceOverlayVisible = isParagraphOverlayPinned && isParagraphOverlayPresented
+        let shouldKeepSentenceOverlayVisible = isParagraphOverlayPinned && isSentenceTranslationPresented
         let shouldKeepTapOverlayVisible = allowWordOverlayPersistence
             && TapKeptOverlayPersistencePolicy.shouldKeepAfterTap(
                 isEnabled: settings.keepWordOverlayAfterTap,
@@ -637,12 +657,23 @@ final class AppModel: ObservableObject {
         debugOverlayWindowController.hide()
         paragraphHighlightWindowController.hide()
 
-        guard isParagraphOverlayPresented else {
+        switch PersistentSentencePresentationPolicy.resolve(
+            isSentenceTranslationPresented: isSentenceTranslationPresented,
+            isRegionInteractionActive: isParagraphRegionInteractionActive
+        ) {
+        case .presentNow:
+            presentPersistentSentenceTranslation()
+        case .deferUntilRegionCompletes:
+            isPersistentSentencePresentationPending = true
+        case .discard:
             activeLookupMode = .word
             stopOverlayEscapeMonitoring()
-            return
         }
+    }
 
+    private func presentPersistentSentenceTranslation() {
+        isPersistentSentencePresentationPending = false
+        isHotkeyActive = false
         isParagraphOverlayPinned = true
         overlayWindowController.setInteractive(true)
         syncOverlayDismissalMonitoring()
@@ -736,6 +767,7 @@ final class AppModel: ObservableObject {
     }
 
     private func beginDoubleTapManualParagraphRegionSelection() {
+        isPersistentSentencePresentationPending = false
         activeLookupMode = .ocrSentence
         stopMouseTracking()
         cancelActiveLookupWork()
@@ -773,11 +805,19 @@ final class AppModel: ObservableObject {
     private func handleManualParagraphRegionSelectionCompleted(_ rect: CGRect) {
         isParagraphRegionInteractionActive = false
         shouldRestoreParagraphOverlayAfterManualRegionCancel = true
-        handleParagraphRegionResizeCompleted(rect)
+        let didStartLookup = handleParagraphRegionResizeCompleted(rect)
+
+        guard isPersistentSentencePresentationPending else { return }
+        if didStartLookup {
+            presentPersistentSentenceTranslation()
+        } else {
+            isPersistentSentencePresentationPending = false
+        }
     }
 
     private func handleManualParagraphRegionSelectionCancelled() {
         isParagraphRegionInteractionActive = false
+        isPersistentSentencePresentationPending = false
         if shouldRestoreParagraphOverlayAfterManualRegionCancel, isParagraphOverlayPresented {
             overlayWindowController.show(at: overlayAnchor, makeKey: true)
             overlayWindowController.setInteractive(true)
@@ -924,12 +964,13 @@ final class AppModel: ObservableObject {
         hideInPlaceTranslation()
     }
 
-    private func handleParagraphRegionResizeCompleted(_ rect: CGRect) {
+    @discardableResult
+    private func handleParagraphRegionResizeCompleted(_ rect: CGRect) -> Bool {
         isParagraphRegionInteractionActive = false
-        guard rect.width > 0, rect.height > 0 else { return }
+        guard rect.width > 0, rect.height > 0 else { return false }
         guard permissions.status.screenRecording else {
             updateOverlay(state: .error(L("Enable Screen Recording")), anchor: overlayAnchor)
-            return
+            return false
         }
 
         activeLookupMode = .ocrSentence
@@ -953,6 +994,7 @@ final class AppModel: ObservableObject {
         lookupTask = Task { [weak self] in
             await self?.performManualParagraphRegionLookup(rect: rect, lookupID: lookupID)
         }
+        return true
     }
 
     func performLookup(request: SinglePressLookupRequest) async {
@@ -3482,6 +3524,7 @@ final class AppModel: ObservableObject {
         activeLookupMode = .word
         isParagraphOverlayPinned = false
         isParagraphRegionInteractionActive = false
+        isPersistentSentencePresentationPending = false
         isTapKeptOverlayPresented = false
         tapKeptOverlayReleaseLocation = nil
         stopOverlayEscapeMonitoring()
@@ -3617,9 +3660,13 @@ final class AppModel: ObservableObject {
         activeInPlaceTranslationContent != nil || activeInPlaceImageTranslationContent != nil
     }
 
+    private var isSentenceTranslationPresented: Bool {
+        isParagraphOverlayPresented || isInPlaceTranslationPresented
+    }
+
     private func syncOverlayDismissalMonitoring() {
         if OverlayEscapeDismissalPolicy.shouldMonitor(
-            isParagraphOverlayPresented: isParagraphOverlayPresented || isInPlaceTranslationPresented,
+            isParagraphOverlayPresented: isSentenceTranslationPresented,
             isTapKeptOverlayPresented: isTapKeptOverlayPresented
         ) {
             startOverlayEscapeMonitoringIfNeeded()
@@ -3627,7 +3674,7 @@ final class AppModel: ObservableObject {
             stopOverlayEscapeMonitoring()
         }
 
-        if isParagraphOverlayPresented && isParagraphOverlayPinned {
+        if isSentenceTranslationPresented && isParagraphOverlayPinned {
             startParagraphOutsideClickMonitoringIfNeeded()
         } else {
             stopParagraphOutsideClickMonitoring()
@@ -3670,7 +3717,7 @@ final class AppModel: ObservableObject {
     private func handleOverlayEscapeKey(_ event: NSEvent) -> Bool {
         guard OverlayEscapeDismissalPolicy.shouldDismiss(
             keyCode: event.keyCode,
-            isParagraphOverlayPresented: isParagraphOverlayPresented || isInPlaceTranslationPresented,
+            isParagraphOverlayPresented: isSentenceTranslationPresented,
             isTapKeptOverlayPresented: isTapKeptOverlayPresented
         ) else { return false }
 
@@ -3713,12 +3760,16 @@ final class AppModel: ObservableObject {
     private func handleParagraphOutsideMouseDown() -> Bool {
         let shouldDismiss = ParagraphOutsideClickDismissalPolicy.shouldDismiss(
             mouseLocation: NSEvent.mouseLocation,
-            isParagraphOverlayPresented: isParagraphOverlayPresented,
+            isSentenceTranslationPresented: isSentenceTranslationPresented,
             isParagraphOverlayPinned: isParagraphOverlayPinned,
             isRegionInteractionActive: isParagraphRegionInteractionActive,
-            overlayFrame: overlayWindowController.visibleFrame,
-            highlightFrame: paragraphHighlightWindowController.visibleFrame,
-            activeParagraphRect: activeParagraphRect
+            protectedFrames: [
+                overlayWindowController.visibleFrame,
+                paragraphHighlightWindowController.visibleFrame,
+                activeParagraphRect,
+                inPlaceTranslationWindowController.visibleFrame,
+                inPlaceImageTranslationWindowController.visibleFrame,
+            ]
         )
 
         guard shouldDismiss else { return false }

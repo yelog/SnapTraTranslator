@@ -340,12 +340,13 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
     func testOutsideClickPolicyDismissesPinnedParagraphOverlayOutsideProtectedFrames() {
         let shouldDismiss = ParagraphOutsideClickDismissalPolicy.shouldDismiss(
             mouseLocation: CGPoint(x: 500, y: 500),
-            isParagraphOverlayPresented: true,
+            isSentenceTranslationPresented: true,
             isParagraphOverlayPinned: true,
             isRegionInteractionActive: false,
-            overlayFrame: CGRect(x: 100, y: 100, width: 200, height: 120),
-            highlightFrame: CGRect(x: 320, y: 100, width: 120, height: 40),
-            activeParagraphRect: CGRect(x: 320, y: 100, width: 120, height: 40)
+            protectedFrames: [
+                CGRect(x: 100, y: 100, width: 200, height: 120),
+                CGRect(x: 320, y: 100, width: 120, height: 40),
+            ]
         )
 
         XCTAssertTrue(shouldDismiss)
@@ -354,12 +355,10 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
     func testOutsideClickPolicyKeepsOverlayClicks() {
         let shouldDismiss = ParagraphOutsideClickDismissalPolicy.shouldDismiss(
             mouseLocation: CGPoint(x: 150, y: 150),
-            isParagraphOverlayPresented: true,
+            isSentenceTranslationPresented: true,
             isParagraphOverlayPinned: true,
             isRegionInteractionActive: false,
-            overlayFrame: CGRect(x: 100, y: 100, width: 200, height: 120),
-            highlightFrame: nil,
-            activeParagraphRect: nil
+            protectedFrames: [CGRect(x: 100, y: 100, width: 200, height: 120)]
         )
 
         XCTAssertFalse(shouldDismiss)
@@ -370,12 +369,13 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
 
         let shouldDismiss = ParagraphOutsideClickDismissalPolicy.shouldDismiss(
             mouseLocation: CGPoint(x: 315, y: 118),
-            isParagraphOverlayPresented: true,
+            isSentenceTranslationPresented: true,
             isParagraphOverlayPinned: true,
             isRegionInteractionActive: false,
-            overlayFrame: CGRect(x: 100, y: 100, width: 200, height: 120),
-            highlightFrame: nil,
-            activeParagraphRect: paragraphRect
+            protectedFrames: [
+                CGRect(x: 100, y: 100, width: 200, height: 120),
+                paragraphRect,
+            ]
         )
 
         XCTAssertFalse(shouldDismiss)
@@ -384,12 +384,10 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
     func testOutsideClickPolicyKeepsHighlightWindowClicks() {
         let shouldDismiss = ParagraphOutsideClickDismissalPolicy.shouldDismiss(
             mouseLocation: CGPoint(x: 330, y: 118),
-            isParagraphOverlayPresented: true,
+            isSentenceTranslationPresented: true,
             isParagraphOverlayPinned: true,
             isRegionInteractionActive: false,
-            overlayFrame: nil,
-            highlightFrame: CGRect(x: 320, y: 100, width: 120, height: 40),
-            activeParagraphRect: nil
+            protectedFrames: [CGRect(x: 320, y: 100, width: 120, height: 40)]
         )
 
         XCTAssertFalse(shouldDismiss)
@@ -398,12 +396,10 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
     func testOutsideClickPolicyDoesNotDismissWhileParagraphRegionIsInteractive() {
         let shouldDismiss = ParagraphOutsideClickDismissalPolicy.shouldDismiss(
             mouseLocation: CGPoint(x: 500, y: 500),
-            isParagraphOverlayPresented: true,
+            isSentenceTranslationPresented: true,
             isParagraphOverlayPinned: true,
             isRegionInteractionActive: true,
-            overlayFrame: nil,
-            highlightFrame: nil,
-            activeParagraphRect: nil
+            protectedFrames: []
         )
 
         XCTAssertFalse(shouldDismiss)
@@ -412,23 +408,69 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
     func testOutsideClickPolicyOnlyDismissesPinnedParagraphOverlay() {
         XCTAssertFalse(ParagraphOutsideClickDismissalPolicy.shouldDismiss(
             mouseLocation: CGPoint(x: 500, y: 500),
-            isParagraphOverlayPresented: false,
+            isSentenceTranslationPresented: false,
             isParagraphOverlayPinned: true,
             isRegionInteractionActive: false,
-            overlayFrame: nil,
-            highlightFrame: nil,
-            activeParagraphRect: nil
+            protectedFrames: []
         ))
 
         XCTAssertFalse(ParagraphOutsideClickDismissalPolicy.shouldDismiss(
             mouseLocation: CGPoint(x: 500, y: 500),
-            isParagraphOverlayPresented: true,
+            isSentenceTranslationPresented: true,
             isParagraphOverlayPinned: false,
             isRegionInteractionActive: false,
-            overlayFrame: nil,
-            highlightFrame: nil,
-            activeParagraphRect: nil
+            protectedFrames: []
         ))
+    }
+
+    func testOutsideClickPolicyProtectsInPlaceTranslationFrame() {
+        let inPlaceFrame = CGRect(x: 420, y: 240, width: 360, height: 100)
+
+        XCTAssertFalse(ParagraphOutsideClickDismissalPolicy.shouldDismiss(
+            mouseLocation: CGPoint(x: 500, y: 280),
+            isSentenceTranslationPresented: true,
+            isParagraphOverlayPinned: true,
+            isRegionInteractionActive: false,
+            protectedFrames: [nil, nil, inPlaceFrame]
+        ))
+
+        XCTAssertTrue(ParagraphOutsideClickDismissalPolicy.shouldDismiss(
+            mouseLocation: CGPoint(x: 900, y: 500),
+            isSentenceTranslationPresented: true,
+            isParagraphOverlayPinned: true,
+            isRegionInteractionActive: false,
+            protectedFrames: [nil, nil, inPlaceFrame]
+        ))
+    }
+
+    func testPersistentSentencePresentationPolicyPresentsExistingTranslation() {
+        XCTAssertEqual(
+            PersistentSentencePresentationPolicy.resolve(
+                isSentenceTranslationPresented: true,
+                isRegionInteractionActive: false
+            ),
+            .presentNow
+        )
+    }
+
+    func testPersistentSentencePresentationPolicyDefersDuringManualSelection() {
+        XCTAssertEqual(
+            PersistentSentencePresentationPolicy.resolve(
+                isSentenceTranslationPresented: false,
+                isRegionInteractionActive: true
+            ),
+            .deferUntilRegionCompletes
+        )
+    }
+
+    func testPersistentSentencePresentationPolicyDiscardsUnrelatedRelease() {
+        XCTAssertEqual(
+            PersistentSentencePresentationPolicy.resolve(
+                isSentenceTranslationPresented: false,
+                isRegionInteractionActive: false
+            ),
+            .discard
+        )
     }
 
     func testTapKeptOverlayPersistenceKeepsSupportedSingleLookupsAfterTap() {

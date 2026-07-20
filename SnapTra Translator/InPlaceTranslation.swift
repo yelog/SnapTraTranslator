@@ -583,6 +583,11 @@ final class InPlaceTranslationWindowController: NSWindowController {
             window.makeKey()
         }
     }
+
+    var visibleFrame: CGRect? {
+        guard let window, window.isVisible else { return nil }
+        return window.frame
+    }
 }
 
 @MainActor
@@ -625,5 +630,10 @@ final class InPlaceImageTranslationWindowController: NSWindowController {
     func hide() {
         hostingView.rootView = AnyView(EmptyView())
         window?.orderOut(nil)
+    }
+
+    var visibleFrame: CGRect? {
+        guard let window, window.isVisible else { return nil }
+        return window.frame
     }
 }
