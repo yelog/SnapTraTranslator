@@ -419,6 +419,20 @@ enum PersistentSentencePresentationPolicy {
     }
 }
 
+enum PersistentOverlayApplicationActivationPolicy {
+    static func shouldDismiss(
+        isPersistentOverlayPresented: Bool,
+        sourceApplicationProcessIdentifier: pid_t?,
+        activatedApplicationProcessIdentifier: pid_t,
+        ownApplicationProcessIdentifier: pid_t
+    ) -> Bool {
+        guard isPersistentOverlayPresented else { return false }
+        guard activatedApplicationProcessIdentifier != ownApplicationProcessIdentifier else { return false }
+        guard activatedApplicationProcessIdentifier != sourceApplicationProcessIdentifier else { return false }
+        return true
+    }
+}
+
 private struct OcrWordCandidate: Sendable {
     let text: String
     let captureRect: CGRect
@@ -492,6 +506,7 @@ final class AppModel: ObservableObject {
     private var isParagraphRegionInteractionActive = false
     private var shouldRestoreParagraphOverlayAfterManualRegionCancel = true
     private var isPersistentSentencePresentationPending = false
+    private var persistentOverlaySourceApplicationProcessIdentifier: pid_t?
     private let debounceInterval: TimeInterval = 0.1
     private let overlayLayoutRefreshInterval: TimeInterval = 0.04
     private let positionThreshold: CGFloat = 10.0
@@ -598,6 +613,7 @@ final class AppModel: ObservableObject {
         activeLookupMode = .word
         isParagraphOverlayPinned = false
         isPersistentSentencePresentationPending = false
+        persistentOverlaySourceApplicationProcessIdentifier = nil
         isTapKeptOverlayPresented = false
         hideInPlaceTranslation()
         tapKeptOverlayReleaseLocation = nil
@@ -675,6 +691,7 @@ final class AppModel: ObservableObject {
         isPersistentSentencePresentationPending = false
         isHotkeyActive = false
         isParagraphOverlayPinned = true
+        armPersistentOverlayApplicationMonitoring()
         overlayWindowController.setInteractive(true)
         syncOverlayDismissalMonitoring()
     }
@@ -715,6 +732,7 @@ final class AppModel: ObservableObject {
 
     private func keepOverlayAfterTap() {
         isTapKeptOverlayPresented = true
+        armPersistentOverlayApplicationMonitoring()
         tapKeptOverlayReleaseLocation = NSEvent.mouseLocation
         debounceWorkItem?.cancel()
         debounceWorkItem = nil
@@ -726,7 +744,10 @@ final class AppModel: ObservableObject {
     func toggleParagraphOverlayPin() {
         isParagraphOverlayPinned.toggle()
         if isParagraphOverlayPinned {
+            armPersistentOverlayApplicationMonitoring()
             overlayWindowController.setInteractive(true)
+        } else {
+            persistentOverlaySourceApplicationProcessIdentifier = nil
         }
         syncOverlayDismissalMonitoring()
     }
@@ -2767,6 +2788,12 @@ final class AppModel: ObservableObject {
 
         let workspaceNotifications = NSWorkspace.shared.notificationCenter
 
+        workspaceNotifications.publisher(for: NSWorkspace.didActivateApplicationNotification)
+            .sink { [weak self] notification in
+                self?.handleApplicationActivation(notification)
+            }
+            .store(in: &cancellables)
+
         workspaceNotifications.publisher(for: NSWorkspace.activeSpaceDidChangeNotification)
             .sink { [weak self] _ in
                 self?.handleActiveSpaceChange()
@@ -2821,6 +2848,22 @@ final class AppModel: ObservableObject {
         // active Space. The next OCR result will then be ordered in the new
         // Space instead of being treated as already visible elsewhere.
         overlayWindowController.reassertForActiveSpace()
+    }
+
+    private func handleApplicationActivation(_ notification: Notification) {
+        guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                as? NSRunningApplication else {
+            return
+        }
+
+        let shouldDismiss = PersistentOverlayApplicationActivationPolicy.shouldDismiss(
+            isPersistentOverlayPresented: isPersistentOverlayPresented,
+            sourceApplicationProcessIdentifier: persistentOverlaySourceApplicationProcessIdentifier,
+            activatedApplicationProcessIdentifier: application.processIdentifier,
+            ownApplicationProcessIdentifier: ProcessInfo.processInfo.processIdentifier
+        )
+        guard shouldDismiss else { return }
+        dismissOverlay()
     }
 
     private func prepareForSystemSleep() {
@@ -3525,6 +3568,7 @@ final class AppModel: ObservableObject {
         isParagraphOverlayPinned = false
         isParagraphRegionInteractionActive = false
         isPersistentSentencePresentationPending = false
+        persistentOverlaySourceApplicationProcessIdentifier = nil
         isTapKeptOverlayPresented = false
         tapKeptOverlayReleaseLocation = nil
         stopOverlayEscapeMonitoring()
@@ -3662,6 +3706,15 @@ final class AppModel: ObservableObject {
 
     private var isSentenceTranslationPresented: Bool {
         isParagraphOverlayPresented || isInPlaceTranslationPresented
+    }
+
+    private var isPersistentOverlayPresented: Bool {
+        (isSentenceTranslationPresented && isParagraphOverlayPinned) || isTapKeptOverlayPresented
+    }
+
+    private func armPersistentOverlayApplicationMonitoring() {
+        persistentOverlaySourceApplicationProcessIdentifier =
+            NSWorkspace.shared.frontmostApplication?.processIdentifier
     }
 
     private func syncOverlayDismissalMonitoring() {

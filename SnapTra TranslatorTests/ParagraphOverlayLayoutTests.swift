@@ -473,6 +473,42 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         )
     }
 
+    func testPersistentOverlayApplicationActivationPolicyDismissesForAnotherApplication() {
+        XCTAssertTrue(PersistentOverlayApplicationActivationPolicy.shouldDismiss(
+            isPersistentOverlayPresented: true,
+            sourceApplicationProcessIdentifier: 100,
+            activatedApplicationProcessIdentifier: 200,
+            ownApplicationProcessIdentifier: 300
+        ))
+    }
+
+    func testPersistentOverlayApplicationActivationPolicyKeepsSourceApplication() {
+        XCTAssertFalse(PersistentOverlayApplicationActivationPolicy.shouldDismiss(
+            isPersistentOverlayPresented: true,
+            sourceApplicationProcessIdentifier: 100,
+            activatedApplicationProcessIdentifier: 100,
+            ownApplicationProcessIdentifier: 300
+        ))
+    }
+
+    func testPersistentOverlayApplicationActivationPolicyKeepsSnapTraActivation() {
+        XCTAssertFalse(PersistentOverlayApplicationActivationPolicy.shouldDismiss(
+            isPersistentOverlayPresented: true,
+            sourceApplicationProcessIdentifier: 100,
+            activatedApplicationProcessIdentifier: 300,
+            ownApplicationProcessIdentifier: 300
+        ))
+    }
+
+    func testPersistentOverlayApplicationActivationPolicyIgnoresTemporaryOverlay() {
+        XCTAssertFalse(PersistentOverlayApplicationActivationPolicy.shouldDismiss(
+            isPersistentOverlayPresented: false,
+            sourceApplicationProcessIdentifier: 100,
+            activatedApplicationProcessIdentifier: 200,
+            ownApplicationProcessIdentifier: 300
+        ))
+    }
+
     func testTapKeptOverlayPersistenceKeepsSupportedSingleLookupsAfterTap() {
         XCTAssertTrue(TapKeptOverlayPersistencePolicy.shouldKeepAfterTap(
             isEnabled: true,
