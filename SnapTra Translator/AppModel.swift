@@ -204,12 +204,17 @@ enum ParagraphOverlayTranslationState: Equatable {
 
 struct ServiceTranslationResult: Equatable, Identifiable {
     let sourceType: SentenceTranslationSource.SourceType
+    let modelName: String?
     var state: TranslationResultState
+    var duration: TimeInterval?
 
     var id: String { sourceType.rawValue }
 
     static func == (lhs: ServiceTranslationResult, rhs: ServiceTranslationResult) -> Bool {
-        lhs.sourceType == rhs.sourceType && lhs.state == rhs.state
+        lhs.sourceType == rhs.sourceType
+            && lhs.modelName == rhs.modelName
+            && lhs.state == rhs.state
+            && lhs.duration == rhs.duration
     }
 }
 
@@ -1484,7 +1489,7 @@ final class AppModel: ObservableObject {
             translationState: .loading,
             showsNativeTranslation: isNativeTranslationEnabled,
             serviceResults: enabledServices.map { source in
-                ServiceTranslationResult(sourceType: source.type, state: .loading)
+                makeServiceTranslationResult(for: source)
             },
             bodyFontSize: 14,
             useFixedFontSize: true,
@@ -1631,7 +1636,7 @@ final class AppModel: ObservableObject {
                     translationState: .loading,
                     showsNativeTranslation: isNativeTranslationEnabled,
                     serviceResults: enabledServices.map { source in
-                        ServiceTranslationResult(sourceType: source.type, state: .loading)
+                        makeServiceTranslationResult(for: source)
                     },
                     bodyFontSize: estimatedDisplayFontSize(from: [line], in: capture.region.rect),
                     languageOptions: languageOptions,
@@ -1738,7 +1743,7 @@ final class AppModel: ObservableObject {
                 let languageOptions = paragraphLanguageOptions(for: languagePair)
 
                 let initialServiceResults = enabledServices.map { source in
-                    ServiceTranslationResult(sourceType: source.type, state: .loading)
+                    makeServiceTranslationResult(for: source)
                 }
 
                 let initialContent = ParagraphOverlayContent(
@@ -1901,7 +1906,7 @@ final class AppModel: ObservableObject {
                 translationState: .loading,
                 showsNativeTranslation: isNativeTranslationEnabled,
                 serviceResults: enabledServices.map { source in
-                    ServiceTranslationResult(sourceType: source.type, state: .loading)
+                    makeServiceTranslationResult(for: source)
                 },
                 bodyFontSize: bodyFontSize,
                 languageOptions: languageOptions,
@@ -2237,7 +2242,7 @@ final class AppModel: ObservableObject {
             content.isRetranslating = isNativeTranslationEnabled
             content.showsNativeTranslation = isNativeTranslationEnabled
             content.serviceResults = enabledServices.map { source in
-                ServiceTranslationResult(sourceType: source.type, state: .loading)
+                makeServiceTranslationResult(for: source)
             }
             content.originalText = originalText
             content.sourceLanguageIdentifier = languagePair.sourceIdentifier
@@ -2276,6 +2281,20 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func makeServiceTranslationResult(
+        for source: SentenceTranslationSource,
+        state: TranslationResultState = .loading
+    ) -> ServiceTranslationResult {
+        let modelName = source.type.isLLMProvider
+            ? settings.llmProviderConfiguration(for: source.type).model
+            : nil
+        return ServiceTranslationResult(
+            sourceType: source.type,
+            modelName: modelName,
+            state: state
+        )
+    }
+
     private func performThirdPartySentenceTranslations(
         text: String,
         sourceLanguage: String,
@@ -2286,12 +2305,13 @@ final class AppModel: ObservableObject {
     ) async {
         guard !enabledServices.isEmpty else { return }
 
-        await withTaskGroup(of: (SentenceTranslationSource.SourceType, TranslationResultState).self) { group in
+        await withTaskGroup(of: (SentenceTranslationSource.SourceType, TranslationResultState, TimeInterval).self) { group in
             for service in enabledServices {
                 let llmConfiguration = service.type.isLLMProvider
                     ? settings.llmProviderConfiguration(for: service.type)
                     : nil
                 group.addTask {
+                    let start = Date()
                     do {
                         let result: String?
                         if service.type.isLLMProvider {
@@ -2306,6 +2326,7 @@ final class AppModel: ObservableObject {
                                     await self.updateSentenceServiceTranslationResult(
                                         sourceType: service.type,
                                         state: .ready(partialText),
+                                        duration: nil,
                                         lookupID: lookupID,
                                         anchor: anchor
                                     )
@@ -2322,23 +2343,28 @@ final class AppModel: ObservableObject {
                         }
 
                         if let translation = result, !translation.isEmpty {
-                            return (service.type, .ready(translation))
+                            return (service.type, .ready(translation), Date().timeIntervalSince(start))
                         } else {
-                            return (service.type, .failed(String(localized: "No translation result")))
+                            return (
+                                service.type,
+                                .failed(String(localized: "No translation result")),
+                                Date().timeIntervalSince(start)
+                            )
                         }
                     } catch {
                         let message = "\(String(localized: "Translation failed")): \(error.localizedDescription)"
-                        return (service.type, .failed(message))
+                        return (service.type, .failed(message), Date().timeIntervalSince(start))
                     }
                 }
             }
 
-            for await (sourceType, state) in group {
+            for await (sourceType, state, duration) in group {
                 guard !Task.isCancelled, self.activeLookupID == lookupID else { return }
 
                 self.updateSentenceServiceTranslationResult(
                     sourceType: sourceType,
                     state: state,
+                    duration: duration,
                     lookupID: lookupID,
                     anchor: anchor
                 )
@@ -2349,6 +2375,7 @@ final class AppModel: ObservableObject {
     private func updateSentenceServiceTranslationResult(
         sourceType: SentenceTranslationSource.SourceType,
         state: TranslationResultState,
+        duration: TimeInterval?,
         lookupID: UUID,
         anchor: CGPoint
     ) {
@@ -2362,6 +2389,9 @@ final class AppModel: ObservableObject {
         updateParagraphOverlayContent(for: lookupID, anchor: anchor) { content in
             if let index = content.serviceResults.firstIndex(where: { $0.sourceType == sourceType }) {
                 content.serviceResults[index].state = state
+                if let duration {
+                    content.serviceResults[index].duration = duration
+                }
             }
         }
     }

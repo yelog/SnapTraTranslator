@@ -557,14 +557,10 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func paragraphServiceResultCard(result: ServiceTranslationResult, fontSize: CGFloat) -> some View {
-        let title = "\(result.sourceType.displayName)"
-
         switch result.state {
         case .loading:
             VStack(alignment: .leading, spacing: 8) {
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                paragraphServiceResultHeader(result: result, copyText: nil)
 
                 HStack(spacing: 8) {
                     ProgressView()
@@ -580,13 +576,7 @@ struct OverlayView: View {
 
         case .ready(let translatedText):
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .center, spacing: 8) {
-                    Text(title)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-
-                    CopyButton(text: translatedText)
-                }
+                paragraphServiceResultHeader(result: result, copyText: translatedText)
 
                 paragraphTextContent(
                     text: translatedText,
@@ -600,15 +590,67 @@ struct OverlayView: View {
 
         case .failed(let message):
             VStack(alignment: .leading, spacing: 8) {
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                paragraphServiceResultHeader(result: result, copyText: nil)
 
                 paragraphErrorContent(message: message)
             }
             .padding(.horizontal, paragraphTextHorizontalPadding)
             .padding(.vertical, 14)
         }
+    }
+
+    /// Header row shared by all paragraph service result states: provider name,
+    /// optional model name for LLM providers, elapsed translation time on the
+    /// right, and the copy button (ready state only).
+    @ViewBuilder
+    private func paragraphServiceResultHeader(
+        result: ServiceTranslationResult,
+        copyText: String?
+    ) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            HStack(alignment: .center, spacing: 4) {
+                Text(result.sourceType.displayName)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                if let modelName = result.modelName, !modelName.isEmpty {
+                    Text(verbatim: "·")
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundStyle(.secondary)
+
+                    Text(modelName)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let duration = result.duration {
+                Text(Self.formatTranslationDuration(duration))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+                    .layoutPriority(1)
+                    .help(L("Translation time"))
+            }
+
+            if let copyText, !copyText.isEmpty {
+                CopyButton(text: copyText)
+                    .layoutPriority(1)
+            }
+        }
+    }
+
+    private static func formatTranslationDuration(_ duration: TimeInterval) -> String {
+        if duration < 1 {
+            let milliseconds = Int((duration * 1000).rounded())
+            return "\(milliseconds)ms"
+        }
+        return String(format: "%.1fs", duration)
     }
 
     @ViewBuilder
