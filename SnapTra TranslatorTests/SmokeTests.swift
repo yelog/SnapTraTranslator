@@ -2,6 +2,17 @@ import Foundation
 import XCTest
 @testable import SnapTra_Translator
 
+private extension String {
+    func firstMatch(pattern: String, group: Int) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: self, range: NSRange(startIndex..., in: self)),
+              let range = Range(match.range(at: group), in: self) else {
+            return nil
+        }
+        return String(self[range])
+    }
+}
+
 final class SmokeTests: XCTestCase {
     func testSmoke() {
         XCTAssertTrue(true)
@@ -72,6 +83,119 @@ final class SentenceTranslationServiceStreamingTests: XCTestCase {
         XCTAssertEqual(partialResults, ["嗨", "嗨，yangyj13!"])
         XCTAssertEqual(requestBodies.count, 1)
         XCTAssertEqual(requestBodies.first?["think"] as? Bool, false)
+    }
+
+    func testOpenAICompatibleStreamingRemovesEchoedRequestDelimitersAcrossChunks() async throws {
+        MockLLMURLProtocol.requestHandler = { request in
+            let body = try request.jsonBody()
+            let messages = try XCTUnwrap(body["messages"] as? [[String: Any]])
+            let userPrompt = try XCTUnwrap(messages.last?["content"] as? String)
+            let delimiterID = try XCTUnwrap(
+                userPrompt.firstMatch(pattern: #"<SNAPTRA_TRANSLATION_TEXT_([0-9A-F]+)>"#, group: 1)
+            )
+            let differentDelimiter = "<SNAPTRA_TRANSLATION_TEXT_DEADBEEF>"
+            let stream = """
+            data: {"choices":[{"delta":{"content":"<SNAPTRA_TRANSL"}}]}
+
+            data: {"choices":[{"delta":{"content":"ATION_TEXT_\(delimiterID)>\\n你好"}}]}
+
+            data: {"choices":[{"delta":{"content":"，\(differentDelimiter)世界</SNAPTRA_TRANSLATION_"}}]}
+
+            data: {"choices":[{"delta":{"content":"TEXT_\(delimiterID)>"}}]}
+
+            data: [DONE]
+
+            """
+
+            return (
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!,
+                Data(stream.utf8)
+            )
+        }
+
+        let service = SentenceTranslationService(session: .mockLLM)
+        var partialResults: [String] = []
+        let translation = try await service.translateStreaming(
+            text: "Hello world",
+            provider: .ollama,
+            sourceLanguage: "en",
+            targetLanguage: "zh-Hans",
+            llmConfiguration: LLMProviderConfiguration(
+                provider: .ollama,
+                model: "test-model",
+                baseURL: "https://llm.example/v1"
+            ),
+            onPartialResult: { partial in
+                if !partial.isEmpty, partial != partialResults.last {
+                    partialResults.append(partial)
+                }
+            }
+        )
+
+        XCTAssertEqual(translation, "你好，<SNAPTRA_TRANSLATION_TEXT_DEADBEEF>世界")
+        XCTAssertEqual(
+            partialResults,
+            [
+                "你好",
+                "你好，<SNAPTRA_TRANSLATION_TEXT_DEADBEEF>世界",
+            ]
+        )
+    }
+
+    func testOpenAICompatibleSyncTranslationRemovesEchoedRequestDelimiters() async throws {
+        MockLLMURLProtocol.requestHandler = { request in
+            guard request.url?.absoluteString == "https://llm.example/v1/chat/completions" else {
+                throw MockLLMURLProtocol.Error.unexpectedURL
+            }
+            let body = try request.jsonBody()
+            let messages = try XCTUnwrap(body["messages"] as? [[String: Any]])
+            let userPrompt = try XCTUnwrap(messages.last?["content"] as? String)
+            let beginDelimiter = try XCTUnwrap(
+                userPrompt.firstMatch(pattern: #"<SNAPTRA_TRANSLATION_TEXT_[0-9A-F]+>"#, group: 0)
+            )
+            let endDelimiter = "</" + beginDelimiter.dropFirst()
+
+            let response = """
+            {
+              "choices": [
+                {
+                  "message": {
+                    "content": "\(beginDelimiter)\\n你好，世界。\\n\(endDelimiter)"
+                  }
+                }
+              ]
+            }
+            """
+            return (
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )!,
+                Data(response.utf8)
+            )
+        }
+
+        let service = SentenceTranslationService(session: .mockLLM)
+        let translation = try await service.translate(
+            text: "Hello world.",
+            provider: .ollama,
+            sourceLanguage: "en",
+            targetLanguage: "zh-Hans",
+            llmConfiguration: LLMProviderConfiguration(
+                provider: .ollama,
+                model: "test-model",
+                baseURL: "https://llm.example/v1"
+            )
+        )
+
+        XCTAssertEqual(translation, "你好，世界。")
     }
 
     func testLLMPromptNormalizesOCRWrappedLineBreaksSemantically() async throws {
