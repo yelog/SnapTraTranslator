@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.11-beta.1] - 2026-08-07
+
+### Added
+- show LLM model name and translation time in service results
+
+### Changed
+- add 1.3.11-beta.0 release entry [skip ci]
+
+### Fixed
+- stop Gemma turn tags leaking into oMLX translations
+- strip echoed request delimiters from LLM translations
+- allow App Store file writes
+
 ## [1.3.11-beta.0] - 2026-07-21
 
 ### Fixed
