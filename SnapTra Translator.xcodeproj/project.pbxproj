@@ -550,7 +550,7 @@
 				DEVELOPMENT_TEAM = 4MF263RHY3;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "SnapTra Translator/Info-AppStore.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "SnapTra Translator";
