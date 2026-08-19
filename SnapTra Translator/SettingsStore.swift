@@ -505,7 +505,9 @@ final class SettingsStore: ObservableObject {
         launchAtLogin = launchAtLoginValue ?? loginStatus
         showMenuBarIcon = showMenuBarIconValue ?? true
         menuBarIconStyle = MenuBarIconStyle(rawValue: menuBarIconStyleValue ?? "auto") ?? .auto
-        showDockIcon = showDockIconValue ?? true
+        // Keep the app out of the Dock and Command-Tab while it runs in the
+        // background. The Dock icon is still shown while Settings is open.
+        showDockIcon = showDockIconValue ?? false
         singleKey = SingleKey(rawValue: singleKeyValue ?? "leftControl") ?? .leftControl
         sourceLanguage = defaults.string(forKey: AppSettingKey.sourceLanguage) ?? "en"
         let defaultTarget = Self.defaultTargetLanguage()

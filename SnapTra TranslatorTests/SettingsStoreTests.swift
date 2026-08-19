@@ -306,6 +306,15 @@ final class SettingsStoreMigrationTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: AppSettingKey.menuBarIconStyle), MenuBarIconStyle.auto.rawValue)
     }
 
+    func testDockIconIsHiddenByDefaultInBackground() {
+        let defaults = makeDefaults()
+
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertFalse(settings.showDockIcon)
+        XCTAssertEqual(defaults.object(forKey: AppSettingKey.showDockIcon) as? Bool, false)
+    }
+
     func testLoadsPersistedMenuBarIconStyle() {
         let defaults = makeDefaults()
         defaults.set(MenuBarIconStyle.black.rawValue, forKey: AppSettingKey.menuBarIconStyle)
