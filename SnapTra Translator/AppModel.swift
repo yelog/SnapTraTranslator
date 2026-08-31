@@ -72,6 +72,18 @@ struct OverlayContent: Equatable {
     }
 }
 
+enum OverlayPronunciationKind: Equatable {
+    case word
+    case sentence
+}
+
+struct OverlayPronunciationRequest: Equatable {
+    let id: UUID
+    let kind: OverlayPronunciationKind
+    let text: String
+    let languageIdentifier: String?
+}
+
 nonisolated struct LearningDefinitionCommit: Equatable, Sendable {
     let word: String
     let definitionText: String
@@ -461,6 +473,8 @@ final class AppModel: ObservableObject {
     @Published var overlayPreferredWidth: CGFloat? = nil
     @Published var isParagraphOverlayPinned: Bool = false
     @Published var isTapKeptOverlayPresented: Bool = false
+    @Published private(set) var speechPlaybackState: SpeechPlaybackState = .idle
+    @Published private(set) var activePronunciationRequest: OverlayPronunciationRequest?
 
     @Published var settings: SettingsStore
     let permissions: PermissionManager
@@ -547,6 +561,15 @@ final class AppModel: ObservableObject {
         resolvedSettings.objectWillChange
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        speechService.$playbackState
+            .sink { [weak self] state in
+                self?.speechPlaybackState = state
+                if case .idle = state {
+                    self?.activePronunciationRequest = nil
+                }
             }
             .store(in: &cancellables)
 
@@ -720,6 +743,61 @@ final class AppModel: ObservableObject {
             beginDoubleTapAutomaticParagraphLookup()
         case .manualRegionSelection:
             beginDoubleTapManualParagraphRegionSelection()
+        }
+    }
+
+    func playOverlayPronunciation(kind: OverlayPronunciationKind) {
+        let request: OverlayPronunciationRequest?
+        switch kind {
+        case .word:
+            guard case .result(let content) = overlayState else { return }
+            let text = content.word.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            request = OverlayPronunciationRequest(
+                id: UUID(),
+                kind: kind,
+                text: text,
+                languageIdentifier: content.sourceLanguageIdentifier
+            )
+        case .sentence:
+            guard case .paragraphResult(let content) = overlayState,
+                  let originalText = content.originalText else { return }
+            let text = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            request = OverlayPronunciationRequest(
+                id: UUID(),
+                kind: kind,
+                text: text,
+                languageIdentifier: content.sourceLanguageIdentifier
+            )
+        }
+
+        guard let request else { return }
+        activePronunciationRequest = request
+        let provider = kind == .word ? settings.wordTTSProvider : settings.sentenceTTSProvider
+        speechService.speak(
+            request.text,
+            language: request.languageIdentifier.flatMap { Locale.Language(identifier: $0).languageCode?.identifier },
+            provider: provider,
+            useAmericanAccent: settings.englishAccent.isAmerican,
+            requestID: request.id
+        )
+    }
+
+    func isPronunciationPlaying(kind: OverlayPronunciationKind) -> Bool {
+        let requestMatches = activePronunciationRequest?.kind == kind
+        let automaticKindMatches: Bool = switch (kind, activeLookupMode) {
+        case (.word, .word), (.sentence, .selectedTextSentence), (.sentence, .ocrSentence):
+            true
+        default:
+            false
+        }
+        guard requestMatches || (activePronunciationRequest == nil && automaticKindMatches) else { return false }
+        switch speechPlaybackState {
+        case .loading, .playing:
+            return true
+        case .idle, .failed:
+            return false
         }
     }
 

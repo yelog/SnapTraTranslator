@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import CryptoKit
 import Foundation
 import os.log
@@ -24,6 +25,15 @@ protocol SpeechAudioOutput: AnyObject {
 @MainActor
 protocol SpeechAudioStartObserving: AnyObject {
     func setAppleDidStartHandler(_ handler: @escaping @MainActor () -> Void)
+}
+
+@MainActor
+protocol SpeechAudioLifecycleObserving: AnyObject {
+    func setLifecycleHandlers(
+        didStart: @escaping @MainActor () -> Void,
+        didFinish: @escaping @MainActor () -> Void,
+        didFail: @escaping @MainActor () -> Void
+    )
 }
 
 protocol TTSDebugAudioDumping: Sendable {
@@ -59,11 +69,14 @@ actor TTSDebugAudioDumper: TTSDebugAudioDumping {
 }
 
 @MainActor
-final class AVFoundationSpeechAudioOutput: NSObject, SpeechAudioOutput, SpeechAudioStartObserving {
+final class AVFoundationSpeechAudioOutput: NSObject, SpeechAudioOutput, SpeechAudioStartObserving, SpeechAudioLifecycleObserving {
     private let synthesizer = AVSpeechSynthesizer()
     private var audioPlayer: AVAudioPlayer?
     private var nextAppleDidStartHandler: (@MainActor () -> Void)?
     private var appleDidStartHandlers: [ObjectIdentifier: @MainActor () -> Void] = [:]
+    private var lifecycleDidStart: (@MainActor () -> Void)?
+    private var lifecycleDidFinish: (@MainActor () -> Void)?
+    private var lifecycleDidFail: (@MainActor () -> Void)?
 
     override init() {
         super.init()
@@ -74,12 +87,25 @@ final class AVFoundationSpeechAudioOutput: NSObject, SpeechAudioOutput, SpeechAu
         synthesizer.stopSpeaking(at: .immediate)
         appleDidStartHandlers.removeAll()
         nextAppleDidStartHandler = nil
+        lifecycleDidStart = nil
+        lifecycleDidFinish = nil
+        lifecycleDidFail = nil
         audioPlayer?.stop()
         audioPlayer = nil
     }
 
     func setAppleDidStartHandler(_ handler: @escaping @MainActor () -> Void) {
         nextAppleDidStartHandler = handler
+    }
+
+    func setLifecycleHandlers(
+        didStart: @escaping @MainActor () -> Void,
+        didFinish: @escaping @MainActor () -> Void,
+        didFail: @escaping @MainActor () -> Void
+    ) {
+        lifecycleDidStart = didStart
+        lifecycleDidFinish = didFinish
+        lifecycleDidFail = didFail
     }
 
     func playApple(text: String, language: String?) {
@@ -97,6 +123,7 @@ final class AVFoundationSpeechAudioOutput: NSObject, SpeechAudioOutput, SpeechAu
 
     func playOnlineAudio(_ data: Data) throws -> Bool {
         let player = try AVAudioPlayer(data: data)
+        player.delegate = self
         player.prepareToPlay()
         guard player.play(), player.isPlaying else {
             player.stop()
@@ -109,6 +136,7 @@ final class AVFoundationSpeechAudioOutput: NSObject, SpeechAudioOutput, SpeechAu
     private func handleAppleDidStart(identifier: ObjectIdentifier) {
         let handler = appleDidStartHandlers.removeValue(forKey: identifier)
         handler?()
+        lifecycleDidStart?()
     }
 }
 
@@ -122,16 +150,72 @@ extension AVFoundationSpeechAudioOutput: AVSpeechSynthesizerDelegate {
             self?.handleAppleDidStart(identifier: identifier)
         }
     }
+
+    nonisolated func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        didFinish utterance: AVSpeechUtterance
+    ) {
+        Task { @MainActor [weak self] in
+            self?.lifecycleDidFinish?()
+        }
+    }
+
+    nonisolated func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        didCancel utterance: AVSpeechUtterance
+    ) {}
+}
+
+extension AVFoundationSpeechAudioOutput: AVAudioPlayerDelegate {
+    nonisolated func audioPlayerDidFinishPlaying(
+        _ player: AVAudioPlayer,
+        successfully flag: Bool
+    ) {
+        Task { @MainActor [weak self] in
+            if flag {
+                self?.lifecycleDidFinish?()
+            } else {
+                self?.lifecycleDidFail?()
+            }
+        }
+    }
+
+    nonisolated func audioPlayerDecodeErrorDidOccur(
+        _ player: AVAudioPlayer,
+        error: Error?
+    ) {
+        Task { @MainActor [weak self] in
+            self?.lifecycleDidFail?()
+        }
+    }
+}
+
+enum SpeechPlaybackState: Equatable {
+    case idle
+    case loading(requestID: UUID)
+    case playing(requestID: UUID)
+    case failed(requestID: UUID)
+
+    var requestID: UUID? {
+        switch self {
+        case .idle:
+            return nil
+        case .loading(let requestID), .playing(let requestID), .failed(let requestID):
+            return requestID
+        }
+    }
 }
 
 @MainActor
-final class SpeechService {
+final class SpeechService: ObservableObject {
     private let fetcher: any TTSServiceFetching
     private let output: any SpeechAudioOutput
     private let debugDumper: (any TTSDebugAudioDumping)?
     private let logger = Logger(subsystem: "com.yelog.SnapTra-Translator", category: "SpeechService")
     private var activeTask: Task<Void, Never>?
     private var requestGeneration: UInt64 = 0
+    @Published private(set) var playbackState: SpeechPlaybackState = .idle
+    private var activeRequestID: UUID?
 
     convenience init() {
         #if DEBUG
@@ -161,10 +245,13 @@ final class SpeechService {
         language: String?,
         provider: TTSProvider = .apple,
         useAmericanAccent: Bool = true,
-        performance: LookupPerformanceContext? = nil
+        performance: LookupPerformanceContext? = nil,
+        requestID: UUID = UUID()
     ) {
         logger.info("🔊 Speaking with provider: \(provider.rawValue)")
         let generation = beginRequest()
+        activeRequestID = requestID
+        playbackState = provider == .apple ? .idle : .loading(requestID: requestID)
 
         switch provider {
         case .apple:
@@ -173,6 +260,7 @@ final class SpeechService {
                 text,
                 language: language,
                 generation: generation,
+                requestID: requestID,
                 performance: performance
             )
         case .youdao, .bing, .google, .baidu:
@@ -186,6 +274,7 @@ final class SpeechService {
                     provider: provider,
                     useAmericanAccent: useAmericanAccent,
                     generation: generation,
+                    requestID: requestID,
                     performance: performance
                 )
             }
@@ -198,6 +287,8 @@ final class SpeechService {
         activeTask?.cancel()
         activeTask = nil
         output.stop()
+        activeRequestID = nil
+        playbackState = .idle
     }
 
     private func beginRequest() -> UInt64 {
@@ -245,6 +336,7 @@ final class SpeechService {
         _ text: String,
         language: String?,
         generation: UInt64,
+        requestID: UUID,
         performance: LookupPerformanceContext?
     ) {
         guard isCurrent(generation) else { return }
@@ -257,7 +349,12 @@ final class SpeechService {
                 performance?.markAudioStart(.appleDidStart)
             }
         }
+        configureLifecycleHandlers(generation: generation, requestID: requestID)
         output.playApple(text: text, language: language)
+
+        if !(output is any SpeechAudioLifecycleObserving) {
+            playbackState = .playing(requestID: requestID)
+        }
 
         // Custom outputs that cannot report didStart retain the old submission proxy.
         if !(output is any SpeechAudioStartObserving) {
@@ -272,6 +369,7 @@ final class SpeechService {
         provider: TTSProvider,
         useAmericanAccent: Bool,
         generation: UInt64,
+        requestID: UUID,
         performance: LookupPerformanceContext?
     ) async {
         defer {
@@ -301,12 +399,14 @@ final class SpeechService {
             performance?.begin(.ttsStart)
 
             do {
+                configureLifecycleHandlers(generation: generation, requestID: requestID)
                 let playAccepted = try output.playOnlineAudio(audioData)
                 guard isCurrent(generation) else { return }
                 if playAccepted {
                     logger.info("▶️ Online audio playback accepted")
                     performance?.end(.ttsStart, outcome: .succeeded)
                     performance?.markAudioStart(.playAccepted)
+                    playbackState = .playing(requestID: requestID)
                 } else {
                     logger.error("❌ Online audio playback was not accepted")
                     performance?.end(.ttsStart, outcome: .failed)
@@ -314,6 +414,7 @@ final class SpeechService {
                         text,
                         language: language,
                         generation: generation,
+                        requestID: requestID,
                         performance: performance
                     )
                 }
@@ -326,10 +427,12 @@ final class SpeechService {
                 )
                 guard isCurrent(generation), !cancelled else { return }
                 logger.error("❌ Failed to create or play online audio: \(error.localizedDescription)")
+                playbackState = .failed(requestID: requestID)
                 submitAppleSpeech(
                     text,
                     language: language,
                     generation: generation,
+                    requestID: requestID,
                     performance: performance
                 )
                 scheduleDebugDump(audioData, provider: provider, generation: generation)
@@ -348,6 +451,7 @@ final class SpeechService {
                 text,
                 language: language,
                 generation: generation,
+                requestID: requestID,
                 performance: performance
             )
         }
@@ -362,6 +466,25 @@ final class SpeechService {
         Task(priority: .utility) {
             await debugDumper.dump(data, provider: provider, generation: generation)
         }
+    }
+
+    private func configureLifecycleHandlers(generation: UInt64, requestID: UUID) {
+        guard let observer = output as? any SpeechAudioLifecycleObserving else { return }
+        observer.setLifecycleHandlers(
+            didStart: { [weak self] in
+                guard let self, self.isCurrent(generation), self.activeRequestID == requestID else { return }
+                self.playbackState = .playing(requestID: requestID)
+            },
+            didFinish: { [weak self] in
+                guard let self, self.isCurrent(generation), self.activeRequestID == requestID else { return }
+                self.activeRequestID = nil
+                self.playbackState = .idle
+            },
+            didFail: { [weak self] in
+                guard let self, self.isCurrent(generation), self.activeRequestID == requestID else { return }
+                self.playbackState = .failed(requestID: requestID)
+            }
+        )
     }
 
     private nonisolated static func isCancellation(_ error: Error) -> Bool {

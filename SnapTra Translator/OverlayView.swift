@@ -18,7 +18,7 @@ struct OverlayView: View {
     private let compactSectionMinHeight: CGFloat = 28
     private let paragraphTextHorizontalPadding: CGFloat = 18
     private let wordHeaderHorizontalPadding: CGFloat = 18
-    private let wordHeaderControlGroupWidth: CGFloat = 54
+    private let wordHeaderControlGroupWidth: CGFloat = 132
     private let wordHeaderControlGap: CGFloat = 12
 
     init(
@@ -304,11 +304,16 @@ struct OverlayView: View {
 
         VStack(alignment: .leading, spacing: 0) {
             if originalVisibility.showsOriginalTextRegion {
-                paragraphOriginalTopBar(copyText: originalText, originalVisibility: originalVisibility)
+                paragraphOriginalTopBar(
+                    copyText: originalText,
+                    originalVisibility: originalVisibility,
+                    content: content
+                )
             } else {
                 paragraphTopBar(
                     originalVisibility: originalVisibility,
-                    languageSelectorContent: showsLanguageSelectorInTopBar ? content : nil
+                    languageSelectorContent: showsLanguageSelectorInTopBar ? content : nil,
+                    pronunciationContent: content
                 )
             }
 
@@ -782,7 +787,8 @@ struct OverlayView: View {
     @ViewBuilder
     private func paragraphTopBar(
         originalVisibility: ParagraphOriginalVisibilityPolicy.Decision? = nil,
-        languageSelectorContent: ParagraphOverlayContent? = nil
+        languageSelectorContent: ParagraphOverlayContent? = nil,
+        pronunciationContent: ParagraphOverlayContent? = nil
     ) -> some View {
         let showsLanguageSelector = languageSelectorContent != nil
 
@@ -795,6 +801,13 @@ struct OverlayView: View {
 
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
+
+                if let pronunciationContent {
+                    pronunciationControl(
+                        kind: .sentence,
+                        hasText: !(pronunciationContent.originalText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                }
 
                 if let originalVisibility, originalVisibility.showsOriginalEditorToggle {
                     paragraphOriginalEditorToggleButton(isExpanded: originalVisibility.usesEditableOriginalText)
@@ -814,7 +827,8 @@ struct OverlayView: View {
     @ViewBuilder
     private func paragraphOriginalTopBar(
         copyText: String,
-        originalVisibility: ParagraphOriginalVisibilityPolicy.Decision
+        originalVisibility: ParagraphOriginalVisibilityPolicy.Decision,
+        content: ParagraphOverlayContent
     ) -> some View {
         HStack(alignment: .center, spacing: 8) {
             paragraphHeaderDragArea(
@@ -825,6 +839,11 @@ struct OverlayView: View {
             if !copyText.isEmpty {
                 CopyButton(text: copyText)
             }
+
+            pronunciationControl(
+                kind: .sentence,
+                hasText: !copyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            )
 
             if originalVisibility.showsOriginalEditorToggle {
                 paragraphOriginalEditorToggleButton(isExpanded: originalVisibility.usesEditableOriginalText)
@@ -942,6 +961,76 @@ struct OverlayView: View {
         }
         .buttonStyle(.plain)
         .help(helpText)
+    }
+
+    private func pronunciationControl(kind: OverlayPronunciationKind, hasText: Bool) -> some View {
+        let isAutoPlayEnabled = kind == .word
+            ? model.settings.playWordPronunciation
+            : model.settings.playSentencePronunciation
+        let isActive = model.isPronunciationPlaying(kind: kind)
+        let isFailed: Bool = {
+            guard model.activePronunciationRequest?.kind == kind else { return false }
+            if case .failed = model.speechPlaybackState { return true }
+            return false
+        }()
+        let label = kind == .word ? L("Word") : L("Sentence")
+        let playbackHelp = isFailed
+            ? L("Pronunciation failed - click to retry")
+            : (isActive ? L("Playing - click to restart") : L("Play pronunciation"))
+
+        return HStack(spacing: 0) {
+            Button {
+                model.playOverlayPronunciation(kind: kind)
+            } label: {
+                Group {
+                    if isActive, case .loading = model.speechPlaybackState {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: isFailed ? "exclamationmark" : (isActive ? "waveform" : "speaker.wave.2"))
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                }
+                .foregroundStyle(isActive || isFailed ? Color.accentColor : .secondary)
+                .frame(width: 26, height: 22)
+            }
+            .buttonStyle(.plain)
+            .disabled(!hasText)
+            .opacity(hasText ? 1 : 0.4)
+            .help(playbackHelp)
+            .accessibilityLabel(Text(hasText ? "\(playbackHelp) \(label)" : "No \(label) text to pronounce"))
+
+            Divider().frame(height: 14)
+
+            Button {
+                if kind == .word {
+                    model.settings.playWordPronunciation.toggle()
+                } else {
+                    model.settings.playSentencePronunciation.toggle()
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Text(L("Auto"))
+                        .font(.system(size: 9, weight: .medium, design: .rounded))
+                    Image(systemName: isAutoPlayEnabled ? "circle.fill" : "circle")
+                        .font(.system(size: 8, weight: .semibold))
+                }
+                .foregroundStyle(isAutoPlayEnabled ? Color.accentColor : .secondary)
+                .frame(width: 42, height: 22)
+            }
+            .buttonStyle(.plain)
+            .help(isAutoPlayEnabled ? L("Pronunciation: On") : L("Pronunciation: Off"))
+            .accessibilityLabel(Text(isAutoPlayEnabled ? L("Pronunciation: On") : L("Pronunciation: Off")))
+            .accessibilityValue(Text(isAutoPlayEnabled ? L("On") : L("Off")))
+        }
+        .padding(.horizontal, 3)
+        .background(
+            Capsule(style: .continuous)
+                .fill(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.045))
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .stroke(colorScheme == .dark ? .white.opacity(0.10) : .black.opacity(0.07), lineWidth: 0.5)
+        )
     }
 
     private var paragraphOriginalSectionTitle: String {
@@ -1136,7 +1225,7 @@ struct OverlayView: View {
             Spacer(minLength: 0)
 
             if showsWordOverlayControls {
-                wordHeaderControlGroup(copyText: content.word)
+                wordHeaderControlGroup(content: content)
                     .frame(width: wordHeaderControlGroupWidth, alignment: .trailing)
             }
         }
@@ -1217,9 +1306,14 @@ struct OverlayView: View {
             )
     }
 
-    private func wordHeaderControlGroup(copyText: String) -> some View {
+    private func wordHeaderControlGroup(content: OverlayContent) -> some View {
         HStack(alignment: .center, spacing: 8) {
-            CopyButton(text: copyText)
+            pronunciationControl(
+                kind: .word,
+                hasText: !content.word.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            )
+
+            CopyButton(text: content.word)
 
             Button {
                 model.dismissOverlay()

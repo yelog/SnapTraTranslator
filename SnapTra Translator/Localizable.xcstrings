@@ -7,6 +7,16 @@
     "--" : {
 
     },
+    "%@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@"
+          }
+        }
+      }
+    },
     "%lld" : {
 
     },
@@ -5231,6 +5241,9 @@
           }
         }
       }
+    },
+    "No %@ text to pronounce" : {
+
     },
     "No English paragraph detected under cursor" : {
       "extractionState" : "manual",
