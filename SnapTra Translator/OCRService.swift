@@ -1,6 +1,8 @@
 import CoreText
+import CoreGraphics
 import Foundation
 import NaturalLanguage
+import OSLog
 import Vision
 
 struct RecognizedWord: Equatable {
@@ -20,6 +22,11 @@ struct RecognizedParagraph: Equatable {
 }
 
 final class OCRService {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "SnapTraTranslator",
+        category: "OCR"
+    )
+
     func recognizeWords(in image: CGImage, language: String) async throws -> [RecognizedWord] {
         let observations = try await recognizeObservations(in: image, language: language)
         return OCRService.extractWords(from: observations, language: language)
@@ -48,6 +55,11 @@ final class OCRService {
     ) async throws -> [VNRecognizedTextObservation] {
         try Task.checkCancellation()
 
+        let visionImage = Self.normalizedImageForVision(image)
+        Self.logger.debug(
+            "OCR start width=\(visionImage.width, privacy: .public) height=\(visionImage.height, privacy: .public) sourceLanguage=\(language, privacy: .public)"
+        )
+
         return try await withThrowingTaskGroup(of: [VNRecognizedTextObservation].self) { group in
             group.addTask(priority: .userInitiated) {
                 try Task.checkCancellation()
@@ -55,26 +67,100 @@ final class OCRService {
                 let request = VNRecognizeTextRequest()
                 request.recognitionLevel = .accurate
                 request.usesLanguageCorrection = true
-                if #available(macOS 13.0, *) {
-                    request.revision = VNRecognizeTextRequestRevision3
-                    // Enable automatic language detection to handle mixed-language text
-                    // This allows recognizing English words embedded in Chinese/Japanese/Korean text
-                    request.automaticallyDetectsLanguage = true
-                } else {
-                    request.recognitionLanguages = [language]
+                if VNRecognizeTextRequest.supportedRevisions.contains(VNRecognizeTextRequest.currentRevision) {
+                    request.revision = VNRecognizeTextRequest.currentRevision
+                }
+                request.automaticallyDetectsLanguage = true
+
+                let preferredLanguages = Self.preferredRecognitionLanguages(for: language)
+                if let supportedLanguages = try? VNRecognizeTextRequest.supportedRecognitionLanguages(
+                    for: request.recognitionLevel,
+                    revision: request.revision
+                ) {
+                    let supported = preferredLanguages.filter(supportedLanguages.contains)
+                    if !supported.isEmpty {
+                        request.recognitionLanguages = supported
+                    }
                 }
 
-                let handler = VNImageRequestHandler(cgImage: image)
-                try handler.perform([request])
+                do {
+                    let handler = VNImageRequestHandler(cgImage: visionImage)
+                    try handler.perform([request])
+                } catch {
+                    Self.logger.error(
+                        "OCR Vision request failed domain=\((error as NSError).domain, privacy: .public) code=\((error as NSError).code, privacy: .public) description=\(error.localizedDescription, privacy: .public)"
+                    )
+                    throw error
+                }
                 try Task.checkCancellation()
 
-                return request.results ?? []
+                let results = request.results ?? []
+                Self.logger.debug(
+                    "OCR finished observations=\(results.count, privacy: .public)"
+                )
+                return results
             }
 
             let observations = try await group.next() ?? []
             group.cancelAll()
             return observations
         }
+    }
+
+    private static func normalizedImageForVision(_ image: CGImage) -> CGImage {
+        guard image.width > 0, image.height > 0 else {
+            logger.error("OCR received an invalid image size")
+            return image
+        }
+
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)
+            ?? CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+        let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+
+        guard let context = CGContext(
+            data: nil,
+            width: image.width,
+            height: image.height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else {
+            logger.error("OCR image normalization could not create bitmap context")
+            return image
+        }
+
+        context.interpolationQuality = .high
+        context.draw(image, in: bounds)
+        guard let normalizedImage = context.makeImage() else {
+            logger.error("OCR image normalization could not create CGImage")
+            return image
+        }
+
+        return normalizedImage
+    }
+
+    private static func preferredRecognitionLanguages(for language: String) -> [String] {
+        let identifier = language.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty else { return ["en-US"] }
+
+        let locale = Locale(identifier: identifier)
+        let languageCode = locale.languageCode
+        var result = [identifier]
+
+        if let languageCode, languageCode != identifier {
+            result.append(languageCode)
+        }
+
+        if languageCode != "en" {
+            result.append("en-US")
+        }
+        var unique: [String] = []
+        for value in result where !unique.contains(value) {
+            unique.append(value)
+        }
+        return unique
     }
 
     nonisolated private static func extractWords(

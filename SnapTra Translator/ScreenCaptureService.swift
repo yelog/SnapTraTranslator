@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OSLog
 import ScreenCaptureKit
 
 struct CaptureRegion {
@@ -10,6 +11,11 @@ struct CaptureRegion {
 }
 
 final class ScreenCaptureService {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "SnapTraTranslator",
+        category: "ScreenCapture"
+    )
+
     private typealias ContentSnapshot = ScreenCaptureMetadataSnapshot<SCDisplay, SCWindow>
 
     private struct CaptureSourceMetadata: @unchecked Sendable {
@@ -40,9 +46,11 @@ final class ScreenCaptureService {
         performance: LookupPerformanceContext? = nil
     ) async -> (image: CGImage, region: CaptureRegion)? {
         guard let screen = screen(containing: mouseLocation) else {
+            Self.logger.error("Capture failed: no screen contains cursor")
             return nil
         }
         guard let displayNumber = screen.deviceDescription[.init("NSScreenNumber")] as? NSNumber else {
+            Self.logger.error("Capture failed: screen has no display number")
             return nil
         }
         let displayID = CGDirectDisplayID(displayNumber.int32Value)
@@ -57,10 +65,14 @@ final class ScreenCaptureService {
                 configuration: configuration,
                 performance: performance
             ) else {
+                Self.logger.error("Capture failed: screenshot returned no image")
                 return nil
             }
             return (image, CaptureRegion(rect: rectInScreen, screen: screen, displayID: displayID, scaleFactor: scaleFactor))
         } catch {
+            Self.logger.error(
+                "Cursor capture failed domain=\((error as NSError).domain, privacy: .public) code=\((error as NSError).code, privacy: .public) description=\(error.localizedDescription, privacy: .public)"
+            )
             return nil
         }
     }
@@ -68,9 +80,11 @@ final class ScreenCaptureService {
     func captureCurrentDisplay() async -> (image: CGImage, region: CaptureRegion)? {
         let mouseLocation = NSEvent.mouseLocation
         guard let screen = screen(containing: mouseLocation) else {
+            Self.logger.error("Display capture failed: no screen contains cursor")
             return nil
         }
         guard let displayNumber = screen.deviceDescription[.init("NSScreenNumber")] as? NSNumber else {
+            Self.logger.error("Display capture failed: screen has no display number")
             return nil
         }
 
@@ -89,29 +103,37 @@ final class ScreenCaptureService {
                 displayID: displayID,
                 configuration: configuration
             ) else {
+                Self.logger.error("Display capture failed: screenshot returned no image")
                 return nil
             }
             return (image, CaptureRegion(rect: rectInScreen, screen: screen, displayID: displayID, scaleFactor: scaleFactor))
         } catch {
+            Self.logger.error(
+                "Display capture failed domain=\((error as NSError).domain, privacy: .public) code=\((error as NSError).code, privacy: .public) description=\(error.localizedDescription, privacy: .public)"
+            )
             return nil
         }
     }
 
     func capture(rect requestedRect: CGRect) async -> (image: CGImage, region: CaptureRegion)? {
         guard requestedRect.width > 0, requestedRect.height > 0 else {
+            Self.logger.error("Region capture failed: requested rectangle is empty")
             return nil
         }
 
         let midpoint = CGPoint(x: requestedRect.midX, y: requestedRect.midY)
         guard let screen = screen(containing: midpoint) else {
+            Self.logger.error("Region capture failed: no screen contains rectangle midpoint")
             return nil
         }
         guard let displayNumber = screen.deviceDescription[.init("NSScreenNumber")] as? NSNumber else {
+            Self.logger.error("Region capture failed: screen has no display number")
             return nil
         }
 
         let rectInScreen = requestedRect.intersection(screen.frame)
         guard rectInScreen.width > 1, rectInScreen.height > 1 else {
+            Self.logger.error("Region capture failed: rectangle is outside screen bounds")
             return nil
         }
 
@@ -125,10 +147,14 @@ final class ScreenCaptureService {
                 displayID: displayID,
                 configuration: configuration
             ) else {
+                Self.logger.error("Region capture failed: screenshot returned no image")
                 return nil
             }
             return (image, CaptureRegion(rect: rectInScreen, screen: screen, displayID: displayID, scaleFactor: scaleFactor))
         } catch {
+            Self.logger.error(
+                "Region capture failed domain=\((error as NSError).domain, privacy: .public) code=\((error as NSError).code, privacy: .public) description=\(error.localizedDescription, privacy: .public)"
+            )
             return nil
         }
     }
@@ -203,6 +229,9 @@ final class ScreenCaptureService {
                     configuration: configuration
                 )
                 try Task.checkCancellation()
+                Self.logger.debug(
+                    "Screenshot succeeded width=\(image.width, privacy: .public) height=\(image.height, privacy: .public)"
+                )
                 performance?.end(.screenshot, outcome: .succeeded)
                 return image
             } catch {
@@ -210,6 +239,9 @@ final class ScreenCaptureService {
                 performance?.end(
                     .screenshot,
                     outcome: isCancellation ? .cancelled : .failed
+                )
+                Self.logger.error(
+                    "Screenshot failed domain=\((error as NSError).domain, privacy: .public) code=\((error as NSError).code, privacy: .public) description=\(error.localizedDescription, privacy: .public)"
                 )
                 guard !isCancellation else { throw error }
                 guard Self.isStaleCaptureSourceError(error),
@@ -279,6 +311,9 @@ final class ScreenCaptureService {
         configuration.queueDepth = 1
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.showsCursor = false
+        if #available(macOS 14.0, *) {
+            configuration.captureResolution = .best
+        }
         return configuration
     }
 }

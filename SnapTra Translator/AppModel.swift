@@ -461,7 +461,7 @@ private enum OcrWordCandidateLoadResult: Sendable {
     case captureFailed
     case noWord(captureRect: CGRect, wordBoxes: [CGRect])
     case word(OcrWordCandidate)
-    case failed(message: String)
+    case failed(message: String, captureRect: CGRect)
     case cancelled
 }
 
@@ -672,7 +672,9 @@ final class AppModel: ObservableObject {
             )
 
         isHotkeyActive = false
-        debugOverlayWindowController.hide()
+        if !settings.debugShowOcrRegion {
+            debugOverlayWindowController.hide()
+        }
         paragraphHighlightWindowController.hide()
 
         if shouldKeepSentenceOverlayVisible {
@@ -858,10 +860,6 @@ final class AppModel: ObservableObject {
 
     private func beginDoubleTapAutomaticParagraphLookup() {
         guard permissions.status.screenRecording else { return }
-        if settings.debugShowOcrRegion {
-            settings.debugShowOcrRegion = false
-            debugOverlayWindowController.hide()
-        }
         activeLookupMode = .ocrSentence
         stopMouseTracking()
         let mouseLocation = NSEvent.mouseLocation
@@ -1086,6 +1084,9 @@ final class AppModel: ObservableObject {
         activeParagraphRect = rect
         overlayPreferredWidth = max(320, rect.width)
         paragraphHighlightWindowController.show(at: rect)
+        if settings.debugShowOcrRegion {
+            debugOverlayWindowController.show(at: rect)
+        }
         setOverlayAnchor(CGPoint(x: rect.midX, y: rect.minY))
         if ParagraphRegionLoadingOverlayPolicy.shouldShowLoadingOverlay(
             presentationMode: settings.sentenceTranslationPresentationMode
@@ -1225,6 +1226,10 @@ final class AppModel: ObservableObject {
         }
         guard !Task.isCancelled, activeLookupID == lookupID else { return .cancelled }
 
+        if settings.debugShowOcrRegion {
+            debugOverlayWindowController.show(at: capture.region.rect)
+        }
+
         let normalizedPoint = normalizedCursorPoint(mouseLocation, in: capture.region.rect)
         do {
             performance?.begin(.ocr)
@@ -1262,7 +1267,8 @@ final class AppModel: ObservableObject {
             }
             performance?.end(.ocr, outcome: .failed)
             return .failed(
-                message: L("Translation failed: \(error.localizedDescription)")
+                message: L("Translation failed: \(error.localizedDescription)"),
+                captureRect: capture.region.rect
             )
         }
     }
@@ -1315,7 +1321,10 @@ final class AppModel: ObservableObject {
                 request: request
             )
 
-        case .failed(let message):
+        case .failed(let message, let captureRect):
+            if settings.debugShowOcrRegion {
+                debugOverlayWindowController.show(at: captureRect)
+            }
             updateOverlay(state: .error(message), anchor: request.mouseLocation)
 
         case .cancelled:
@@ -1621,6 +1630,10 @@ final class AppModel: ObservableObject {
             return
         }
 
+        if settings.debugShowOcrRegion {
+            debugOverlayWindowController.show(at: capture.region.rect)
+        }
+
         let normalizedPoint = normalizedCursorPoint(mouseLocation, in: capture.region.rect)
 
         do {
@@ -1887,6 +1900,9 @@ final class AppModel: ObservableObject {
             paragraphHighlightWindowController.hide()
         } catch {
             paragraphHighlightWindowController.hide()
+            if settings.debugShowOcrRegion {
+                debugOverlayWindowController.show(at: capture.region.rect)
+            }
             let content = ParagraphOverlayContent(
                 originalText: nil,
                 translationState: .failed("Translation failed: \(error.localizedDescription)")
@@ -1906,6 +1922,10 @@ final class AppModel: ObservableObject {
             )
             updateOverlay(state: .paragraphResult(content), anchor: anchor)
             return
+        }
+
+        if settings.debugShowOcrRegion {
+            debugOverlayWindowController.show(at: capture.region.rect)
         }
 
         if usesImageSentenceTranslation {
@@ -2760,7 +2780,10 @@ final class AppModel: ObservableObject {
     }
 
     func updateOverlay(state: OverlayState, anchor: CGPoint? = nil) {
-        guard isHotkeyActive || isParagraphOverlayPresented || isTapKeptOverlayPresented || !settings.continuousTranslation else { return }
+        guard isHotkeyActive
+                || isParagraphOverlayPresented
+                || isTapKeptOverlayPresented
+                || !settings.continuousTranslation else { return }
 
         if let anchor {
             setOverlayAnchor(anchor)
