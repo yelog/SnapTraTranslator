@@ -22,10 +22,12 @@ struct RecognizedParagraph: Equatable {
 }
 
 final class OCRService {
-    private static let logger = Logger(
+    private nonisolated static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "SnapTraTranslator",
         category: "OCR"
     )
+
+    private let recognitionExecutor = OCRRecognitionExecutor()
 
     func recognizeWords(in image: CGImage, language: String) async throws -> [RecognizedWord] {
         let observations = try await recognizeObservations(in: image, language: language)
@@ -53,61 +55,10 @@ final class OCRService {
         in image: CGImage,
         language: String
     ) async throws -> [VNRecognizedTextObservation] {
-        try Task.checkCancellation()
-
-        let visionImage = Self.normalizedImageForVision(image)
-        Self.logger.debug(
-            "OCR start width=\(visionImage.width, privacy: .public) height=\(visionImage.height, privacy: .public) sourceLanguage=\(language, privacy: .public)"
-        )
-
-        return try await withThrowingTaskGroup(of: [VNRecognizedTextObservation].self) { group in
-            group.addTask(priority: .userInitiated) {
-                try Task.checkCancellation()
-
-                let request = VNRecognizeTextRequest()
-                request.recognitionLevel = .accurate
-                request.usesLanguageCorrection = true
-                if VNRecognizeTextRequest.supportedRevisions.contains(VNRecognizeTextRequest.currentRevision) {
-                    request.revision = VNRecognizeTextRequest.currentRevision
-                }
-                request.automaticallyDetectsLanguage = true
-
-                let preferredLanguages = Self.preferredRecognitionLanguages(for: language)
-                if let supportedLanguages = try? VNRecognizeTextRequest.supportedRecognitionLanguages(
-                    for: request.recognitionLevel,
-                    revision: request.revision
-                ) {
-                    let supported = preferredLanguages.filter(supportedLanguages.contains)
-                    if !supported.isEmpty {
-                        request.recognitionLanguages = supported
-                    }
-                }
-
-                do {
-                    let handler = VNImageRequestHandler(cgImage: visionImage)
-                    try handler.perform([request])
-                } catch {
-                    Self.logger.error(
-                        "OCR Vision request failed domain=\((error as NSError).domain, privacy: .public) code=\((error as NSError).code, privacy: .public) description=\(error.localizedDescription, privacy: .public)"
-                    )
-                    throw error
-                }
-                try Task.checkCancellation()
-
-                let results = request.results ?? []
-                Self.logger.debug(
-                    "OCR finished observations=\(results.count, privacy: .public)"
-                )
-                return results
-            }
-
-            let observations = try await group.next() ?? []
-            group.cancelAll()
-            return observations
-        }
+        try await recognitionExecutor.recognize(in: image, language: language)
     }
 
-    private static func normalizedImageForVision(_ image: CGImage) -> CGImage {
+    nonisolated static func normalizedImageForVision(_ image: CGImage) -> CGImage {
         guard image.width > 0, image.height > 0 else {
             logger.error("OCR received an invalid image size")
             return image
@@ -141,7 +92,7 @@ final class OCRService {
         return normalizedImage
     }
 
-    private static func preferredRecognitionLanguages(for language: String) -> [String] {
+    nonisolated static func preferredRecognitionLanguages(for language: String) -> [String] {
         let identifier = language.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !identifier.isEmpty else { return ["en-US"] }
 

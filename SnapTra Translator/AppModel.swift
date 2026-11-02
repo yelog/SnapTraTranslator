@@ -1415,7 +1415,7 @@ final class AppModel: ObservableObject {
             }
             performance?.end(.ocr, outcome: .failed)
             return .failed(
-                message: L("Translation failed: \(error.localizedDescription)"),
+                message: L("Text recognition failed. Please try again."),
                 captureRect: capture.region.rect
             )
         }
@@ -2048,15 +2048,16 @@ final class AppModel: ObservableObject {
                 return
             }
         } catch is CancellationError {
-            paragraphHighlightWindowController.hide()
+            return
         } catch {
+            guard !Task.isCancelled, activeLookupID == lookupID else { return }
             paragraphHighlightWindowController.hide()
             if settings.debugShowOcrRegion {
                 debugOverlayWindowController.show(at: capture.region.rect)
             }
             let content = ParagraphOverlayContent(
                 originalText: nil,
-                translationState: .failed("Translation failed: \(error.localizedDescription)")
+                translationState: .failed(L("Text recognition failed. Please try again."))
             )
             updateOverlay(state: .paragraphResult(content), anchor: mouseLocation)
         }
@@ -2209,9 +2210,10 @@ final class AppModel: ObservableObject {
         } catch is CancellationError {
             return
         } catch {
+            guard !Task.isCancelled, activeLookupID == lookupID else { return }
             let content = ParagraphOverlayContent(
                 originalText: nil,
-                translationState: .failed("Translation failed: \(error.localizedDescription)")
+                translationState: .failed(L("Text recognition failed. Please try again."))
             )
             updateOverlay(state: .paragraphResult(content), anchor: anchor)
         }

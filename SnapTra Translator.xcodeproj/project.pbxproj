@@ -23,6 +23,7 @@
 		E1A444444444444444444444 /* SelectedTextReplacementCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B444444444444444444444 /* SelectedTextReplacementCoordinatorTests.swift */; };
 		E1A222222222222222222222 /* OCRParagraphGroupingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B222222222222222222222 /* OCRParagraphGroupingTests.swift */; };
 		E1A333333333333333333333 /* ParagraphOverlayLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B333333333333333333333 /* ParagraphOverlayLayoutTests.swift */; };
+		E1A666666666666666666666 /* OCRRecognitionExecutorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B666666666666666666666 /* OCRRecognitionExecutorTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,6 +54,7 @@
 		E1B444444444444444444444 /* SelectedTextReplacementCoordinatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SelectedTextReplacementCoordinatorTests.swift; sourceTree = "<group>"; };
 		E1B222222222222222222222 /* OCRParagraphGroupingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OCRParagraphGroupingTests.swift; sourceTree = "<group>"; };
 		E1B333333333333333333333 /* ParagraphOverlayLayoutTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ParagraphOverlayLayoutTests.swift; sourceTree = "<group>"; };
+		E1B666666666666666666666 /* OCRRecognitionExecutorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OCRRecognitionExecutorTests.swift; sourceTree = "<group>"; };
 		E1D111111111111111111111 /* SnapTra Translator Direct.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "SnapTra Translator Direct.app"; path = "SnapTra Translator.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -138,6 +140,7 @@
 				E1B111111111111111111111 /* HotkeyManagerTests.swift */,
 				E1B444444444444444444444 /* SelectedTextReplacementCoordinatorTests.swift */,
 				E1B222222222222222222222 /* OCRParagraphGroupingTests.swift */,
+				E1B666666666666666666666 /* OCRRecognitionExecutorTests.swift */,
 				E1B333333333333333333333 /* ParagraphOverlayLayoutTests.swift */,
 			);
 			path = "SnapTra TranslatorTests";
@@ -325,6 +328,7 @@
 				E1A111111111111111111111 /* HotkeyManagerTests.swift in Sources */,
 				E1A444444444444444444444 /* SelectedTextReplacementCoordinatorTests.swift in Sources */,
 				E1A222222222222222222222 /* OCRParagraphGroupingTests.swift in Sources */,
+				E1A666666666666666666666 /* OCRRecognitionExecutorTests.swift in Sources */,
 				E1A333333333333333333333 /* ParagraphOverlayLayoutTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
