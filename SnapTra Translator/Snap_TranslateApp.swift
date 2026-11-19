@@ -38,7 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private let modelContainerDidFallBackToMemory: Bool
     private var backgroundActivityToken: NSObjectProtocol?
     @MainActor private lazy var model: AppModel = {
-        AppModel(modelContext: modelContainer.mainContext)
+        // Keep the app model and UpdateChecker on the same settings instance.
+        AppModel(settings: SettingsStore.shared, modelContext: modelContainer.mainContext)
     }()
     private var cancellables = Set<AnyCancellable>()
     private var statusItem: NSStatusItem?

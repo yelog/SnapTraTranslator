@@ -70,6 +70,8 @@ xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" 
 xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" clean
 ```
 
+Debug 构建为本地辅助功能调试使用非沙盒模式，Release App Store 构建使用沙盒模式。macOS 会分别保存两者的偏好设置，开发时请保持使用同一种构建配置，以确保读取的是同一份设置。
+
 ## 使用方法
 
 1. **授予权限** - 启动应用，按提示授予屏幕录制权限

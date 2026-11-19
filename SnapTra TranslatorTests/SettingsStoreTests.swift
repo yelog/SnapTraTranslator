@@ -23,6 +23,7 @@ final class LookupLanguagePairTests: XCTestCase {
 
 @MainActor
 final class SettingsStoreMigrationTests: XCTestCase {
+    private var isolatedSuiteName: String?
     private let testKeys: [String] = [
         AppSettingKey.playPronunciation,
         AppSettingKey.playWordPronunciation,
@@ -67,6 +68,7 @@ final class SettingsStoreMigrationTests: XCTestCase {
 
     private func makeDefaults(testName: String = #function) -> UserDefaults {
         let suiteName = "SettingsStoreMigrationTests.\(testName)"
+        isolatedSuiteName = suiteName
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         reset(defaults)
@@ -74,7 +76,12 @@ final class SettingsStoreMigrationTests: XCTestCase {
     }
 
     override func tearDown() {
-        reset(.standard)
+        // The test target is app-hosted, so .standard is the real app domain.
+        if let isolatedSuiteName,
+           let defaults = UserDefaults(suiteName: isolatedSuiteName) {
+            defaults.removePersistentDomain(forName: isolatedSuiteName)
+        }
+        isolatedSuiteName = nil
         super.tearDown()
     }
 
@@ -489,6 +496,51 @@ final class SettingsStoreMigrationTests: XCTestCase {
         let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
 
         XCTAssertTrue(settings.keepWordOverlayAfterTap)
+    }
+
+    func testTestDefaultsUseIsolatedSuite() {
+        let defaults = makeDefaults()
+
+        XCTAssertFalse(defaults === UserDefaults.standard)
+        XCTAssertTrue(isolatedSuiteName?.hasPrefix("SettingsStoreMigrationTests.") == true)
+    }
+
+    func testSettingsPersistAcrossStoreInstances() {
+        let defaults = makeDefaults()
+        let first = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        first.singleKey = .rightOption
+        first.sourceLanguage = "ja"
+        first.targetLanguage = "ko"
+        first.learningEnabled = false
+
+        var sources = first.dictionarySources
+        if let systemSourceIndex = sources.firstIndex(where: { $0.type == .system }) {
+            sources[systemSourceIndex].isEnabled = false
+            first.dictionarySources = sources
+        }
+
+        let second = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertEqual(second.singleKey, .rightOption)
+        XCTAssertEqual(second.sourceLanguage, "ja")
+        XCTAssertEqual(second.targetLanguage, "ko")
+        XCTAssertFalse(second.learningEnabled)
+        XCTAssertEqual(
+            second.dictionarySources.first(where: { $0.type == .system })?.isEnabled,
+            false
+        )
+    }
+
+    func testIsolatedStoreDoesNotWriteToStandardDefaults() {
+        let standard = UserDefaults.standard
+        let standardSingleKey = standard.string(forKey: AppSettingKey.singleKey)
+        let defaults = makeDefaults()
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        settings.singleKey = .rightOption
+
+        XCTAssertEqual(standard.string(forKey: AppSettingKey.singleKey), standardSingleKey)
     }
 }
 

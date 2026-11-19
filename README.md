@@ -74,6 +74,8 @@ xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" 
 xcodebuild -project "SnapTra Translator.xcodeproj" -scheme "SnapTra Translator" clean
 ```
 
+Debug builds run unsandboxed for local accessibility testing, while Release App Store builds run sandboxed. macOS stores their preferences in separate locations, so use the same build configuration while developing to keep the same settings store.
+
 ## Usage
 
 1. **Grant permissions** - Launch the app and grant Screen Recording permission when prompted

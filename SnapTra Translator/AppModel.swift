@@ -620,10 +620,9 @@ final class AppModel: ObservableObject {
     }
 
     @MainActor
-    init(settings: SettingsStore? = nil, permissions: PermissionManager? = nil, modelContext: ModelContext) {
-        let resolvedSettings = settings ?? SettingsStore()
+    init(settings: SettingsStore, permissions: PermissionManager? = nil, modelContext: ModelContext) {
         let resolvedPermissions = permissions ?? PermissionManager()
-        self.settings = resolvedSettings
+        self.settings = settings
         self.permissions = resolvedPermissions
         self.translationBridge = TranslationBridge()
         self.modelContext = modelContext
@@ -638,7 +637,7 @@ final class AppModel: ObservableObject {
         )
 
         // Forward SettingsStore changes to AppModel so SwiftUI redraws
-        resolvedSettings.objectWillChange
+        settings.objectWillChange
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
             }
@@ -702,7 +701,7 @@ final class AppModel: ObservableObject {
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
             }
-        hotkeyManager.start(singleKey: resolvedSettings.singleKey)
+        hotkeyManager.start(singleKey: settings.singleKey)
         paragraphHighlightWindowController.onResizeBegan = { [weak self] in
             Task { @MainActor in
                 self?.handleParagraphRegionResizeBegan()
