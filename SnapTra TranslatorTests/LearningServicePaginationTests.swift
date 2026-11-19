@@ -291,6 +291,48 @@ final class LearningServicePaginationTests: XCTestCase {
         XCTAssertEqual(result, .unchanged)
     }
 
+    func testDisablingRecordingPreventsNewLookupsAndLateDefinitionUpdates() async throws {
+        let context = try makeModelContext()
+        var isRecordingEnabled = true
+        let service = LearningService(
+            modelContext: context,
+            isRecordingEnabled: { isRecordingEnabled }
+        )
+
+        await service.recordLookup(word: "hello", sourceLanguageIdentifier: "en")
+
+        isRecordingEnabled = false
+        await service.recordLookup(word: "hello", sourceLanguageIdentifier: "en")
+        await service.recordLookup(word: "bonjour", sourceLanguageIdentifier: "fr")
+        let updateResult = await service.updateDefinition(
+            word: "hello",
+            definitionText: "greeting"
+        )
+
+        let records = try context.fetch(FetchDescriptor<WordRecord>())
+        XCTAssertEqual(updateResult, .unchanged)
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records.first?.word, "hello")
+        XCTAssertEqual(records.first?.lookupCount, 1)
+        XCTAssertNil(records.first?.definitionText)
+    }
+
+    func testClearAllDataStillWorksWhenRecordingIsDisabled() async throws {
+        let context = try makeModelContext()
+        try insertWords(count: 3, into: context)
+        let service = LearningService(
+            modelContext: context,
+            isRecordingEnabled: { false }
+        )
+
+        let cleared = await service.clearAllData()
+
+        XCTAssertTrue(cleared)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<WordRecord>()), 0)
+        XCTAssertEqual(service.totalWordCount, 0)
+        XCTAssertTrue(service.visibleRows.isEmpty)
+    }
+
     func testDefinitionUpdateReportsInsertedUpdatedAndUnchanged() async throws {
         let context = try makeModelContext()
         let service = LearningService(modelContext: context)

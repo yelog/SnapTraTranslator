@@ -451,6 +451,9 @@ final class SettingsStore: ObservableObject {
     }
     #endif
 
+    @Published var learningEnabled: Bool {
+        didSet { defaults.set(learningEnabled, forKey: AppSettingKey.learningEnabled) }
+    }
     @Published var learningMaxRecords: Int {
         didSet { defaults.set(learningMaxRecords, forKey: AppSettingKey.learningMaxRecords) }
     }
@@ -583,7 +586,10 @@ final class SettingsStore: ObservableObject {
         debugShowChannelSelector = debugShowChannelSelectorValue ?? false
         #endif
 
-        // Load learning cleanup settings
+        // Load learning settings
+        let learningEnabledValue = defaults.object(forKey: AppSettingKey.learningEnabled) as? Bool
+        learningEnabled = learningEnabledValue ?? true
+
         let learningMaxRecordsValue = defaults.object(forKey: AppSettingKey.learningMaxRecords) as? Int
         learningMaxRecords = learningMaxRecordsValue ?? 5000
 
@@ -635,6 +641,7 @@ final class SettingsStore: ObservableObject {
         #if DEBUG
         defaults.set(debugShowChannelSelector, forKey: AppSettingKey.debugShowChannelSelector)
         #endif
+        defaults.set(learningEnabled, forKey: AppSettingKey.learningEnabled)
         defaults.set(learningMaxRecords, forKey: AppSettingKey.learningMaxRecords)
         defaults.set(learningCleanupDays, forKey: AppSettingKey.learningCleanupDays)
         defaults.set(learningAutoCleanup, forKey: AppSettingKey.learningAutoCleanup)

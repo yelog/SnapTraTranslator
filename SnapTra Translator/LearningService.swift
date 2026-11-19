@@ -38,6 +38,7 @@ enum LearningDefinitionUpdateResult: Equatable {
 @MainActor
 final class LearningService: ObservableObject {
     private let modelContext: ModelContext
+    private let isRecordingEnabled: @MainActor () -> Bool
 
     @Published var visibleWords: [WordRecord] = []
     @Published var visibleRows: [WordRecordRowModel] = []
@@ -64,8 +65,12 @@ final class LearningService: ObservableObject {
         visibleWords.first { $0.word == word }
     }
 
-    init(modelContext: ModelContext) {
+    init(
+        modelContext: ModelContext,
+        isRecordingEnabled: @escaping @MainActor () -> Bool = { true }
+    ) {
         self.modelContext = modelContext
+        self.isRecordingEnabled = isRecordingEnabled
     }
 
     func refreshSummaryCounts() async {
@@ -156,6 +161,7 @@ final class LearningService: ObservableObject {
     }
 
     func recordLookup(word: String, definitionText: String? = nil, sourceLanguageIdentifier: String? = nil) async {
+        guard isRecordingEnabled() else { return }
         let normalizedWord = word.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedWord.isEmpty else { return }
         let normalizedLanguage = Self.normalizedLanguageIdentifier(sourceLanguageIdentifier)
@@ -188,6 +194,7 @@ final class LearningService: ObservableObject {
         word: String,
         definitionText: String?
     ) async -> LearningDefinitionUpdateResult {
+        guard isRecordingEnabled() else { return .unchanged }
         let normalizedWord = word.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedWord.isEmpty else { return .unchanged }
 
@@ -252,7 +259,8 @@ final class LearningService: ObservableObject {
         }
     }
 
-    func clearAllData() async {
+    @discardableResult
+    func clearAllData() async -> Bool {
         do {
             try modelContext.delete(model: WordRecord.self)
             try modelContext.save()
@@ -264,8 +272,10 @@ final class LearningService: ObservableObject {
             masteredCount = 0
             currentOffset = 0
             hasMoreWords = false
+            return true
         } catch {
             print("Failed to clear all word records: \(error)")
+            return false
         }
     }
 

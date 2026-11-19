@@ -238,6 +238,7 @@ enum AppSettingKey {
     static let showMenuBarIcon = "showMenuBarIcon"
     static let menuBarIconStyle = "menuBarIconStyle"
     static let showDockIcon = "showDockIcon"
+    static let learningEnabled = "learningEnabled"
     static let learningMaxRecords = "learningMaxRecords"
     static let learningCleanupDays = "learningCleanupDays"
     static let learningAutoCleanup = "learningAutoCleanup"

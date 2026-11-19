@@ -496,7 +496,10 @@ final class AppModel: ObservableObject {
     let permissions: PermissionManager
     let translationBridge: TranslationBridge
     var modelContext: ModelContext
-    lazy var learningService = LearningService(modelContext: modelContext)
+    lazy var learningService = LearningService(
+        modelContext: modelContext,
+        isRecordingEnabled: { [weak self] in self?.settings.learningEnabled ?? false }
+    )
     private var _languagePackManager: Any?
 
     @available(macOS 15.0, *)
@@ -1527,6 +1530,8 @@ final class AppModel: ObservableObject {
             sourceLanguageIdentifier: languagePair.sourceIdentifier
         )
         updateOverlay(state: .result(initialContent), anchor: mouseLocation)
+
+        guard settings.learningEnabled else { return }
 
         await LearningLookupPersistenceCoordinator.run(
             recordLookup: { [learningService] in

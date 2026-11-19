@@ -10,10 +10,14 @@ struct LearningSettingsView: View {
     @State private var searchText = ""
     @State private var filterMode: LearningWordFilter = .all
     @State private var sourceLanguageFilter: String?
+    @State private var showingDisableConfirmation = false
     @State private var showingClearConfirmation = false
     @State private var showingCleanupConfirmation = false
     @State private var showingCleanupSettings = false
+    @State private var disableRecordCount = 0
+    @State private var isCheckingDisableAvailability = false
     @State private var cleanupResultMessage: String?
+    @State private var cleanupResultIsError = false
     @State private var exportResultMessage: String?
     @State private var searchTask: Task<Void, Never>?
 
@@ -25,6 +29,9 @@ struct LearningSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             headerRow
+            if !model.settings.learningEnabled {
+                learningDisabledNotice
+            }
             searchAndFilterBar
             wordListView
         }
@@ -71,12 +78,31 @@ struct LearningSettingsView: View {
         ) {
             Button(L("Clear All"), role: .destructive) {
                 Task {
-                    await learningService.clearAllData()
+                    let cleared = await learningService.clearAllData()
+                    cleanupResultIsError = !cleared
+                    cleanupResultMessage = cleared
+                        ? L("Learning data cleared")
+                        : L("Failed to clear learning data")
                 }
             }
             Button(L("Cancel"), role: .cancel) {}
         } message: {
             Text(L("This will delete all word records. This action cannot be undone."))
+        }
+        .confirmationDialog(
+            L("Turn Off Word Learning?"),
+            isPresented: $showingDisableConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(L("Turn Off and Keep Records")) {
+                model.settings.learningEnabled = false
+            }
+            Button(L("Turn Off and Clear Records"), role: .destructive) {
+                turnOffLearningAndClearRecords()
+            }
+            Button(L("Cancel"), role: .cancel) {}
+        } message: {
+            Text(L("There are %lld saved words. New lookups won't be recorded after you turn this off. Clear the existing records as well?", disableRecordCount))
         }
     }
 
@@ -110,7 +136,7 @@ struct LearningSettingsView: View {
             }
 
             if let message = cleanupResultMessage {
-                statusMessage(message, color: .green) {
+                statusMessage(message, color: cleanupResultIsError ? .red : .green) {
                     cleanupResultMessage = nil
                 }
             }
@@ -169,8 +195,38 @@ struct LearningSettingsView: View {
 
             Spacer()
 
+            Toggle(L("Enable"), isOn: learningEnabledBinding)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .fixedSize()
+                .disabled(isCheckingDisableAvailability)
+                .accessibilityLabel(L("Enable Word Learning"))
+
             managementMenu
         }
+    }
+
+    private var learningDisabledNotice: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "pause.circle.fill")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("Word Learning is Off"))
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Text(L("New word lookups won't be recorded. Existing records can still be reviewed, exported, or deleted."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var searchAndFilterBar: some View {
@@ -189,7 +245,7 @@ struct LearningSettingsView: View {
             }
 
             if let message = cleanupResultMessage, !showingCleanupSettings {
-                statusMessage(message, color: .green) {
+                statusMessage(message, color: cleanupResultIsError ? .red : .green) {
                     cleanupResultMessage = nil
                 }
             }
@@ -397,13 +453,17 @@ struct LearningSettingsView: View {
 
     private var emptyStateView: some View {
         VStack(spacing: 12) {
-            Image(systemName: "book.closed")
+            Image(systemName: model.settings.learningEnabled ? "book.closed" : "pause.circle")
                 .font(.system(size: 48))
                 .foregroundStyle(.tertiary)
-            Text(L("No words yet"))
+            Text(model.settings.learningEnabled ? L("No words yet") : L("Word Learning is Off"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            Text(L("Words you look up will appear here. Hold the hotkey and move your cursor over English words to start learning."))
+            Text(
+                model.settings.learningEnabled
+                    ? L("Words you look up will appear here. Hold the hotkey and move your cursor over English words to start learning.")
+                    : L("Turn word learning back on to record words you look up.")
+            )
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -465,7 +525,52 @@ struct LearningSettingsView: View {
                 maxRecords: model.settings.learningMaxRecords,
                 cleanupDays: model.settings.learningCleanupDays
             )
+            cleanupResultIsError = false
             cleanupResultMessage = L("Deleted %lld records", deleted)
+        }
+    }
+
+    private var learningEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { model.settings.learningEnabled },
+            set: { isEnabled in
+                if isEnabled {
+                    model.settings.learningEnabled = true
+                } else {
+                    requestDisableLearning()
+                }
+            }
+        )
+    }
+
+    private func requestDisableLearning() {
+        guard model.settings.learningEnabled, !isCheckingDisableAvailability else { return }
+        isCheckingDisableAvailability = true
+
+        Task {
+            let count = await learningService.fetchTotalCount()
+            isCheckingDisableAvailability = false
+
+            guard model.settings.learningEnabled else { return }
+            guard count > 0 else {
+                model.settings.learningEnabled = false
+                return
+            }
+
+            disableRecordCount = count
+            showingDisableConfirmation = true
+        }
+    }
+
+    private func turnOffLearningAndClearRecords() {
+        model.settings.learningEnabled = false
+
+        Task {
+            let cleared = await learningService.clearAllData()
+            cleanupResultIsError = !cleared
+            cleanupResultMessage = cleared
+                ? L("Learning data cleared")
+                : L("Failed to clear learning data")
         }
     }
 

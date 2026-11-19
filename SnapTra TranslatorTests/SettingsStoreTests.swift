@@ -55,6 +55,10 @@ final class SettingsStoreMigrationTests: XCTestCase {
         AppSettingKey.autoCheckUpdates,
         AppSettingKey.updateChannel,
         AppSettingKey.debugShowChannelSelector,
+        AppSettingKey.learningEnabled,
+        AppSettingKey.learningMaxRecords,
+        AppSettingKey.learningCleanupDays,
+        AppSettingKey.learningAutoCleanup,
         "dictionarySources",
         "sentenceTranslationSources",
         "llmProviderConfigurations",
@@ -295,6 +299,27 @@ final class SettingsStoreMigrationTests: XCTestCase {
         let isEnabled = SettingsStore.loadBidirectionalTranslationEnabled(defaults: defaults)
 
         XCTAssertTrue(isEnabled)
+    }
+
+    func testLearningDefaultsToEnabled() {
+        let defaults = makeDefaults()
+
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertTrue(settings.learningEnabled)
+        XCTAssertEqual(
+            defaults.object(forKey: AppSettingKey.learningEnabled) as? Bool,
+            true
+        )
+    }
+
+    func testLoadsPersistedLearningEnabledSetting() {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: AppSettingKey.learningEnabled)
+
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+
+        XCTAssertFalse(settings.learningEnabled)
     }
 
     func testMenuBarIconStyleDefaultsToAuto() {
