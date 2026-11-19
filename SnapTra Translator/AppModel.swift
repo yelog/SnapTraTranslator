@@ -1531,8 +1531,6 @@ final class AppModel: ObservableObject {
         )
         updateOverlay(state: .result(initialContent), anchor: mouseLocation)
 
-        guard settings.learningEnabled else { return }
-
         await LearningLookupPersistenceCoordinator.run(
             recordLookup: { [learningService] in
                 performance?.begin(.learningRecord)
