@@ -3523,7 +3523,6 @@ final class AppModel: ObservableObject {
             }
             if overlayWindowController.isVisible {
                 overlayWindowController.move(to: anchor)
-                overlayWindowController.refreshLayoutIfNeeded(at: anchor)
             }
             return
         }
@@ -4308,7 +4307,7 @@ final class AppModel: ObservableObject {
         overlayLayoutRefreshWorkItem = nil
     }
 
-    private func refreshParagraphOverlayLayoutImmediately() {
+    func refreshParagraphOverlayLayoutImmediately() {
         guard overlayWindowController.isVisible else { return }
 
         cancelPendingOverlayLayoutRefresh()
@@ -4324,16 +4323,7 @@ final class AppModel: ObservableObject {
             return
         }
 
-        if overlayWindowController.hasManualParagraphPosition {
-            overlayWindowController.refreshLayoutIfNeeded(at: overlayAnchor)
-            return
-        }
-
-        if let sentenceRect = activeParagraphRect {
-            overlayWindowController.alignToSentenceRect(sentenceRect, animated: animated)
-        } else {
-            overlayWindowController.refreshLayoutIfNeeded(at: overlayAnchor)
-        }
+        overlayWindowController.refreshLayoutIfNeeded(at: overlayAnchor, animated: animated)
     }
 
     private var isParagraphOverlayPresented: Bool {

@@ -1119,52 +1119,61 @@ enum WordOverlayLayout {
     }
 }
 
-enum ParagraphOverlayPlacement {
-    case below
-    case above
-}
-
-struct ParagraphOverlayLayoutResult {
-    let placement: ParagraphOverlayPlacement
-    let maxPanelHeight: CGFloat
-}
-
-enum ParagraphOverlayLayout {
-    static let gap: CGFloat = 8
+struct ParagraphOverlayLayout {
     static let edgeInset: CGFloat = 8
+    private static let gap: CGFloat = 8
+    private static let maximumHeightFraction: CGFloat = 0.72
+    private static let minimumAdjacentHeight: CGFloat = 280
 
-    static func resolve(
-        naturalPanelHeight: CGFloat,
-        spaceBelow: CGFloat,
-        spaceAbove: CGFloat
-    ) -> ParagraphOverlayLayoutResult {
-        let availableBelow = max(1, spaceBelow - gap - edgeInset)
-        let availableAbove = max(1, spaceAbove - gap - edgeInset)
+    let screenFrame: CGRect
+    let anchor: CGPoint
+    let sourceRect: CGRect?
 
-        if naturalPanelHeight <= availableBelow {
-            return ParagraphOverlayLayoutResult(
-                placement: .below,
-                maxPanelHeight: availableBelow
+    private var insetScreenFrame: CGRect {
+        let inset = min(Self.edgeInset, screenFrame.width / 4, screenFrame.height / 4)
+        return screenFrame.insetBy(dx: inset, dy: inset)
+    }
+
+    private var sourceBottom: CGFloat { sourceRect?.minY ?? anchor.y }
+    private var sourceTop: CGFloat { sourceRect?.maxY ?? anchor.y }
+    private var spaceBelow: CGFloat { sourceBottom - insetScreenFrame.minY - Self.gap }
+    private var spaceAbove: CGFloat { insetScreenFrame.maxY - sourceTop - Self.gap }
+
+    var maxPanelSize: CGSize {
+        let screenHeightLimit = min(insetScreenFrame.height, floor(screenFrame.height * Self.maximumHeightFraction))
+        let heightLimit = if sourceRect != nil {
+            min(screenHeightLimit, max(Self.minimumAdjacentHeight, spaceBelow, spaceAbove))
+        } else {
+            screenHeightLimit
+        }
+        return CGSize(width: insetScreenFrame.width, height: heightLimit)
+    }
+
+    func frame(for measuredSize: CGSize, manualTopLeft: CGPoint? = nil) -> CGRect {
+        let limit = maxPanelSize
+        let size = CGSize(
+            width: min(ceil(measuredSize.width), limit.width),
+            height: min(ceil(measuredSize.height), limit.height)
+        )
+        let origin: CGPoint
+        if let manualTopLeft {
+            origin = CGPoint(x: manualTopLeft.x, y: manualTopLeft.y - size.height)
+        } else {
+            let placesBelow = size.height <= spaceBelow || spaceBelow >= spaceAbove
+            origin = CGPoint(
+                x: sourceRect?.minX ?? (anchor.x + 12),
+                y: placesBelow ? sourceBottom - Self.gap - size.height : sourceTop + Self.gap
             )
         }
+        return CGRect(origin: clampedOrigin(origin, size: size), size: size)
+    }
 
-        if naturalPanelHeight <= availableAbove {
-            return ParagraphOverlayLayoutResult(
-                placement: .above,
-                maxPanelHeight: availableAbove
-            )
-        }
-
-        if availableBelow >= availableAbove {
-            return ParagraphOverlayLayoutResult(
-                placement: .below,
-                maxPanelHeight: availableBelow
-            )
-        }
-
-        return ParagraphOverlayLayoutResult(
-            placement: .above,
-            maxPanelHeight: availableAbove
+    func clampedOrigin(_ origin: CGPoint, size: CGSize) -> CGPoint {
+        guard !screenFrame.isEmpty else { return origin }
+        let bounds = insetScreenFrame
+        return CGPoint(
+            x: min(max(origin.x, bounds.minX), max(bounds.minX, bounds.maxX - size.width)),
+            y: min(max(origin.y, bounds.minY), max(bounds.minY, bounds.maxY - size.height))
         )
     }
 }
@@ -1180,16 +1189,13 @@ final class OverlayWindowController: NSWindowController {
 
     private let model: AppModel
     private let hostingView: NSHostingView<AnyView>
-    private var measurementHostingView: NSHostingView<AnyView>?
     private var lastAnchor: CGPoint?
     private var manualOrigin: CGPoint?
     private var dragStartOrigin: CGPoint?
-    private var currentParagraphOverlayMaxHeight: CGFloat?
-    private var currentParagraphOverlayScrollingEnabled = false
+    private var paragraphOverlayMaxSize: CGSize?
     private var paragraphFrameAnimationTask: Task<Void, Never>?
     private var paragraphFrameAnimationID = UUID()
     private let frameTolerance: CGFloat = 0.5
-    private let paragraphOverlayRenderedHeightSafetyInset: CGFloat = 8
     private let paragraphFrameAnimationDuration: TimeInterval = 0.18
     private let paragraphFrameAnimationStepNanoseconds: UInt64 = 16_666_667
 
@@ -1197,8 +1203,13 @@ final class OverlayWindowController: NSWindowController {
         dragStartOrigin != nil
     }
 
-    var hasManualParagraphPosition: Bool {
-        manualOrigin != nil
+    private var isParagraphOverlay: Bool {
+        switch model.overlayState {
+        case .paragraphLoading, .paragraphResult:
+            return true
+        default:
+            return false
+        }
     }
 
     init(model: AppModel) {
@@ -1266,10 +1277,7 @@ final class OverlayWindowController: NSWindowController {
         let wasVisible = window.isVisible
 
         if !wasVisible {
-            hostingView.rootView = overlayRootView(
-                paragraphOverlayMaxHeight: currentParagraphOverlayMaxHeight,
-                paragraphOverlayScrollingEnabled: currentParagraphOverlayScrollingEnabled
-            )
+            updateOverlayRootView()
         }
 
         let targetFrame = measuredFrame(for: anchor)
@@ -1305,90 +1313,15 @@ final class OverlayWindowController: NSWindowController {
         cancelParagraphFrameAnimation()
         guard window.isVisible else { return }
 
+        if isParagraphOverlay {
+            applyFrameIfNeeded(paragraphFrame(for: anchor))
+            return
+        }
+
         let screenFrame = visibleScreenFrame(for: anchor)
         let origin = anchoredOrigin(for: anchor, size: window.frame.size, in: screenFrame)
         let targetFrame = CGRect(origin: origin, size: window.frame.size)
         applyFrameIfNeeded(targetFrame)
-    }
-
-    /// 将面板对齐到句子矩形（正上方或正下方，取决于哪侧空间更大）
-    func alignToSentenceRect(_ sentenceRect: CGRect, animated: Bool = true) {
-        guard window != nil else { return }
-
-        // 取句子中心点所在屏幕
-        let midPoint = CGPoint(x: sentenceRect.midX, y: sentenceRect.midY)
-        let screen = NSScreen.screens.first(where: {
-            NSMouseInRect(midPoint, $0.frame, false)
-        }) ?? NSScreen.main
-        let screenFrame = screen?.visibleFrame ?? .zero
-
-        // AppKit Y 轴向上：minY 是物理下边，maxY 是物理上边
-        let gap = ParagraphOverlayLayout.gap
-        let spaceBelow = sentenceRect.minY - screenFrame.minY
-        let spaceAbove = screenFrame.maxY - sentenceRect.maxY
-        let naturalSize = measureParagraphOverlaySize(
-            maxHeight: nil,
-            scrollingEnabled: false
-        )
-        let correctedNaturalHeight = naturalSize.height + paragraphOverlayRenderedHeightSafetyInset
-        let layout = ParagraphOverlayLayout.resolve(
-            naturalPanelHeight: correctedNaturalHeight,
-            spaceBelow: spaceBelow,
-            spaceAbove: spaceAbove
-        )
-        let requiresScrolling = correctedNaturalHeight > layout.maxPanelHeight + frameTolerance
-        let finalMaxHeight = requiresScrolling ? layout.maxPanelHeight : nil
-        let measuredContentSize = measureParagraphOverlaySize(
-            maxHeight: finalMaxHeight,
-            scrollingEnabled: requiresScrolling
-        )
-        applyParagraphOverlayLayout(
-            maxHeight: finalMaxHeight,
-            scrollingEnabled: requiresScrolling
-        )
-
-        if hasManualParagraphPosition {
-            let targetFrame = measuredFrame(for: CGPoint(x: sentenceRect.midX, y: sentenceRect.midY))
-            applyFrameIfNeeded(targetFrame)
-            return
-        }
-
-        let displayedContentSize = currentRenderedParagraphOverlaySize()
-        let contentSize = CGSize(
-            width: max(measuredContentSize.width, displayedContentSize.width),
-            height: max(measuredContentSize.height, displayedContentSize.height)
-                + paragraphOverlayRenderedHeightSafetyInset
-        )
-
-        let panelWidth = contentSize.width
-        let panelHeight = contentSize.height
-
-        let desiredY: CGFloat
-        switch layout.placement {
-        case .below:
-            // 句子正下方（面板顶边贴近句子底边）
-            desiredY = sentenceRect.minY - panelHeight - gap
-        case .above:
-            // 句子正上方（面板底边贴近句子顶边）
-            desiredY = sentenceRect.maxY + gap
-        }
-
-        // 水平左对齐句子，clamp 到屏幕范围内
-        let margin: CGFloat = 8
-        var panelX = sentenceRect.minX
-        panelX = max(screenFrame.minX + margin, panelX)
-        panelX = min(screenFrame.maxX - panelWidth - margin, panelX)
-
-        let minPanelY = screenFrame.minY + ParagraphOverlayLayout.edgeInset
-        let maxPanelY = screenFrame.maxY - panelHeight - ParagraphOverlayLayout.edgeInset
-        let panelY = min(max(desiredY, minPanelY), maxPanelY)
-        let targetFrame = CGRect(x: panelX, y: panelY, width: panelWidth, height: panelHeight)
-
-        if animated {
-            applyFrameAnimated(targetFrame)
-        } else {
-            applyFrameIfNeeded(targetFrame)
-        }
     }
 
     func beginManualPositioning() {
@@ -1411,8 +1344,12 @@ final class OverlayWindowController: NSWindowController {
             x: proposedOrigin.x + window.frame.width / 2,
             y: proposedOrigin.y + window.frame.height / 2
         )
-        let screenFrame = visibleScreenFrame(for: screenPoint)
-        let clamped = clampedOrigin(proposedOrigin, size: window.frame.size, in: screenFrame)
+        let layout = ParagraphOverlayLayout(
+            screenFrame: visibleScreenFrame(for: screenPoint),
+            anchor: screenPoint,
+            sourceRect: nil
+        )
+        let clamped = layout.clampedOrigin(proposedOrigin, size: window.frame.size)
 
         manualOrigin = clamped
         applyOriginIfNeeded(clamped)
@@ -1425,7 +1362,7 @@ final class OverlayWindowController: NSWindowController {
         dragStartOrigin = nil
     }
 
-    func refreshLayoutIfNeeded(at anchor: CGPoint? = nil) {
+    func refreshLayoutIfNeeded(at anchor: CGPoint? = nil, animated: Bool = false) {
         guard let window else { return }
         guard window.isVisible else {
             if let anchor {
@@ -1437,7 +1374,11 @@ final class OverlayWindowController: NSWindowController {
         let effectiveAnchor = anchor ?? lastAnchor ?? CGPoint(x: window.frame.midX, y: window.frame.maxY)
         lastAnchor = effectiveAnchor
         let targetFrame = measuredFrame(for: effectiveAnchor)
-        applyFrameIfNeeded(targetFrame)
+        if animated, isParagraphOverlay, manualOrigin == nil, model.activeParagraphRect != nil {
+            applyFrameAnimated(targetFrame)
+        } else {
+            applyFrameIfNeeded(targetFrame)
+        }
     }
 
     func hide() {
@@ -1445,92 +1386,59 @@ final class OverlayWindowController: NSWindowController {
         manualOrigin = nil
         dragStartOrigin = nil
         cancelParagraphFrameAnimation()
-        currentParagraphOverlayMaxHeight = nil
-        currentParagraphOverlayScrollingEnabled = false
+        paragraphOverlayMaxSize = nil
         hostingView.rootView = AnyView(EmptyView().environmentObject(model))
-        measurementHostingView = nil
         window?.orderOut(nil)
     }
 
     private func measuredFrame(for anchor: CGPoint) -> CGRect {
-        applyParagraphOverlayLayout(
-            maxHeight: currentParagraphOverlayMaxHeight,
-            scrollingEnabled: currentParagraphOverlayScrollingEnabled
-        )
-        hostingView.invalidateIntrinsicContentSize()
-        hostingView.layoutSubtreeIfNeeded()
-        let size = hostingView.fittingSize
-        let origin: CGPoint
-
-        if let manualOrigin {
-            let screenPoint = CGPoint(
-                x: manualOrigin.x + size.width / 2,
-                y: manualOrigin.y + size.height / 2
-            )
-            let screenFrame = visibleScreenFrame(for: screenPoint)
-            origin = clampedOrigin(manualOrigin, size: size, in: screenFrame)
-            self.manualOrigin = origin
-        } else {
-            let screenFrame = visibleScreenFrame(for: anchor)
-            origin = anchoredOrigin(for: anchor, size: size, in: screenFrame)
+        if isParagraphOverlay {
+            return paragraphFrame(for: anchor)
         }
 
+        let size = measuredContentSize()
+        let origin = anchoredOrigin(for: anchor, size: size, in: visibleScreenFrame(for: anchor))
         return CGRect(origin: origin, size: size)
     }
 
-    private func measureParagraphOverlaySize(
-        maxHeight: CGFloat?,
-        scrollingEnabled: Bool
-    ) -> CGSize {
-        let rootView = overlayRootView(
-            paragraphOverlayMaxHeight: maxHeight,
-            paragraphOverlayScrollingEnabled: scrollingEnabled
+    private func paragraphFrame(for anchor: CGPoint) -> CGRect {
+        let sourceRect = manualOrigin == nil ? model.activeParagraphRect : nil
+        let sourceCenter = sourceRect.map { CGPoint(x: $0.midX, y: $0.midY) }
+        let screenFrame = visibleScreenFrame(for: manualOrigin ?? sourceCenter ?? anchor)
+        let layout = ParagraphOverlayLayout(
+            screenFrame: screenFrame,
+            anchor: anchor,
+            sourceRect: sourceRect
         )
-        if measurementHostingView == nil {
-            measurementHostingView = NSHostingView(rootView: rootView)
-        } else {
-            measurementHostingView?.rootView = rootView
-        }
-        measurementHostingView?.invalidateIntrinsicContentSize()
-        measurementHostingView?.layoutSubtreeIfNeeded()
-        return measurementHostingView?.fittingSize ?? .zero
-    }
 
-    private func applyParagraphOverlayLayout(
-        maxHeight: CGFloat?,
-        scrollingEnabled: Bool
-    ) {
-        let requiresRootViewUpdate = currentParagraphOverlayMaxHeight != maxHeight
-            || currentParagraphOverlayScrollingEnabled != scrollingEnabled
-
-        if requiresRootViewUpdate {
-            currentParagraphOverlayMaxHeight = maxHeight
-            currentParagraphOverlayScrollingEnabled = scrollingEnabled
-            hostingView.rootView = overlayRootView(
-                paragraphOverlayMaxHeight: maxHeight,
-                paragraphOverlayScrollingEnabled: scrollingEnabled
-            )
+        let maxSize = screenFrame.isEmpty ? nil : layout.maxPanelSize
+        if paragraphOverlayMaxSize != maxSize {
+            paragraphOverlayMaxSize = maxSize
+            updateOverlayRootView()
         }
 
-        hostingView.invalidateIntrinsicContentSize()
-        hostingView.layoutSubtreeIfNeeded()
+        let measuredSize = measuredContentSize()
+        guard maxSize != nil else { return CGRect(origin: anchor, size: measuredSize) }
+
+        let manualTopLeft = manualOrigin.map {
+            CGPoint(x: $0.x, y: $0.y + (window?.frame.height ?? 0))
+        }
+        let frame = layout.frame(for: measuredSize, manualTopLeft: manualTopLeft)
+        if manualOrigin != nil {
+            manualOrigin = frame.origin
+        }
+        return frame
     }
 
-    private func currentRenderedParagraphOverlaySize() -> CGSize {
+    private func measuredContentSize() -> CGSize {
         hostingView.invalidateIntrinsicContentSize()
         hostingView.layoutSubtreeIfNeeded()
         return hostingView.fittingSize
     }
 
-    private func overlayRootView(
-        paragraphOverlayMaxHeight: CGFloat?,
-        paragraphOverlayScrollingEnabled: Bool = false
-    ) -> AnyView {
-        AnyView(
-            OverlayView(
-                paragraphOverlayMaxHeightOverride: paragraphOverlayMaxHeight,
-                paragraphOverlayScrollingEnabledOverride: paragraphOverlayScrollingEnabled
-            )
+    private func updateOverlayRootView() {
+        hostingView.rootView = AnyView(
+            OverlayView(paragraphOverlayMaxSize: paragraphOverlayMaxSize)
                 .environmentObject(model)
         )
     }

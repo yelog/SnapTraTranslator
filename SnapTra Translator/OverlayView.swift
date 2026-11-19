@@ -3,8 +3,7 @@ import SwiftUI
 import SwiftData
 
 struct OverlayView: View {
-    let paragraphOverlayMaxHeightOverride: CGFloat?
-    let paragraphOverlayScrollingEnabledOverride: Bool?
+    private let paragraphOverlayMaxSize: CGSize?
 
     @EnvironmentObject var model: AppModel
     @Environment(\.colorScheme) private var colorScheme
@@ -14,31 +13,22 @@ struct OverlayView: View {
     @State private var isParagraphOriginalEditorExpanded = false
     private let wordOverlayWidth: CGFloat = 380
     private let paragraphOverlayWidth: CGFloat = 520
-    private let paragraphHeaderHeight: CGFloat = 34
     private let compactSectionMinHeight: CGFloat = 28
     private let paragraphTextHorizontalPadding: CGFloat = 18
     private let wordHeaderHorizontalPadding: CGFloat = 18
     private let wordHeaderControlGroupWidth: CGFloat = 132
     private let wordHeaderControlGap: CGFloat = 12
 
-    init(
-        paragraphOverlayMaxHeightOverride: CGFloat? = nil,
-        paragraphOverlayScrollingEnabledOverride: Bool? = nil
-    ) {
-        self.paragraphOverlayMaxHeightOverride = paragraphOverlayMaxHeightOverride
-        self.paragraphOverlayScrollingEnabledOverride = paragraphOverlayScrollingEnabledOverride
+    init(paragraphOverlayMaxSize: CGSize? = nil) {
+        self.paragraphOverlayMaxSize = paragraphOverlayMaxSize
     }
 
     private var overlayWidth: CGFloat {
-        if let preferred = model.overlayPreferredWidth {
-            return preferred
+        if isParagraphOverlayMode {
+            let preferredWidth = model.overlayPreferredWidth ?? paragraphOverlayWidth
+            return min(preferredWidth, paragraphOverlayMaxSize?.width ?? preferredWidth)
         }
-        switch model.overlayState {
-        case .paragraphLoading, .paragraphResult:
-            return paragraphOverlayWidth
-        default:
-            return wordOverlayWidth
-        }
+        return model.overlayPreferredWidth ?? wordOverlayWidth
     }
 
     private var showsParagraphOverlayControls: Bool {
@@ -91,18 +81,6 @@ struct OverlayView: View {
         return true
     }
 
-    private var paragraphBodyMaxHeight: CGFloat? {
-        guard isParagraphOverlayMode,
-              let overlayMaxHeight = paragraphOverlayMaxHeightOverride else {
-            return nil
-        }
-        return max(1, overlayMaxHeight - paragraphHeaderHeight)
-    }
-
-    private var paragraphBodyUsesScrollView: Bool {
-        paragraphOverlayScrollingEnabledOverride ?? false
-    }
-
     private var showsExtendedDictionaryDetails: Bool {
         !model.settings.targetLanguage.hasPrefix("zh")
     }
@@ -142,6 +120,7 @@ struct OverlayView: View {
             }
         }
         .frame(width: overlayWidth, alignment: .leading)
+        .frame(maxHeight: isParagraphOverlayMode ? paragraphOverlayMaxSize?.height : nil, alignment: .topLeading)
         .background {
             ZStack {
                 // More opaque material so background content doesn't bleed through
@@ -248,7 +227,7 @@ struct OverlayView: View {
         VStack(alignment: .leading, spacing: 0) {
             paragraphTopBar()
 
-            paragraphBodyContainer {
+            ParagraphReadingViewport {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .center, spacing: 10) {
                         ProgressView()
@@ -317,7 +296,7 @@ struct OverlayView: View {
                 )
             }
 
-            paragraphBodyContainer {
+            ParagraphReadingViewport {
                 if showsAutoDismissFailure,
                    case .failed(let message) = content.translationState {
                     // Auto-dismiss error view for paragraph translation errors with no original text.
@@ -428,6 +407,9 @@ struct OverlayView: View {
                     }
                 }
             }
+        }
+        .onChange(of: originalVisibility) { _, _ in
+            model.refreshParagraphOverlayLayoutImmediately()
         }
     }
 
@@ -702,33 +684,6 @@ struct OverlayView: View {
             return "\(milliseconds)ms"
         }
         return String(format: "%.1fs", duration)
-    }
-
-    @ViewBuilder
-    private func paragraphBodyContainer<Content: View>(
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        Group {
-            if paragraphBodyUsesScrollView {
-                ScrollView {
-                    paragraphBodyContent(content: content)
-                }
-                .frame(maxHeight: paragraphBodyMaxHeight)
-            } else {
-                paragraphBodyContent(content: content)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func paragraphBodyContent<Content: View>(
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            content()
-        }
-        .padding(.bottom, 16)
     }
 
     @ViewBuilder
@@ -1829,6 +1784,59 @@ struct OverlayView: View {
 }
 
 // MARK: - Loading Dots Animation
+
+struct ParagraphReadingViewport<Content: View>: View {
+    private enum ScrollSpace {
+        case viewport
+    }
+
+    private nonisolated enum Overflow: Equatable, Sendable {
+        case none
+        case belowViewport
+        case atEnd
+    }
+
+    @State private var viewportHeight: CGFloat = 0
+    @State private var overflow: Overflow = .none
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        let viewportHeight = self.viewportHeight
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 0) {
+                content
+            }
+            .padding(.bottom, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onGeometryChange(for: Overflow.self) { geometry in
+                guard viewportHeight > 0, geometry.size.height > viewportHeight + 1 else { return .none }
+                let contentBottom = geometry.frame(in: .named(ScrollSpace.viewport)).maxY
+                return contentBottom > viewportHeight + 1 ? .belowViewport : .atEnd
+            } action: { overflow = $0 }
+        }
+        .coordinateSpace(name: ScrollSpace.viewport)
+        .scrollIndicators(.visible, axes: .vertical)
+        .scrollIndicatorsFlash(trigger: overflow != .none)
+        .scrollBounceBehavior(.basedOnSize, axes: .vertical)
+        .onGeometryChange(for: CGFloat.self, of: \.size.height) { height in
+            self.viewportHeight = height
+        }
+        .overlay(alignment: .bottom) {
+            if overflow == .belowViewport {
+                Rectangle()
+                    .fill(.regularMaterial)
+                    .mask(LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom))
+                    .frame(height: 14)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
 
 struct LoadingDotsView: View {
     @State private var animating = false

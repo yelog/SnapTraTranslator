@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import SnapTra_Translator
 
@@ -207,49 +208,145 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         )
     }
 
-    func testResolveKeepsPanelBelowWhenBelowSideFitsNaturalHeight() {
-        let result = ParagraphOverlayLayout.resolve(
-            naturalPanelHeight: 240,
-            spaceBelow: 520,
-            spaceAbove: 180
+    func testFitsShortParagraphBelowSourceWhenThereIsRoom() {
+        let sourceRect = CGRect(x: 200, y: 520, width: 400, height: 40)
+        let layout = ParagraphOverlayLayout(
+            screenFrame: CGRect(x: 0, y: 0, width: 1040, height: 800),
+            anchor: CGPoint(x: sourceRect.midX, y: sourceRect.midY),
+            sourceRect: sourceRect
         )
 
-        XCTAssertEqual(result.placement, .below)
         XCTAssertEqual(
-            result.maxPanelHeight,
-            520 - ParagraphOverlayLayout.gap - ParagraphOverlayLayout.edgeInset,
-            accuracy: 0.001
+            layout.frame(for: CGSize(width: 520, height: 240)),
+            CGRect(x: 200, y: 272, width: 520, height: 240)
         )
     }
 
-    func testResolveUsesAboveWhenOnlyAboveSideFitsNaturalHeight() {
-        let result = ParagraphOverlayLayout.resolve(
-            naturalPanelHeight: 240,
-            spaceBelow: 180,
-            spaceAbove: 520
+    func testFitsShortParagraphAboveSourceWhenSpaceBelowIsTooSmall() {
+        let sourceRect = CGRect(x: 200, y: 180, width: 400, height: 40)
+        let layout = ParagraphOverlayLayout(
+            screenFrame: CGRect(x: 0, y: 0, width: 1040, height: 800),
+            anchor: CGPoint(x: sourceRect.midX, y: sourceRect.midY),
+            sourceRect: sourceRect
         )
 
-        XCTAssertEqual(result.placement, .above)
         XCTAssertEqual(
-            result.maxPanelHeight,
-            520 - ParagraphOverlayLayout.gap - ParagraphOverlayLayout.edgeInset,
-            accuracy: 0.001
+            layout.frame(for: CGSize(width: 520, height: 240)),
+            CGRect(x: 200, y: 228, width: 520, height: 240)
         )
     }
 
-    func testResolveChoosesLargerSideWhenNeitherSideFitsNaturalHeight() {
-        let result = ParagraphOverlayLayout.resolve(
-            naturalPanelHeight: 640,
-            spaceBelow: 420,
-            spaceAbove: 300
+    func testCapsLongParagraphToLargerSideOfSource() {
+        let sourceRect = CGRect(x: 200, y: 420, width: 400, height: 80)
+        let layout = ParagraphOverlayLayout(
+            screenFrame: CGRect(x: 0, y: 0, width: 1040, height: 800),
+            anchor: CGPoint(x: sourceRect.midX, y: sourceRect.midY),
+            sourceRect: sourceRect
         )
 
-        XCTAssertEqual(result.placement, .below)
+        XCTAssertEqual(layout.maxPanelSize.height, 404)
         XCTAssertEqual(
-            result.maxPanelHeight,
-            420 - ParagraphOverlayLayout.gap - ParagraphOverlayLayout.edgeInset,
-            accuracy: 0.001
+            layout.frame(for: CGSize(width: 520, height: 640)),
+            CGRect(x: 200, y: 8, width: 520, height: 404)
         )
+    }
+
+    func testCapsLongSelectedTextAtScreenEdgesWithoutSourceRect() {
+        let screen = CGRect(x: -960, y: -120, width: 960, height: 680)
+        let layout = ParagraphOverlayLayout(
+            screenFrame: screen,
+            anchor: CGPoint(x: -4, y: 556),
+            sourceRect: nil
+        )
+        let inset = ParagraphOverlayLayout.edgeInset
+        let frame = layout.frame(for: CGSize(width: 1200, height: 3000))
+
+        XCTAssertEqual(layout.maxPanelSize, CGSize(width: 944, height: 489))
+        XCTAssertEqual(frame.size, layout.maxPanelSize)
+        XCTAssertTrue(screen.insetBy(dx: inset, dy: inset).contains(frame))
+    }
+
+    func testKeepsReadableHeightWhenSourceUsesAlmostEntireScreen() {
+        let screen = CGRect(x: 0, y: 0, width: 1040, height: 800)
+        let sourceRect = CGRect(x: 200, y: 20, width: 760, height: 760)
+        let layout = ParagraphOverlayLayout(
+            screenFrame: screen,
+            anchor: CGPoint(x: sourceRect.midX, y: sourceRect.midY),
+            sourceRect: sourceRect
+        )
+        let inset = ParagraphOverlayLayout.edgeInset
+        let frame = layout.frame(for: CGSize(width: 760, height: 1500))
+
+        XCTAssertEqual(frame.height, 280)
+        XCTAssertTrue(screen.insetBy(dx: inset, dy: inset).contains(frame))
+    }
+
+    func testDraggedPanelResizesToDestinationScreenAndKeepsTopLeftWhenItFits() {
+        let screen = CGRect(x: -480, y: 120, width: 480, height: 400)
+        let layout = ParagraphOverlayLayout(screenFrame: screen, anchor: .zero, sourceRect: nil)
+        let topLeft = CGPoint(x: -440, y: 480)
+
+        let shortFrame = layout.frame(for: CGSize(width: 380, height: 140), manualTopLeft: topLeft)
+        XCTAssertEqual(CGPoint(x: shortFrame.minX, y: shortFrame.maxY), topLeft)
+
+        let inset = ParagraphOverlayLayout.edgeInset
+        let largeFrame = layout.frame(for: CGSize(width: 900, height: 1800), manualTopLeft: topLeft)
+        XCTAssertEqual(largeFrame.size, CGSize(width: 464, height: 288))
+        XCTAssertEqual(largeFrame.maxY, topLeft.y)
+        XCTAssertTrue(screen.insetBy(dx: inset, dy: inset).contains(largeFrame))
+    }
+
+    @MainActor
+    func testReadingViewportFitsShortTextAndScrollsLongTextToTheEnd() throws {
+        let headerHeight: CGFloat = 38
+        let panelHeightLimit: CGFloat = 300
+        for lineCount in [3, 80] {
+            let text = (1...lineCount).map { "Translation paragraph \($0)" }.joined(separator: "\n")
+            let host = NSHostingView(rootView:
+                VStack(spacing: 0) {
+                    Text("Toolbar").frame(height: headerHeight)
+                    ParagraphReadingViewport {
+                        Text(text)
+                    }
+                }
+                .frame(width: 520)
+                .frame(maxHeight: panelHeightLimit, alignment: .topLeading)
+            )
+            let panel = NSPanel(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: false)
+            panel.contentView = host
+            panel.setContentSize(host.fittingSize)
+            panel.layoutIfNeeded()
+            host.layoutSubtreeIfNeeded()
+
+            let scrollView = try XCTUnwrap(firstScrollView(in: host))
+            let document = try XCTUnwrap(scrollView.documentView)
+            XCTAssertEqual(scrollView.frame.height, panel.frame.height - headerHeight, accuracy: 1)
+
+            if lineCount == 3 {
+                XCTAssertLessThan(panel.frame.height, panelHeightLimit)
+                XCTAssertEqual(scrollView.documentVisibleRect.height, document.bounds.height, accuracy: 1)
+            } else {
+                XCTAssertEqual(panel.frame.height, panelHeightLimit, accuracy: 1)
+                XCTAssertTrue(scrollView.hasVerticalScroller)
+                XCTAssertGreaterThan(document.bounds.height, scrollView.documentVisibleRect.height)
+                let initialViewport = scrollView.convert(scrollView.bounds, to: host)
+                let offset = document.bounds.height - scrollView.documentVisibleRect.height
+                scrollView.contentView.scroll(to: CGPoint(x: 0, y: document.isFlipped ? offset : 0))
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+
+                let visibleEnd = document.isFlipped
+                    ? scrollView.documentVisibleRect.maxY
+                    : scrollView.documentVisibleRect.minY
+                let documentEnd = document.isFlipped ? document.bounds.maxY : document.bounds.minY
+                XCTAssertEqual(visibleEnd, documentEnd, accuracy: 1)
+                XCTAssertEqual(scrollView.convert(scrollView.bounds, to: host), initialViewport)
+            }
+        }
+    }
+
+    @MainActor
+    private func firstScrollView(in view: NSView) -> NSScrollView? {
+        (view as? NSScrollView) ?? view.subviews.lazy.compactMap { self.firstScrollView(in: $0) }.first
     }
 
     func testAttributedBuilderUsesHangingIndentForListItems() throws {
