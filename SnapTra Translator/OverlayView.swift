@@ -7,14 +7,19 @@ struct OverlayView: View {
 
     @EnvironmentObject var model: AppModel
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
     @StateObject private var localizationManager = LocalizationManager.shared
-    @State private var isParagraphHeaderHovered = false
     @State private var isParagraphHeaderDragging = false
+    @State private var isParagraphLanguageDirectionHovered = false
     @State private var isParagraphOriginalEditorExpanded = false
     private let wordOverlayWidth: CGFloat = 380
-    private let paragraphOverlayWidth: CGFloat = 520
+    private let paragraphOverlayStandardWidth: CGFloat = 420
+    private let paragraphOverlayExpandedWidth: CGFloat = 500
+    private let paragraphExpandedOriginalTextThreshold = 128
     private let compactSectionMinHeight: CGFloat = 28
-    private let paragraphTextHorizontalPadding: CGFloat = 18
+    private let paragraphTextHorizontalPadding: CGFloat = 16
+    private let paragraphBodyFontSize: CGFloat = 15.5
     private let wordHeaderHorizontalPadding: CGFloat = 18
     private let wordHeaderControlGroupWidth: CGFloat = 132
     private let wordHeaderControlGap: CGFloat = 12
@@ -25,23 +30,48 @@ struct OverlayView: View {
 
     private var overlayWidth: CGFloat {
         if isParagraphOverlayMode {
-            let preferredWidth = model.overlayPreferredWidth ?? paragraphOverlayWidth
-            return min(preferredWidth, paragraphOverlayMaxSize?.width ?? preferredWidth)
+            let targetWidth = paragraphOverlayTargetWidth
+            guard let availableWidth = paragraphOverlayMaxSize?.width,
+                  availableWidth > 0 else {
+                return targetWidth
+            }
+            return min(targetWidth, availableWidth)
         }
-        return model.overlayPreferredWidth ?? wordOverlayWidth
+        return wordOverlayWidth
     }
 
-    private var showsParagraphOverlayControls: Bool {
-        switch model.overlayState {
-        case .paragraphLoading, .paragraphResult:
-            return true
-        default:
-            return !model.settings.continuousTranslation
+    private var paragraphHeightLimit: CGFloat? {
+        isParagraphOverlayMode ? paragraphOverlayMaxSize?.height : nil
+    }
+
+    private var paragraphOverlayTargetWidth: CGFloat {
+        guard case .paragraphResult(let content) = model.overlayState,
+              let originalText = content.originalText else {
+            return paragraphOverlayStandardWidth
         }
+
+        let trimmedText = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let usesExpandedWidth = trimmedText.count >= paragraphExpandedOriginalTextThreshold
+            || trimmedText.contains(where: { $0.isNewline })
+        return usesExpandedWidth ? paragraphOverlayExpandedWidth : paragraphOverlayStandardWidth
+    }
+
+    private var paragraphBodyFont: NSFont {
+        .systemFont(ofSize: paragraphBodyFontSize, weight: .regular)
+    }
+
+    private var paragraphBodyLineHeight: CGFloat {
+        paragraphBodyFontSize * 1.5
+    }
+
+    private var increasesContrast: Bool {
+        colorSchemeContrast == .increased
     }
 
     private var showsWordOverlayControls: Bool {
-        !model.settings.continuousTranslation || model.isTapKeptOverlayPresented
+        !model.settings.continuousTranslation
+            || model.isTapKeptOverlayPresented
+            || model.isManualInputModeActive
     }
 
     private var useSelectableWordText: Bool {
@@ -120,44 +150,36 @@ struct OverlayView: View {
             }
         }
         .frame(width: overlayWidth, alignment: .leading)
-        .frame(maxHeight: isParagraphOverlayMode ? paragraphOverlayMaxSize?.height : nil, alignment: .topLeading)
+        .frame(maxHeight: paragraphHeightLimit)
+        .fixedSize(horizontal: false, vertical: paragraphHeightLimit != nil)
+        .frame(maxHeight: paragraphHeightLimit, alignment: .topLeading)
         .background {
-            ZStack {
-                // More opaque material so background content doesn't bleed through
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.regularMaterial)
-                // Tint layer to reinforce system appearance over any background
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(colorScheme == .dark
-                        ? Color.black.opacity(0.25)
-                        : Color.white.opacity(0.25))
+            if isParagraphOverlayMode {
+                paragraphOverlayBackground
+            } else {
+                wordOverlayBackground
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .inset(by: 0.5)
-                .stroke(
-                    LinearGradient(
-                        colors: colorScheme == .dark
-                            ? [
-                                .white.opacity(0.4),
-                                .white.opacity(0.15),
-                                .white.opacity(0.08),
-                            ]
-                            : [
-                                .black.opacity(0.08),
-                                .black.opacity(0.05),
-                                .black.opacity(0.03),
-                            ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
+        .clipShape(RoundedRectangle(cornerRadius: overlayCornerRadius, style: .continuous))
+        .overlay {
+            if isParagraphOverlayMode {
+                paragraphOverlayBorder
+            } else {
+                wordOverlayBorder
+            }
+        }
+        .shadow(
+            color: .black.opacity(colorScheme == .dark ? 0.22 : 0.08),
+            radius: isParagraphOverlayMode ? 3 : 2,
+            x: 0,
+            y: 1
         )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.22 : 0.08), radius: 2, x: 0, y: 1)
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.06), radius: 14, x: 0, y: 8)
+        .shadow(
+            color: .black.opacity(colorScheme == .dark ? 0.18 : 0.06),
+            radius: isParagraphOverlayMode ? 24 : 14,
+            x: 0,
+            y: isParagraphOverlayMode ? 12 : 8
+        )
         .onChange(of: isParagraphOverlayMode) { _, isParagraphMode in
             if !isParagraphMode {
                 resetParagraphHeaderInteractionState()
@@ -178,6 +200,90 @@ struct OverlayView: View {
             resetParagraphHeaderInteractionState()
             resetParagraphOriginalEditorState()
         }
+    }
+
+    private var overlayCornerRadius: CGFloat {
+        isParagraphOverlayMode ? 18 : 16
+    }
+
+    private var wordOverlayBackground: some View {
+        ZStack {
+            // More opaque material so background content doesn't bleed through
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+            // Tint layer to reinforce system appearance over any background
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(colorScheme == .dark
+                    ? Color.black.opacity(0.25)
+                    : Color.white.opacity(0.25))
+        }
+    }
+
+    private var paragraphOverlayBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: overlayCornerRadius, style: .continuous)
+
+        return ZStack {
+            if accessibilityReduceTransparency {
+                shape
+                    .fill(Color(nsColor: .windowBackgroundColor))
+            } else if increasesContrast {
+                shape
+                    .fill(.thickMaterial)
+            } else {
+                shape
+                    .fill(.regularMaterial)
+            }
+
+            shape
+                .fill(colorScheme == .dark
+                    ? Color.black.opacity(increasesContrast ? 0.28 : 0.18)
+                    : Color.white.opacity(increasesContrast ? 0.30 : 0.20))
+        }
+    }
+
+    private var wordOverlayBorder: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .inset(by: 0.5)
+            .stroke(
+                LinearGradient(
+                    colors: colorScheme == .dark
+                        ? [
+                            .white.opacity(0.4),
+                            .white.opacity(0.15),
+                            .white.opacity(0.08),
+                        ]
+                        : [
+                            .black.opacity(0.08),
+                            .black.opacity(0.05),
+                            .black.opacity(0.03),
+                        ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1
+            )
+    }
+
+    private var paragraphOverlayBorder: some View {
+        RoundedRectangle(cornerRadius: overlayCornerRadius, style: .continuous)
+            .strokeBorder(
+                LinearGradient(
+                    colors: colorScheme == .dark
+                        ? [
+                            .white.opacity(increasesContrast ? 0.48 : 0.26),
+                            .white.opacity(increasesContrast ? 0.24 : 0.12),
+                            .white.opacity(increasesContrast ? 0.14 : 0.06),
+                        ]
+                        : [
+                            .black.opacity(increasesContrast ? 0.20 : 0.09),
+                            .black.opacity(increasesContrast ? 0.11 : 0.05),
+                            .black.opacity(increasesContrast ? 0.08 : 0.03),
+                        ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1
+            )
     }
 
     // MARK: - Loading View
@@ -225,27 +331,16 @@ struct OverlayView: View {
 
     private var paragraphLoadingView: some View {
         VStack(alignment: .leading, spacing: 0) {
-            paragraphTopBar()
+            paragraphLoadingTopBar
 
             ParagraphReadingViewport {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .center, spacing: 10) {
-                        ProgressView()
-                            .controlSize(.small)
-
-                        Text(L("Detecting text under cursor"))
-                            .font(.system(size: 15, weight: .medium, design: .rounded))
-                            .foregroundStyle(.primary)
-                    }
-
-                    Text(L("正在执行全屏 OCR 与段落定位"))
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.horizontal, 18)
-                .padding(.top, 2)
-                .padding(.vertical, 14)
+                Text(L("Detecting text under cursor"))
+                    .font(.system(size: paragraphBodyFontSize, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, paragraphTextHorizontalPadding)
+                    .padding(.top, 2)
+                    .padding(.bottom, 14)
             }
         }
     }
@@ -264,39 +359,24 @@ struct OverlayView: View {
             hasTranslationOutput: hasTranslationOutput
         )
         let showsAutoDismissFailure = !hasOriginalText && content.serviceResults.isEmpty && !originalVisibility.showsOriginalTextRegion
-        let originalFontSize: CGFloat = if content.useFixedFontSize {
-            content.bodyFontSize
-        } else {
-            ParagraphFontSizing.optimalFontSize(
-                preferredFontSize: content.bodyFontSize,
-                originalText: content.originalText,
-                containerWidth: overlayWidth,
-                horizontalPadding: paragraphTextHorizontalPadding
-            )
-        }
-        let translationFontSize: CGFloat = if originalVisibility.usesStableTranslationFont {
-            ParagraphFontSizing.stableFontSize(preferredFontSize: content.bodyFontSize)
-        } else {
-            originalFontSize
-        }
-        let showsLanguageSelectorInTopBar = !originalVisibility.showsOriginalTextRegion && hasParagraphLanguageSelector(content)
+        let sourceCount = paragraphConfiguredSourceCount(content)
+        let singleSourceReadyText = paragraphSingleSourceReadyText(content, sourceCount: sourceCount)
+        let singleSourceResult = paragraphSingleSourceResult(content, sourceCount: sourceCount)
+        let singleSourceType = paragraphSingleSourceType(content, sourceCount: sourceCount)
+        let showsPendingTranslations = paragraphHasPendingTranslations(content)
+        let hasTranslationOutputOrFailure = paragraphHasTranslationOutputOrFailure(content)
 
         VStack(alignment: .leading, spacing: 0) {
-            if originalVisibility.showsOriginalTextRegion {
-                paragraphOriginalTopBar(
-                    copyText: originalText,
-                    originalVisibility: originalVisibility,
-                    content: content
-                )
-            } else {
-                paragraphTopBar(
-                    originalVisibility: originalVisibility,
-                    languageSelectorContent: showsLanguageSelectorInTopBar ? content : nil,
-                    pronunciationContent: content
-                )
-            }
+            paragraphResultTopBar(
+                content: content,
+                originalText: originalText,
+                originalVisibility: originalVisibility,
+                copyText: singleSourceReadyText,
+                singleSourceResult: singleSourceResult,
+                replacementSourceType: singleSourceType
+            )
 
-            ParagraphReadingViewport {
+            ParagraphReadingViewport(isEditing: originalVisibility.usesEditableOriginalText) {
                 if showsAutoDismissFailure,
                    case .failed(let message) = content.translationState {
                     // Auto-dismiss error view for paragraph translation errors with no original text.
@@ -304,106 +384,41 @@ struct OverlayView: View {
                         .padding(.horizontal, paragraphTextHorizontalPadding)
                         .padding(.vertical, 18)
                 } else {
-                    if originalVisibility.showsOriginalTextRegion {
-                        VStack(alignment: .leading, spacing: 0) {
-                            paragraphOriginalTextView(
+                    VStack(alignment: .leading, spacing: 0) {
+                        if originalVisibility.showsOriginalTextRegion {
+                            paragraphOriginalSection(
                                 text: originalText,
-                                fontSize: originalFontSize,
                                 usesEditableOriginalText: originalVisibility.usesEditableOriginalText
                             )
-                            .padding(.top, originalVisibility.usesEditableOriginalText ? 2 : 4)
                         }
-                        .padding(.horizontal, paragraphTextHorizontalPadding)
-                        .padding(.bottom, 10)
-                    }
 
-                    if !showsLanguageSelectorInTopBar && (originalVisibility.showsOriginalTextRegion || hasParagraphLanguageSelector(content)) {
-                        paragraphLanguageSelector(content: content)
-                            .padding(.horizontal, paragraphTextHorizontalPadding)
-                            .padding(.bottom, originalVisibility.usesEditableOriginalText ? 6 : 2)
-                    }
+                        paragraphTranslationContent(
+                            content: content,
+                            originalVisibility: originalVisibility,
+                            sourceCount: sourceCount
+                        )
 
-                    if content.showsNativeTranslation {
-                        // Native Translation Section (System Translation)
-                        switch content.translationState {
-                        case .loading:
-                            VStack(alignment: .leading, spacing: 0) {
-                                HStack(spacing: 8) {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                    Text(L("Translating"))
-                                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                    LoadingDotsView()
-                                }
+                        if showsPendingTranslations {
+                            paragraphWaitingIndicator
+                        } else if !hasTranslationOutputOrFailure {
+                            paragraphNoTranslationResultView
+                        }
+
+                        if model.isWaitingForSelectedTextReplacementModifiers {
+                            Text(L("Release shortcut keys to replace."))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                                 .padding(.horizontal, paragraphTextHorizontalPadding)
-                                .padding(.vertical, 14)
-                            }
-
-                        case .ready(let translatedText):
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(alignment: .center, spacing: 8) {
-                                    Text(paragraphTranslationSectionTitle(for: content))
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(.secondary)
-
-                                    if content.isRetranslating {
-                                        ProgressView()
-                                            .controlSize(.small)
-                                            .scaleEffect(0.7)
-                                    }
-
-                                    CopyButton(text: translatedText)
-                                    if model.showsSelectedTextReplacement(using: .native) {
-                                        replaceSelectedTextButton(using: .native)
-                                    }
-                                }
-
-                                paragraphTextContent(
-                                    text: translatedText,
-                                    font: .systemFont(ofSize: translationFontSize, weight: .semibold),
-                                    textColor: content.isRetranslating ? .secondaryLabelColor : .labelColor,
-                                    preferredLineHeight: translationFontSize * 1.5
-                                )
-                            }
-                            .padding(.horizontal, paragraphTextHorizontalPadding)
-                            .padding(.top, originalVisibility.usesEditableOriginalText ? 12 : 14)
-                            .padding(.bottom, 14)
-
-                        case .failed(let message):
-                            VStack(alignment: .leading, spacing: 0) {
-                                paragraphErrorContent(message: L(message))
-                                    .padding(.horizontal, paragraphTextHorizontalPadding)
-                                    .padding(.vertical, 14)
-                            }
-                        }
-                    }
-
-                    // Third-party Service Results Section
-                    if !content.serviceResults.isEmpty {
-                        ForEach(content.serviceResults) { result in
-                            Divider()
+                                .padding(.vertical, 8)
+                        } else if let feedback = model.selectedTextReplacementFeedback {
+                            Text(feedback)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                                 .padding(.horizontal, paragraphTextHorizontalPadding)
-                                .opacity(0.6)
-
-                            paragraphServiceResultCard(result: result, fontSize: translationFontSize)
+                                .padding(.vertical, 8)
                         }
-                    }
-
-                    if model.isWaitingForSelectedTextReplacementModifiers {
-                        Text(L("Release shortcut keys to replace."))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, paragraphTextHorizontalPadding)
-                            .padding(.vertical, 8)
-                    } else if let feedback = model.selectedTextReplacementFeedback {
-                        Text(feedback)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, paragraphTextHorizontalPadding)
-                            .padding(.vertical, 8)
                     }
                 }
             }
@@ -414,9 +429,36 @@ struct OverlayView: View {
     }
 
     @ViewBuilder
+    private func paragraphOriginalSection(
+        text: String,
+        usesEditableOriginalText: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(paragraphOriginalSectionTitle)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+
+                if !text.isEmpty {
+                    CopyButton(text: text)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            paragraphOriginalTextView(
+                text: text,
+                usesEditableOriginalText: usesEditableOriginalText
+            )
+        }
+        .padding(.horizontal, paragraphTextHorizontalPadding)
+        .padding(.top, 2)
+        .padding(.bottom, 12)
+    }
+
+    @ViewBuilder
     private func paragraphOriginalTextView(
         text: String,
-        fontSize: CGFloat,
         usesEditableOriginalText: Bool
     ) -> some View {
         if usesEditableOriginalText {
@@ -425,12 +467,358 @@ struct OverlayView: View {
             if !text.isEmpty {
                 paragraphTextContent(
                     text: text,
-                    font: .systemFont(ofSize: fontSize, weight: .medium),
-                    textColor: .labelColor,
-                    preferredLineHeight: fontSize * 1.5
+                    font: paragraphBodyFont,
+                    textColor: .secondaryLabelColor,
+                    preferredLineHeight: paragraphBodyLineHeight
                 )
             }
         }
+    }
+
+    private func paragraphConfiguredSourceCount(_ content: ParagraphOverlayContent) -> Int {
+        (content.showsNativeTranslation ? 1 : 0) + content.serviceResults.count
+    }
+
+    private func paragraphSingleSourceReadyText(
+        _ content: ParagraphOverlayContent,
+        sourceCount: Int
+    ) -> String? {
+        guard sourceCount == 1 else { return nil }
+
+        guard let state = paragraphSingleSourceDisplayState(content),
+              case .ready(let text) = state,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return text
+    }
+
+    private func paragraphSingleSourceResult(
+        _ content: ParagraphOverlayContent,
+        sourceCount: Int
+    ) -> ServiceTranslationResult? {
+        guard sourceCount == 1, !content.showsNativeTranslation else { return nil }
+        return content.serviceResults.first
+    }
+
+    private func paragraphSingleSourceType(
+        _ content: ParagraphOverlayContent,
+        sourceCount: Int
+    ) -> SentenceTranslationSource.SourceType? {
+        guard sourceCount == 1 else { return nil }
+        if content.showsNativeTranslation {
+            return .native
+        }
+        return content.serviceResults.first?.sourceType
+    }
+
+    private func paragraphHasPendingTranslations(_ content: ParagraphOverlayContent) -> Bool {
+        if content.isRetranslating {
+            return true
+        }
+        if case .loading = content.translationState,
+           content.showsNativeTranslation || content.serviceResults.isEmpty {
+            return true
+        }
+        return content.serviceResults.contains { $0.state.isLoading }
+    }
+
+    private func paragraphHasTranslationOutputOrFailure(_ content: ParagraphOverlayContent) -> Bool {
+        if content.showsNativeTranslation,
+           Self.paragraphStateHasDisplayableContent(content.translationState) {
+            return true
+        }
+
+        if content.serviceResults.contains(where: {
+            Self.paragraphStateHasDisplayableContent($0.state)
+        }) {
+            return true
+        }
+
+        if !content.showsNativeTranslation,
+           content.serviceResults.isEmpty,
+           Self.paragraphStateHasDisplayableContent(content.translationState) {
+            return true
+        }
+
+        return false
+    }
+
+    private static func paragraphStateHasDisplayableContent(
+        _ state: TranslationResultState
+    ) -> Bool {
+        switch state {
+        case .loading:
+            return false
+
+        case .ready(let text):
+            return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        case .failed:
+            return true
+        }
+    }
+
+    @ViewBuilder
+    private func paragraphTranslationContent(
+        content: ParagraphOverlayContent,
+        originalVisibility: ParagraphOriginalVisibilityPolicy.Decision,
+        sourceCount: Int
+    ) -> some View {
+        if sourceCount <= 1 {
+            paragraphSingleSourceTranslationContent(
+                content: content,
+                originalVisibility: originalVisibility
+            )
+        } else {
+            paragraphMultiSourceTranslationContent(
+                content: content,
+                originalVisibility: originalVisibility
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func paragraphSingleSourceTranslationContent(
+        content: ParagraphOverlayContent,
+        originalVisibility: ParagraphOriginalVisibilityPolicy.Decision
+    ) -> some View {
+        if let state = paragraphSingleSourceDisplayState(content) {
+            switch state {
+            case .loading:
+                EmptyView()
+
+            case .ready(let translatedText):
+                if !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    paragraphTextContent(
+                        text: translatedText,
+                        font: paragraphBodyFont,
+                        textColor: content.isRetranslating ? .secondaryLabelColor : .labelColor,
+                        preferredLineHeight: paragraphBodyLineHeight
+                    )
+                    .padding(.horizontal, paragraphTextHorizontalPadding)
+                    .padding(.top, originalVisibility.showsOriginalTextRegion ? 0 : 2)
+                }
+
+            case .failed(let message):
+                paragraphErrorContent(message: L(message))
+                    .padding(.horizontal, paragraphTextHorizontalPadding)
+                    .padding(.top, originalVisibility.showsOriginalTextRegion ? 0 : 2)
+                    .padding(.bottom, 2)
+            }
+        }
+    }
+
+    private func paragraphSingleSourceDisplayState(
+        _ content: ParagraphOverlayContent
+    ) -> TranslationResultState? {
+        if content.showsNativeTranslation {
+            return content.translationState
+        }
+        if let result = content.serviceResults.first {
+            return result.state
+        }
+        return content.translationState
+    }
+
+    @ViewBuilder
+    private func paragraphMultiSourceTranslationContent(
+        content: ParagraphOverlayContent,
+        originalVisibility: ParagraphOriginalVisibilityPolicy.Decision
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if content.showsNativeTranslation {
+                switch content.translationState {
+                case .loading:
+                    EmptyView()
+
+                case .ready(let translatedText):
+                    if !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        paragraphMultiSourceResultRow(
+                            sourceType: .native,
+                            translatedText: translatedText,
+                            detailsResult: nil,
+                            usesStaleText: content.isRetranslating
+                        )
+                    }
+
+                case .failed(let message):
+                    paragraphMultiSourceErrorRow(
+                        sourceType: .native,
+                        message: L(message),
+                        detailsResult: nil
+                    )
+                }
+            }
+
+            ForEach(content.serviceResults) { result in
+                switch result.state {
+                case .loading:
+                    EmptyView()
+
+                case .ready(let translatedText):
+                    if !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        paragraphMultiSourceResultRow(
+                            sourceType: result.sourceType,
+                            translatedText: translatedText,
+                            detailsResult: result,
+                            usesStaleText: false
+                        )
+                    }
+
+                case .failed(let message):
+                    paragraphMultiSourceErrorRow(
+                        sourceType: result.sourceType,
+                        message: L(message),
+                        detailsResult: result
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, paragraphTextHorizontalPadding)
+        .padding(.top, originalVisibility.showsOriginalTextRegion ? 0 : 2)
+    }
+
+    private func paragraphMultiSourceResultRow(
+        sourceType: SentenceTranslationSource.SourceType,
+        translatedText: String,
+        detailsResult: ServiceTranslationResult?,
+        usesStaleText: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            paragraphMultiSourceHeader(
+                sourceType: sourceType,
+                copyText: translatedText,
+                detailsResult: detailsResult
+            )
+
+            paragraphTextContent(
+                text: translatedText,
+                font: paragraphBodyFont,
+                textColor: usesStaleText ? .secondaryLabelColor : .labelColor,
+                preferredLineHeight: paragraphBodyLineHeight
+            )
+        }
+    }
+
+    private func paragraphMultiSourceErrorRow(
+        sourceType: SentenceTranslationSource.SourceType,
+        message: String,
+        detailsResult: ServiceTranslationResult?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            paragraphMultiSourceHeader(
+                sourceType: sourceType,
+                copyText: nil,
+                detailsResult: detailsResult
+            )
+
+            paragraphErrorContent(message: message)
+        }
+    }
+
+    private func paragraphMultiSourceHeader(
+        sourceType: SentenceTranslationSource.SourceType,
+        copyText: String?,
+        detailsResult: ServiceTranslationResult?
+    ) -> some View {
+        HStack(alignment: .center, spacing: 5) {
+            Text(paragraphSourceShortName(sourceType))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 8)
+
+            if let copyText, !copyText.isEmpty {
+                CopyButton(text: copyText, usesSubtleHeaderStyle: true)
+
+                if model.showsSelectedTextReplacement(using: sourceType) {
+                    replaceSelectedTextButton(using: sourceType)
+                }
+            }
+
+            if let detailsResult {
+                paragraphSourceDetailsMenu(result: detailsResult)
+            }
+        }
+    }
+
+    private func paragraphSourceShortName(
+        _ sourceType: SentenceTranslationSource.SourceType
+    ) -> String {
+        switch sourceType {
+        case .native:
+            return L("System")
+        case .google:
+            return "Google"
+        case .bing:
+            return "Bing"
+        case .youdao:
+            return "Youdao"
+        case .openAI:
+            return "OpenAI"
+        case .anthropic:
+            return "Claude"
+        case .gemini:
+            return "Gemini"
+        case .deepSeek:
+            return "DeepSeek"
+        case .zhipu:
+            return L("Zhipu")
+        case .ollama:
+            return "Ollama"
+        case .omlx:
+            return "oMLX"
+        }
+    }
+
+    private func paragraphHasSourceDetails(_ result: ServiceTranslationResult) -> Bool {
+        if let modelName = result.modelName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !modelName.isEmpty {
+            return true
+        }
+        return result.duration != nil
+    }
+
+    @ViewBuilder
+    private func paragraphSourceDetailsMenu(result: ServiceTranslationResult) -> some View {
+        if paragraphHasSourceDetails(result) {
+            Menu {
+                if let modelName = result.modelName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !modelName.isEmpty {
+                    Text("\(L("Model")): \(modelName)")
+                }
+
+                if let duration = result.duration {
+                    Text("\(L("Translation time")): \(Self.formatTranslationDuration(duration))")
+                }
+            } label: {
+                paragraphMenuIcon
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(L("More"))
+            .accessibilityLabel(Text(L("More")))
+        }
+    }
+
+    private var paragraphWaitingIndicator: some View {
+        Text(L("Translating"))
+            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, paragraphTextHorizontalPadding)
+            .padding(.top, 6)
+    }
+
+    private var paragraphNoTranslationResultView: some View {
+        Text(L("No translation result"))
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, paragraphTextHorizontalPadding)
+            .padding(.top, 6)
     }
 
     private func editableParagraphOriginalTextView(text: String) -> some View {
@@ -438,10 +826,10 @@ struct OverlayView: View {
             EditableParagraphTextView(
                 text: text,
                 placeholder: L("Type or paste text to translate"),
-                font: .systemFont(ofSize: 14.5, weight: .regular),
+                font: paragraphBodyFont,
                 textColor: .labelColor,
                 placeholderColor: .placeholderTextColor,
-                preferredLineHeight: 21,
+                preferredLineHeight: paragraphBodyLineHeight,
                 onTextChange: { newText in
                     if newText != text {
                         model.updateParagraphOriginalText(newText)
@@ -475,187 +863,316 @@ struct OverlayView: View {
     }
 
     private var paragraphEditorFillColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.05) : Color.white.opacity(0.58)
+        if accessibilityReduceTransparency {
+            return Color(nsColor: .textBackgroundColor)
+        }
+
+        if colorScheme == .dark {
+            return Color.white.opacity(increasesContrast ? 0.075 : 0.05)
+        }
+        return Color.white.opacity(increasesContrast ? 0.72 : 0.58)
     }
 
     private var paragraphEditorStrokeColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.055)
+        colorScheme == .dark
+            ? Color.white.opacity(increasesContrast ? 0.20 : 0.10)
+            : Color.black.opacity(increasesContrast ? 0.14 : 0.055)
     }
 
     private var paragraphEditorShadowColor: Color {
         colorScheme == .dark ? Color.black.opacity(0.12) : Color.black.opacity(0.025)
     }
 
-    @ViewBuilder
-    private func paragraphLanguageSelector(content: ParagraphOverlayContent) -> some View {
-        if hasParagraphLanguageSelector(content) {
-            HStack {
+    private var paragraphLoadingTopBar: some View {
+        ZStack(alignment: .leading) {
+            paragraphHeaderDragArea()
+
+            HStack(spacing: 5) {
                 Spacer(minLength: 0)
 
-                paragraphLanguageSelectorCapsule(content: content)
+                if showsParagraphOverlayPinButton || !model.isParagraphOverlayPinned {
+                    paragraphLoadingMoreMenu
+                }
 
-                Spacer(minLength: 0)
+                paragraphPinnedCloseButton
             }
-        } else {
-            Divider()
-                .opacity(0.6)
         }
+        .frame(height: 24)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
     }
 
-    private func hasParagraphLanguageSelector(_ content: ParagraphOverlayContent) -> Bool {
-        content.languageOptions.count == 2 && content.selectedTargetLanguageIdentifier != nil
+    private func paragraphResultTopBar(
+        content: ParagraphOverlayContent,
+        originalText: String,
+        originalVisibility: ParagraphOriginalVisibilityPolicy.Decision,
+        copyText: String?,
+        singleSourceResult: ServiceTranslationResult?,
+        replacementSourceType: SentenceTranslationSource.SourceType?
+    ) -> some View {
+        ZStack(alignment: .leading) {
+            paragraphHeaderDragArea()
+
+            HStack(spacing: 4) {
+                if hasParagraphLanguageDirection(content) {
+                    paragraphLanguageDirectionButton(content: content)
+                }
+
+                Spacer(minLength: 8)
+
+                if let copyText, !copyText.isEmpty {
+                    CopyButton(text: copyText, usesSubtleHeaderStyle: true)
+                }
+
+                paragraphMoreMenu(
+                    originalVisibility: originalVisibility,
+                    originalText: originalText,
+                    singleSourceResult: singleSourceResult,
+                    replacementSourceType: replacementSourceType
+                )
+
+                paragraphPinnedCloseButton
+            }
+        }
+        .frame(height: 24)
+        .padding(.leading, 10)
+        .padding(.trailing, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
     }
 
     @ViewBuilder
-    private func paragraphLanguageSelectorCapsule(
-        content: ParagraphOverlayContent,
-        isCompact: Bool = false
+    private func paragraphMoreMenu(
+        originalVisibility: ParagraphOriginalVisibilityPolicy.Decision,
+        originalText: String,
+        singleSourceResult: ServiceTranslationResult?,
+        replacementSourceType: SentenceTranslationSource.SourceType?
+    ) -> some View {
+        let showsDetails = singleSourceResult.map { paragraphHasSourceDetails($0) } ?? false
+        let showsOriginalEditorToggle = originalVisibility.showsOriginalEditorToggle
+        let showsRegionSelection = isParagraphOverlayMode && !model.isManualInputModeActive
+        let hasOriginalText = !originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let showsReplaceSelectedText = replacementSourceType.map {
+            model.showsSelectedTextReplacement(using: $0)
+        } ?? false
+        let autoReadAloudBinding = Binding<Bool>(
+            get: { model.settings.playSentencePronunciation },
+            set: { model.settings.playSentencePronunciation = $0 }
+        )
+
+        Menu {
+            Button {
+                model.playOverlayPronunciation(kind: .sentence)
+            } label: {
+                Label(L("Read Aloud"), systemImage: "speaker.wave.2")
+            }
+            .disabled(!hasOriginalText)
+
+            Toggle(L("Auto Read Aloud"), isOn: autoReadAloudBinding)
+
+            Divider()
+
+            if let scopeTitle = model.paragraphListScopeActionTitle, !scopeTitle.isEmpty {
+                Button(scopeTitle) {
+                    model.toggleParagraphListScope()
+                }
+            }
+
+            if showsOriginalEditorToggle {
+                Button {
+                    model.invalidateSelectedTextReplacement()
+                    isParagraphOriginalEditorExpanded.toggle()
+                } label: {
+                    Label(
+                        originalVisibility.usesEditableOriginalText
+                            ? L("Hide Original Text")
+                            : L("Edit Original Text"),
+                        systemImage: originalVisibility.usesEditableOriginalText ? "eye.slash" : "pencil"
+                    )
+                }
+            }
+
+            if showsRegionSelection {
+                Button {
+                    model.beginManualParagraphRegionSelection()
+                } label: {
+                    Label(L("Reselect Region"), systemImage: "crop")
+                }
+            }
+
+            if let replacementSourceType, showsReplaceSelectedText {
+                Button {
+                    model.replaceSelectedText(using: replacementSourceType)
+                } label: {
+                    Label(L("Replace Original"), systemImage: "arrow.uturn.backward")
+                }
+                .disabled(
+                    model.selectedTextReplacementOperationID != nil
+                        || model.isSelectedTextReplacementConsumed
+                )
+            }
+
+            if showsParagraphOverlayPinButton {
+                Button {
+                    model.toggleParagraphOverlayPin()
+                } label: {
+                    Label(L("Pin"), systemImage: "pin")
+                }
+            }
+
+            if !model.isParagraphOverlayPinned {
+                Button {
+                    model.dismissOverlay()
+                } label: {
+                    Label(L("Close"), systemImage: "xmark")
+                }
+            }
+
+            if let singleSourceResult, showsDetails {
+                Divider()
+
+                if let modelName = singleSourceResult.modelName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !modelName.isEmpty {
+                    Text("\(L("Model")): \(modelName)")
+                }
+
+                if let duration = singleSourceResult.duration {
+                    Text("\(L("Translation time")): \(Self.formatTranslationDuration(duration))")
+                }
+            }
+        } label: {
+            paragraphMenuIcon
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(L("More"))
+        .accessibilityLabel(Text(L("More")))
+    }
+
+    private var paragraphMenuIcon: some View {
+        ParagraphHeaderIcon(systemImage: "ellipsis")
+    }
+
+    private var paragraphLoadingMoreMenu: some View {
+        Menu {
+            if showsParagraphOverlayPinButton {
+                Button {
+                    model.toggleParagraphOverlayPin()
+                } label: {
+                    Label(L("Pin"), systemImage: "pin")
+                }
+            }
+
+            if !model.isParagraphOverlayPinned {
+                Button {
+                    model.dismissOverlay()
+                } label: {
+                    Label(L("Close"), systemImage: "xmark")
+                }
+            }
+        } label: {
+            paragraphMenuIcon
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(L("More"))
+        .accessibilityLabel(Text(L("More")))
+    }
+
+    private func hasParagraphLanguageDirection(_ content: ParagraphOverlayContent) -> Bool {
+        guard let sourceLanguageIdentifier = content.sourceLanguageIdentifier,
+              let selectedTargetIdentifier = content.selectedTargetLanguageIdentifier else {
+            return false
+        }
+        return sourceLanguageIdentifier != selectedTargetIdentifier
+    }
+
+    @ViewBuilder
+    private func paragraphLanguageDirectionButton(
+        content: ParagraphOverlayContent
     ) -> some View {
         if let selectedTargetIdentifier = content.selectedTargetLanguageIdentifier,
            let sourceLanguageIdentifier = content.sourceLanguageIdentifier,
-           content.languageOptions.count == 2 {
-            let sourceMinimalID = Locale.Language(identifier: sourceLanguageIdentifier).minimalIdentifier
-            let targetMinimalID = Locale.Language(identifier: selectedTargetIdentifier).minimalIdentifier
-
-            let sourceName = content.languageOptions.first {
-                Locale.Language(identifier: $0.identifier).minimalIdentifier == sourceMinimalID
-            }?.displayName ?? ""
-
-            let targetName = content.languageOptions.first {
-                Locale.Language(identifier: $0.identifier).minimalIdentifier == targetMinimalID
-            }?.displayName ?? ""
+           sourceLanguageIdentifier != selectedTargetIdentifier {
+            let sourceName = paragraphLanguageName(
+                for: sourceLanguageIdentifier,
+                content: content
+            )
+            let targetName = paragraphLanguageName(
+                for: selectedTargetIdentifier,
+                content: content
+            )
+            let isToggleAvailable = model.selectedTextReplacementOperationID == nil
 
             Button {
                 model.translateParagraphOriginal(to: sourceLanguageIdentifier)
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     Text(sourceName)
-                        .font(.system(size: isCompact ? 10.5 : 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: isCompact ? 8 : 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
-
-                    Text(targetName)
-                        .font(.system(size: isCompact ? 10.5 : 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, isCompact ? 8 : 10)
-                .padding(.vertical, isCompact ? 3 : 5)
-            }
-            .buttonStyle(.plain)
-            .disabled(model.selectedTextReplacementOperationID != nil)
-            .layoutPriority(1)
-            .accessibilityLabel(Text(L("Toggle translation direction")))
-            .padding(isCompact ? 1 : 2)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(colorScheme == .dark ? .white.opacity(0.075) : .black.opacity(0.04))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(Color.secondary.opacity(0.12), lineWidth: 0.5)
-            )
-        }
-    }
-
-    @ViewBuilder
-    private func paragraphServiceResultCard(result: ServiceTranslationResult, fontSize: CGFloat) -> some View {
-        switch result.state {
-        case .loading:
-            VStack(alignment: .leading, spacing: 8) {
-                paragraphServiceResultHeader(result: result, copyText: nil)
-
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(L("Translating"))
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                    LoadingDotsView()
-                }
-            }
-            .padding(.horizontal, paragraphTextHorizontalPadding)
-            .padding(.vertical, 14)
-
-        case .ready(let translatedText):
-            VStack(alignment: .leading, spacing: 8) {
-                paragraphServiceResultHeader(result: result, copyText: translatedText)
-
-                paragraphTextContent(
-                    text: translatedText,
-                    font: .systemFont(ofSize: fontSize, weight: .medium),
-                    textColor: .labelColor,
-                    preferredLineHeight: fontSize * 1.5
-                )
-            }
-            .padding(.horizontal, paragraphTextHorizontalPadding)
-            .padding(.vertical, 14)
-
-        case .failed(let message):
-            VStack(alignment: .leading, spacing: 8) {
-                paragraphServiceResultHeader(result: result, copyText: nil)
-
-                paragraphErrorContent(message: message)
-            }
-            .padding(.horizontal, paragraphTextHorizontalPadding)
-            .padding(.vertical, 14)
-        }
-    }
-
-    /// Header row shared by all paragraph service result states: provider name,
-    /// optional model name for LLM providers, elapsed translation time on the
-    /// right, and the copy button (ready state only).
-    @ViewBuilder
-    private func paragraphServiceResultHeader(
-        result: ServiceTranslationResult,
-        copyText: String?
-    ) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            HStack(alignment: .center, spacing: 4) {
-                Text(result.sourceType.displayName)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                if let modelName = result.modelName, !modelName.isEmpty {
-                    Text(verbatim: "·")
-                        .font(.system(size: 10, weight: .regular))
-                        .foregroundStyle(.secondary)
-
-                    Text(modelName)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .truncationMode(.middle)
+                        .truncationMode(.tail)
+
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+
+                    Text(targetName)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .contentShape(Capsule(style: .continuous))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if let duration = result.duration {
-                Text(Self.formatTranslationDuration(duration))
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
-                    .layoutPriority(1)
-                    .help(L("Translation time"))
+            .buttonStyle(.plain)
+            .disabled(!isToggleAvailable)
+            .onHover { isHovering in
+                isParagraphLanguageDirectionHovered = isHovering && isToggleAvailable
             }
-
-            if let copyText, !copyText.isEmpty {
-                CopyButton(text: copyText)
-                    .layoutPriority(1)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(
+                        isParagraphLanguageDirectionHovered
+                            ? Color.primary.opacity(increasesContrast ? 0.10 : 0.055)
+                            : Color.clear
+                    )
             }
-            if let copyText,
-               !copyText.isEmpty,
-               model.showsSelectedTextReplacement(using: result.sourceType) {
-                replaceSelectedTextButton(using: result.sourceType)
+            .overlay {
+                Capsule(style: .continuous)
+                    .stroke(
+                        Color.secondary.opacity(
+                            isParagraphLanguageDirectionHovered
+                                ? (increasesContrast ? 0.32 : 0.14)
+                                : 0
+                        ),
+                        lineWidth: 0.5
+                    )
             }
+            .accessibilityLabel(Text(L("Toggle translation direction")))
         }
+    }
+
+    private func paragraphLanguageName(
+        for identifier: String,
+        content: ParagraphOverlayContent
+    ) -> String {
+        let minimalIdentifier = Locale.Language(identifier: identifier).minimalIdentifier
+        if let option = content.languageOptions.first(where: {
+            Locale.Language(identifier: $0.identifier).minimalIdentifier == minimalIdentifier
+        }) {
+            return option.displayName
+        }
+
+        return AppLanguage(rawValue: identifier)?.displayName
+            ?? Locale.current.localizedString(forIdentifier: identifier)
+            ?? identifier
     }
 
     private func replaceSelectedTextButton(using sourceType: SentenceTranslationSource.SourceType) -> some View {
@@ -684,56 +1201,6 @@ struct OverlayView: View {
             return "\(milliseconds)ms"
         }
         return String(format: "%.1fs", duration)
-    }
-
-    @ViewBuilder
-    private func paragraphSectionCard<Content: View>(
-        title: String?,
-        copyText: String? = nil,
-        emphasis: Bool = false,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        ParagraphOverlaySectionCard(
-            title: title,
-            copyText: copyText,
-            emphasis: emphasis,
-            content: content
-        )
-    }
-
-    @ViewBuilder
-    private func paragraphStatusCard(
-        title: String?,
-        message: String,
-        detail: String? = nil,
-        systemImage: String,
-        showsSpinner: Bool = false
-    ) -> some View {
-        paragraphSectionCard(title: title) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .center, spacing: 10) {
-                    if showsSpinner {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Image(systemName: systemImage)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Text(message)
-                        .font(.system(size: 15, weight: .medium, design: .rounded))
-                        .foregroundStyle(.primary)
-                }
-
-                if let detail, !detail.isEmpty {
-                    Text(detail)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -786,131 +1253,15 @@ struct OverlayView: View {
     }
 
     @ViewBuilder
-    private func paragraphTopBar(
-        originalVisibility: ParagraphOriginalVisibilityPolicy.Decision? = nil,
-        languageSelectorContent: ParagraphOverlayContent? = nil,
-        pronunciationContent: ParagraphOverlayContent? = nil
-    ) -> some View {
-        let showsLanguageSelector = languageSelectorContent != nil
-
-        ZStack(alignment: .center) {
-            paragraphHeaderDragArea()
-
-            if let languageSelectorContent {
-                paragraphLanguageSelectorCapsule(content: languageSelectorContent, isCompact: true)
-            }
-
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
-
-                if let pronunciationContent {
-                    pronunciationControl(
-                        kind: .sentence,
-                        hasText: !(pronunciationContent.originalText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    )
-                }
-
-                if let originalVisibility, originalVisibility.showsOriginalEditorToggle {
-                    paragraphOriginalEditorToggleButton(isExpanded: originalVisibility.usesEditableOriginalText)
-                }
-
-                paragraphRegionSelectionButton()
-
-                paragraphOverlayControlButton()
-            }
-        }
-        .frame(height: showsLanguageSelector ? 24 : 18)
-        .padding(.horizontal, 14)
-        .padding(.top, 10)
-        .padding(.bottom, showsLanguageSelector ? 4 : 6)
-    }
-
-    @ViewBuilder
-    private func paragraphOriginalTopBar(
-        copyText: String,
-        originalVisibility: ParagraphOriginalVisibilityPolicy.Decision,
-        content: ParagraphOverlayContent
-    ) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            paragraphHeaderDragArea(
-                title: paragraphOriginalSectionTitle,
-                fillsWidth: false
-            )
-
-            if !copyText.isEmpty {
-                CopyButton(text: copyText)
-            }
-
-            pronunciationControl(
-                kind: .sentence,
-                hasText: !copyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            )
-
-            if originalVisibility.showsOriginalEditorToggle {
-                paragraphOriginalEditorToggleButton(isExpanded: originalVisibility.usesEditableOriginalText)
-            }
-
-            paragraphRegionSelectionButton()
-
-            paragraphHeaderDragArea()
-
-            paragraphOverlayControlButton()
-        }
-        .frame(height: 18)
-        .padding(.leading, paragraphTextHorizontalPadding)
-        .padding(.trailing, 14)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
-    }
-
-    @ViewBuilder
-    private func paragraphOriginalEditorToggleButton(isExpanded: Bool) -> some View {
-        paragraphOverlayControlButton(
-            systemImage: isExpanded ? "eye.slash" : "pencil",
-            helpText: isExpanded ? L("Hide Original Text") : L("Edit Original Text"),
-            action: {
-                model.invalidateSelectedTextReplacement()
-                isParagraphOriginalEditorExpanded.toggle()
-            }
-        )
-    }
-
-    @ViewBuilder
-    private func paragraphRegionSelectionButton() -> some View {
-        if isParagraphOverlayMode {
-            paragraphOverlayControlButton(
-                systemImage: "crop",
-                helpText: L("Reselect Region"),
-                action: { model.beginManualParagraphRegionSelection() }
-            )
-        }
-    }
-
-    @ViewBuilder
-    private func paragraphHeaderDragArea(
-        title: String? = nil,
-        fillsWidth: Bool = true
-    ) -> some View {
+    private func paragraphHeaderDragArea() -> some View {
         ZStack(alignment: .leading) {
             if canDragPinnedParagraphOverlay {
                 paragraphPinnedDragHandle
             } else {
                 Color.clear
             }
-
-            if let title, !title.isEmpty {
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .allowsHitTesting(false)
-            }
         }
-        .frame(
-            maxWidth: fillsWidth ? .infinity : nil,
-            maxHeight: .infinity,
-            alignment: .leading
-        )
-        .fixedSize(horizontal: !fillsWidth, vertical: false)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .allowsHitTesting(canDragPinnedParagraphOverlay)
     }
 
@@ -926,21 +1277,13 @@ struct OverlayView: View {
     }
 
     @ViewBuilder
-    private func paragraphOverlayControlButton() -> some View {
-        if showsParagraphOverlayControls {
-            if showsParagraphOverlayPinButton {
-                paragraphOverlayControlButton(
-                    systemImage: "pin",
-                    helpText: L("Pin"),
-                    action: { model.toggleParagraphOverlayPin() }
-                )
-            } else {
-                paragraphOverlayControlButton(
-                    systemImage: "xmark",
-                    helpText: L("Close"),
-                    action: { model.dismissOverlay() }
-                )
-            }
+    private var paragraphPinnedCloseButton: some View {
+        if model.isParagraphOverlayPinned {
+            paragraphOverlayControlButton(
+                systemImage: "xmark",
+                helpText: L("Close"),
+                action: { model.dismissOverlay() }
+            )
         }
     }
 
@@ -950,21 +1293,11 @@ struct OverlayView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 18, height: 18)
-                .background(
-                    Circle()
-                        .fill(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.045))
-                )
-                .overlay(
-                    Circle()
-                        .stroke(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.06), lineWidth: 0.5)
-                )
+            ParagraphHeaderIcon(systemImage: systemImage)
         }
         .buttonStyle(.plain)
         .help(helpText)
+        .accessibilityLabel(Text(helpText))
     }
 
     private func pronunciationControl(kind: OverlayPronunciationKind, hasText: Bool) -> some View {
@@ -1041,45 +1374,6 @@ struct OverlayView: View {
         L("Original")
     }
 
-    private func paragraphTranslationSectionTitle(for content: ParagraphOverlayContent) -> String {
-        if content.imageTranslationUsed {
-            return model.settings.imageTranslationSource.provider.displayName
-        }
-
-        return SentenceTranslationSource.SourceType.native.displayName
-    }
-
-    private var paragraphHeaderDragGesture: some Gesture {
-        DragGesture(minimumDistance: 1, coordinateSpace: .global)
-            .onChanged { value in
-                guard canDragPinnedParagraphOverlay else { return }
-
-                if !isParagraphHeaderDragging {
-                    isParagraphHeaderDragging = true
-                    refreshParagraphHeaderCursor()
-                    model.beginParagraphOverlayDrag()
-                }
-
-                model.updateParagraphOverlayDrag(translation: value.translation)
-            }
-            .onEnded { _ in
-                guard isParagraphHeaderDragging else { return }
-                model.endParagraphOverlayDrag()
-                isParagraphHeaderDragging = false
-                refreshParagraphHeaderCursor()
-            }
-    }
-
-    private func updateParagraphHeaderHover(_ hovering: Bool) {
-        guard canDragPinnedParagraphOverlay else {
-            resetParagraphHeaderInteractionState()
-            return
-        }
-
-        isParagraphHeaderHovered = hovering
-        refreshParagraphHeaderCursor()
-    }
-
     private func refreshParagraphHeaderCursor() {
         guard canDragPinnedParagraphOverlay else {
             NSCursor.arrow.set()
@@ -1088,8 +1382,6 @@ struct OverlayView: View {
 
         if isParagraphHeaderDragging {
             NSCursor.closedHand.set()
-        } else if isParagraphHeaderHovered {
-            NSCursor.openHand.set()
         } else {
             NSCursor.arrow.set()
         }
@@ -1101,7 +1393,7 @@ struct OverlayView: View {
         }
 
         isParagraphHeaderDragging = false
-        isParagraphHeaderHovered = false
+        isParagraphLanguageDirectionHovered = false
         NSCursor.arrow.set()
     }
 
@@ -1786,47 +2078,55 @@ struct OverlayView: View {
 // MARK: - Loading Dots Animation
 
 struct ParagraphReadingViewport<Content: View>: View {
-    private enum ScrollSpace {
+    private nonisolated enum ScrollSpace {
         case viewport
     }
 
-    private nonisolated enum Overflow: Equatable, Sendable {
-        case none
-        case belowViewport
-        case atEnd
-    }
-
     @State private var viewportHeight: CGFloat = 0
-    @State private var overflow: Overflow = .none
+    @State private var showsMoreContentBelow = false
+    private let isEditing: Bool
     private let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(isEditing: Bool = false, @ViewBuilder content: () -> Content) {
+        self.isEditing = isEditing
         self.content = content()
     }
 
     var body: some View {
-        let viewportHeight = self.viewportHeight
-        ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 0) {
-                content
+        if isEditing {
+            scrollableContent
+        } else {
+            ViewThatFits(in: .vertical) {
+                readingContent.fixedSize(horizontal: false, vertical: true)
+                scrollableContent
             }
-            .padding(.bottom, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .onGeometryChange(for: Overflow.self) { geometry in
-                guard viewportHeight > 0, geometry.size.height > viewportHeight + 1 else { return .none }
-                let contentBottom = geometry.frame(in: .named(ScrollSpace.viewport)).maxY
-                return contentBottom > viewportHeight + 1 ? .belowViewport : .atEnd
-            } action: { overflow = $0 }
+        }
+    }
+
+    private var readingContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content
+        }
+        .padding(.bottom, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var scrollableContent: some View {
+        let viewportHeight = self.viewportHeight
+        return ScrollView(.vertical) {
+            readingContent
+                .onGeometryChange(for: Bool.self) { geometry in
+                    guard viewportHeight > 0, geometry.size.height > viewportHeight + 1 else { return false }
+                    return geometry.frame(in: .named(ScrollSpace.viewport)).maxY > viewportHeight + 1
+                } action: { showsMoreContentBelow = $0 }
         }
         .coordinateSpace(name: ScrollSpace.viewport)
-        .scrollIndicators(.visible, axes: .vertical)
-        .scrollIndicatorsFlash(trigger: overflow != .none)
         .scrollBounceBehavior(.basedOnSize, axes: .vertical)
         .onGeometryChange(for: CGFloat.self, of: \.size.height) { height in
             self.viewportHeight = height
         }
         .overlay(alignment: .bottom) {
-            if overflow == .belowViewport {
+            if showsMoreContentBelow {
                 Rectangle()
                     .fill(.regularMaterial)
                     .mask(LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom))
@@ -2057,7 +2357,9 @@ enum ParagraphFontSizing {
 
 struct CopyButton: View {
     let text: String
+    var usesSubtleHeaderStyle = false
     @State private var copied = false
+    @State private var isHovered = false
 
     var body: some View {
         Button {
@@ -2077,18 +2379,74 @@ struct CopyButton: View {
                 .frame(width: 18, height: 18)
                 .background(
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(copied ? Color(red: 0.2, green: 0.78, blue: 0.35).opacity(0.12) : Color.secondary.opacity(0.08))
+                        .fill(backgroundColor)
                 )
+                .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                 .scaleEffect(copied ? 1.1 : 1.0)
         }
         .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
         .help(L("Copy to clipboard"))
+    }
+
+    private var backgroundColor: Color {
+        if copied {
+            return Color(red: 0.2, green: 0.78, blue: 0.35).opacity(0.12)
+        }
+        if usesSubtleHeaderStyle {
+            return isHovered ? Color.secondary.opacity(0.10) : Color.clear
+        }
+        return Color.secondary.opacity(0.08)
     }
 
     private func copyToClipboard(_ text: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+    }
+}
+
+private struct ParagraphHeaderIcon: View {
+    let systemImage: String
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @State private var isHovered = false
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(isHovered ? Color.primary : Color.secondary)
+            .frame(width: 20, height: 20)
+            .background {
+                Circle()
+                    .fill(isHovered ? hoverFillColor : Color.clear)
+            }
+            .overlay {
+                Circle()
+                    .stroke(
+                        isHovered ? hoverStrokeColor : Color.clear,
+                        lineWidth: 0.5
+                    )
+            }
+            .contentShape(Circle())
+            .onHover { isHovered = $0 }
+            .accessibilityHidden(true)
+    }
+
+    private var hoverFillColor: Color {
+        if colorSchemeContrast == .increased {
+            return colorScheme == .dark
+                ? Color.white.opacity(0.14)
+                : Color.black.opacity(0.09)
+        }
+        return colorScheme == .dark
+            ? Color.white.opacity(0.10)
+            : Color.black.opacity(0.055)
+    }
+
+    private var hoverStrokeColor: Color {
+        Color.secondary.opacity(colorSchemeContrast == .increased ? 0.32 : 0.16)
     }
 }
 
@@ -2668,132 +3026,6 @@ private final class EditableParagraphTextContainerView: NSView {
 
     private func updatePlaceholderVisibility() {
         placeholderLabel.isHidden = !textView.string.isEmpty
-    }
-}
-
-private struct ParagraphOverlaySectionCard<Content: View>: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    let title: String?
-    let copyText: String?
-    let emphasis: Bool
-    let content: Content
-
-    @State private var isHovered = false
-
-    init(
-        title: String?,
-        copyText: String?,
-        emphasis: Bool,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.title = title
-        self.copyText = copyText
-        self.emphasis = emphasis
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                if let title, !title.isEmpty {
-                    Text(title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 8)
-
-                if let copyText, !copyText.isEmpty {
-                    ParagraphSectionCopyButton(
-                        text: copyText,
-                        isVisible: isHovered
-                    )
-                }
-            }
-
-            content
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(fillColor)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .stroke(strokeColor, lineWidth: 1)
-        }
-        .shadow(color: shadowColor, radius: 2, x: 0, y: 1)
-        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .onHover { hovering in
-            isHovered = hovering
-        }
-    }
-
-    private var fillColor: Color {
-        if colorScheme == .dark {
-            return emphasis ? .white.opacity(0.055) : .white.opacity(0.036)
-        }
-
-        return emphasis ? .black.opacity(0.025) : .black.opacity(0.016)
-    }
-
-    private var strokeColor: Color {
-        if colorScheme == .dark {
-            return emphasis ? .white.opacity(0.16) : .white.opacity(0.10)
-        }
-
-        return emphasis ? .black.opacity(0.10) : .black.opacity(0.06)
-    }
-
-    private var shadowColor: Color {
-        if colorScheme == .dark {
-            return .black.opacity(emphasis ? 0.16 : 0.10)
-        }
-
-        return .black.opacity(emphasis ? 0.05 : 0.03)
-    }
-}
-
-private struct ParagraphSectionCopyButton: View {
-    let text: String
-    let isVisible: Bool
-    @State private var copied = false
-
-    var body: some View {
-        Button {
-            copyToClipboard(text)
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
-                copied = true
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    copied = false
-                }
-            }
-        } label: {
-            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(copied ? Color(red: 0.2, green: 0.7, blue: 0.35) : .secondary)
-                .frame(width: 16, height: 16)
-                .padding(4)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(copied ? Color(red: 0.2, green: 0.7, blue: 0.35).opacity(0.12) : Color.secondary.opacity(0.08))
-                )
-                .opacity(isVisible || copied ? 1 : 0)
-        }
-        .buttonStyle(.plain)
-        .allowsHitTesting(isVisible || copied)
-        .animation(.easeInOut(duration: 0.16), value: isVisible)
-        .help(copied ? L("Copied") : L("Copy to clipboard"))
-    }
-
-    private func copyToClipboard(_ text: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
     }
 }
 

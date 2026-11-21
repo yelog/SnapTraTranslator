@@ -276,6 +276,50 @@ final class HotkeyManagerTests: XCTestCase {
         XCTAssertEqual(observedFlags, [command])
     }
 
+    func testAutomaticClipboardCopyDefersUntilGestureResolution() {
+        var gate = AutomaticClipboardCopyGate()
+
+        gate.beginGesture()
+
+        XCTAssertEqual(gate.requestCopy("  bank  "), .deferred)
+        XCTAssertEqual(gate.resolveGesture(), "bank")
+        XCTAssertFalse(gate.isDeferringUntilGestureResolution)
+        XCTAssertEqual(gate.requestCopy("apple"), .writeNow("apple"))
+    }
+
+    func testAutomaticClipboardCopyCanBeCancelledForDoubleTap() {
+        var gate = AutomaticClipboardCopyGate()
+        gate.beginGesture()
+        XCTAssertEqual(gate.requestCopy("bank"), .deferred)
+
+        gate.cancelPendingCopy()
+
+        XCTAssertNil(gate.resolveGesture())
+        XCTAssertEqual(gate.requestCopy("apple"), .suppressed)
+
+        gate.allowImmediateCopies()
+        XCTAssertEqual(gate.requestCopy("apple"), .writeNow("apple"))
+    }
+
+    func testManualTranslationInputClassifierDistinguishesWordsAndSentences() {
+        let cases: [(String, ManualTranslationInputKind)] = [
+            ("bank", .word),
+            ("apple", .word),
+            ("I sat on the river bank.", .sentence),
+            ("hello world", .sentence),
+            ("苹果", .word),
+            ("今天天气很好", .sentence),
+        ]
+
+        for (text, expectedKind) in cases {
+            XCTAssertEqual(
+                ManualTranslationInputClassifier.classify(text),
+                expectedKind,
+                "Unexpected classification for \(text)"
+            )
+        }
+    }
+
     private func modifierEvent(keyCode: UInt16, flags: NSEvent.ModifierFlags) throws -> NSEvent {
         try XCTUnwrap(NSEvent.keyEvent(
             with: .flagsChanged,

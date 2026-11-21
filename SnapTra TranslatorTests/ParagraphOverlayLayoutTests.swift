@@ -236,6 +236,20 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         )
     }
 
+    func testReadingCardPrefersBelowWithEnoughReadingRoomEvenIfThereIsMoreSpaceAbove() {
+        let source = CGRect(x: 200, y: 325, width: 510, height: 42)
+        let layout = ParagraphOverlayLayout(
+            screenFrame: CGRect(x: 0, y: 0, width: 1040, height: 800),
+            anchor: CGPoint(x: source.midX, y: source.midY),
+            sourceRect: source
+        )
+        let first = layout.frame(for: CGSize(width: 420, height: 75))
+        let expanded = layout.frame(for: CGSize(width: 420, height: 700))
+        XCTAssertEqual(first.maxY, source.minY - 8)
+        XCTAssertEqual(expanded.maxY, first.maxY)
+        XCTAssertEqual(expanded.minY, 8)
+    }
+
     func testCapsLongParagraphToLargerSideOfSource() {
         let sourceRect = CGRect(x: 200, y: 420, width: 400, height: 80)
         let layout = ParagraphOverlayLayout(
@@ -318,14 +332,13 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
             panel.layoutIfNeeded()
             host.layoutSubtreeIfNeeded()
 
-            let scrollView = try XCTUnwrap(firstScrollView(in: host))
-            let document = try XCTUnwrap(scrollView.documentView)
-            XCTAssertEqual(scrollView.frame.height, panel.frame.height - headerHeight, accuracy: 1)
-
             if lineCount == 3 {
                 XCTAssertLessThan(panel.frame.height, panelHeightLimit)
-                XCTAssertEqual(scrollView.documentVisibleRect.height, document.bounds.height, accuracy: 1)
+                XCTAssertNil(firstScrollView(in: host))
             } else {
+                let scrollView = try XCTUnwrap(firstScrollView(in: host))
+                let document = try XCTUnwrap(scrollView.documentView)
+                XCTAssertEqual(scrollView.frame.height, panel.frame.height - headerHeight, accuracy: 1)
                 XCTAssertEqual(panel.frame.height, panelHeightLimit, accuracy: 1)
                 XCTAssertTrue(scrollView.hasVerticalScroller)
                 XCTAssertGreaterThan(document.bounds.height, scrollView.documentVisibleRect.height)
@@ -851,5 +864,180 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         XCTAssertFalse(decision.usesEditableOriginalText)
         XCTAssertFalse(decision.showsOriginalEditorToggle)
         XCTAssertFalse(decision.hidesOriginalTextRegion)
+    }
+
+    func testParagraphHighlightConvertsScreenLineRectsToTopLeftLocalSpace() {
+        let windowFrame = CGRect(x: 100, y: 200, width: 300, height: 120)
+        let lineRects = [
+            CGRect(x: 110, y: 280, width: 200, height: 24),
+            CGRect(x: 120, y: 220, width: 180, height: 18),
+        ]
+
+        XCTAssertEqual(
+            ParagraphHighlightLayout.localLineRects(
+                in: windowFrame,
+                lineRects: lineRects
+            ),
+            [
+                CGRect(x: 10, y: 16, width: 200, height: 24),
+                CGRect(x: 20, y: 82, width: 180, height: 18),
+            ]
+        )
+    }
+
+    func testParagraphHighlightClipsScreenLineRectsAndFallsBackWhenNoneRemain() {
+        let windowFrame = CGRect(x: 100, y: 200, width: 300, height: 120)
+
+        XCTAssertEqual(
+            ParagraphHighlightLayout.localLineRects(
+                in: windowFrame,
+                lineRects: [CGRect(x: 90, y: 310, width: 40, height: 30)]
+            ),
+            [CGRect(x: 0, y: 0, width: 30, height: 10)]
+        )
+        XCTAssertEqual(
+            ParagraphHighlightLayout.localLineRects(
+                in: windowFrame,
+                lineRects: [
+                    .zero,
+                    CGRect(x: 500, y: 500, width: 20, height: 20),
+                ]
+            ),
+            [CGRect(origin: .zero, size: windowFrame.size)]
+        )
+        XCTAssertEqual(
+            ParagraphHighlightLayout.localLineRects(
+                in: windowFrame,
+                lineRects: []
+            ),
+            [CGRect(origin: .zero, size: windowFrame.size)]
+        )
+    }
+
+    func testParagraphHighlightUsesTwoPointLeadingGuideAndStrongerContrast() {
+        let normal = ParagraphHighlightVisualStyle.resolve(increaseContrast: false)
+        let increased = ParagraphHighlightVisualStyle.resolve(increaseContrast: true)
+
+        XCTAssertEqual(ParagraphHighlightVisualStyle.leadingGuideWidth, 2)
+        XCTAssertLessThan(normal.fillOpacity, 0.15)
+        XCTAssertGreaterThan(increased.fillOpacity, normal.fillOpacity)
+        XCTAssertGreaterThan(increased.leadingGuideOpacity, normal.leadingGuideOpacity)
+    }
+
+    func testParagraphHighlightHandlesAppearOnlyForHoverDragOrExplicitAdjustment() {
+        XCTAssertFalse(ParagraphHighlightHandleVisibility.isVisible(
+            for: .topLeft,
+            hoveredCorner: nil,
+            activeCorner: nil,
+            isAdjusting: false
+        ))
+        XCTAssertTrue(ParagraphHighlightHandleVisibility.isVisible(
+            for: .topLeft,
+            hoveredCorner: .topLeft,
+            activeCorner: nil,
+            isAdjusting: false
+        ))
+        XCTAssertTrue(ParagraphHighlightHandleVisibility.isVisible(
+            for: .topLeft,
+            hoveredCorner: nil,
+            activeCorner: .topLeft,
+            isAdjusting: false
+        ))
+        XCTAssertTrue(ParagraphHighlightHandleVisibility.isVisible(
+            for: .bottomRight,
+            hoveredCorner: nil,
+            activeCorner: nil,
+            isAdjusting: true
+        ))
+        XCTAssertFalse(ParagraphHighlightHandleVisibility.isVisible(
+            for: .bottomRight,
+            hoveredCorner: .topLeft,
+            activeCorner: nil,
+            isAdjusting: false
+        ))
+    }
+
+    func testParagraphHighlightEntranceHonorsReduceMotion() {
+        XCTAssertEqual(
+            ParagraphHighlightEntrancePolicy.resolve(reduceMotion: false).duration,
+            0.11,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(
+            ParagraphHighlightEntrancePolicy.resolve(reduceMotion: true).duration,
+            0
+        )
+    }
+
+    func testParagraphReadingCardKeepsOneSideWhileStreamingTextGrows() {
+        let sourceRect = CGRect(x: 200, y: 180, width: 400, height: 40)
+        let layout = ParagraphOverlayLayout(
+            screenFrame: CGRect(x: 0, y: 0, width: 1040, height: 800),
+            anchor: CGPoint(x: sourceRect.midX, y: sourceRect.midY),
+            sourceRect: sourceRect
+        )
+
+        let shortFrame = layout.frame(for: CGSize(width: 520, height: 80))
+        let longFrame = layout.frame(for: CGSize(width: 520, height: 640))
+
+        XCTAssertGreaterThanOrEqual(shortFrame.minY, sourceRect.maxY)
+        XCTAssertGreaterThanOrEqual(longFrame.minY, sourceRect.maxY)
+        XCTAssertEqual(shortFrame.minY, longFrame.minY)
+    }
+
+    func testParagraphReadingCardStaysBelowWhenThereIsMoreRoomBelow() {
+        let sourceRect = CGRect(x: 200, y: 680, width: 400, height: 40)
+        let layout = ParagraphOverlayLayout(
+            screenFrame: CGRect(x: 0, y: 0, width: 1040, height: 800),
+            anchor: CGPoint(x: sourceRect.midX, y: sourceRect.midY),
+            sourceRect: sourceRect
+        )
+
+        let shortFrame = layout.frame(for: CGSize(width: 520, height: 80))
+        let longFrame = layout.frame(for: CGSize(width: 520, height: 640))
+
+        XCTAssertLessThanOrEqual(shortFrame.maxY, sourceRect.minY)
+        XCTAssertLessThanOrEqual(longFrame.maxY, sourceRect.minY)
+    }
+
+    func testParagraphReadingCardEntranceMovesFourPointsTowardSourceAndFadesIn() {
+        let sourceRect = CGRect(x: 200, y: 520, width: 400, height: 40)
+        let frameBelowSource = CGRect(x: 200, y: 380, width: 520, height: 132)
+        let frameAboveSource = CGRect(x: 200, y: 568, width: 520, height: 132)
+
+        let below = ParagraphReadingCardEntrance.resolve(
+            finalFrame: frameBelowSource,
+            sourceRect: sourceRect,
+            reduceMotion: false
+        )
+        let above = ParagraphReadingCardEntrance.resolve(
+            finalFrame: frameAboveSource,
+            sourceRect: sourceRect,
+            reduceMotion: false
+        )
+
+        XCTAssertEqual(
+            below.initialFrame,
+            frameBelowSource.offsetBy(dx: 0, dy: 4)
+        )
+        XCTAssertEqual(
+            above.initialFrame,
+            frameAboveSource.offsetBy(dx: 0, dy: -4)
+        )
+        XCTAssertEqual(below.initialOpacity, 0)
+        XCTAssertEqual(below.duration, 0.16, accuracy: 0.0001)
+    }
+
+    func testParagraphReadingCardEntranceSkipsMotionForReducedMotion() {
+        let finalFrame = CGRect(x: 200, y: 380, width: 520, height: 132)
+        let entrance = ParagraphReadingCardEntrance.resolve(
+            finalFrame: finalFrame,
+            sourceRect: CGRect(x: 200, y: 520, width: 400, height: 40),
+            reduceMotion: true
+        )
+
+        XCTAssertEqual(entrance.initialFrame, finalFrame)
+        XCTAssertEqual(entrance.initialOpacity, 1)
+        XCTAssertEqual(entrance.duration, 0)
     }
 }

@@ -483,4 +483,267 @@ final class OCRParagraphGroupingTests: XCTestCase {
         XCTAssertEqual(paragraphs.count, 2)
         XCTAssertEqual(paragraphs.map(\.text), ["Primary content", "Sidebar tools"])
     }
+
+    func testListItemExtractsSecondScreenshotBulletItem() {
+        let firstLine = RecognizedTextLine(
+            text: "• Embedding and rerank models from newly added providers now appear in the gateway and GUIJ",
+            boundingBox: CGRect(x: 0.0509, y: 0.7096, width: 0.8663, height: 0.0462)
+        )
+        let secondLine = RecognizedTextLine(
+            text: "• Together Al model catalog now includes embedding and rerank model types.",
+            boundingBox: CGRect(x: 0.0509, y: 0.6287, width: 0.7006, height: 0.0462)
+        )
+        let paragraph = RecognizedParagraph(
+            text: "\(firstLine.text)\n\(secondLine.text)",
+            lines: [firstLine, secondLine],
+            boundingBox: firstLine.boundingBox.union(secondLine.boundingBox)
+        )
+        let otherColumnLine = RecognizedTextLine(
+            text: "• Sidebar item",
+            boundingBox: CGRect(x: 0.80, y: 0.6287, width: 0.15, height: 0.0462)
+        )
+
+        let items = OCRService.listItems(
+            in: paragraph,
+            rawLines: paragraph.lines + [otherColumnLine]
+        )
+        let firstItem = OCRService.listItem(
+            at: CGPoint(x: 0.25, y: 0.73),
+            among: items
+        )
+        let secondItem = OCRService.listItem(
+            at: CGPoint(x: 0.25, y: 0.65),
+            among: items
+        )
+
+        XCTAssertEqual(items.count, 2)
+        XCTAssertEqual(firstItem?.text, firstLine.text)
+        XCTAssertEqual(
+            secondItem?.text,
+            secondLine.text
+        )
+        XCTAssertEqual(secondItem?.lines, [secondLine])
+        XCTAssertEqual(secondItem?.boundingBox, secondLine.boundingBox)
+    }
+
+    func testListItemReturnsNilWhenItemCoversEntireParagraph() {
+        let line = RecognizedTextLine(
+            text: "• Only list item",
+            boundingBox: CGRect(x: 0.10, y: 0.70, width: 0.30, height: 0.04)
+        )
+        let paragraph = RecognizedParagraph(
+            text: line.text,
+            lines: [line],
+            boundingBox: line.boundingBox
+        )
+
+        let items = OCRService.listItems(in: paragraph, rawLines: paragraph.lines)
+        let item = OCRService.listItem(
+            at: CGPoint(x: 0.20, y: 0.72),
+            in: paragraph,
+            rawLines: paragraph.lines
+        )
+
+        XCTAssertTrue(items.isEmpty)
+        XCTAssertNil(item)
+    }
+
+    func testListItemStrictLineHitWinsOverNearbyItemTolerance() {
+        let firstLine = RecognizedTextLine(
+            text: "• First item",
+            boundingBox: CGRect(x: 0.10, y: 0.716, width: 0.30, height: 0.04)
+        )
+        let secondLine = RecognizedTextLine(
+            text: "• Second item",
+            boundingBox: CGRect(x: 0.10, y: 0.672, width: 0.30, height: 0.04)
+        )
+        let paragraph = RecognizedParagraph(
+            text: "\(firstLine.text)\n\(secondLine.text)",
+            lines: [firstLine, secondLine],
+            boundingBox: firstLine.boundingBox.union(secondLine.boundingBox)
+        )
+
+        let item = OCRService.listItem(
+            at: CGPoint(x: 0.20, y: 0.71),
+            in: paragraph,
+            rawLines: paragraph.lines
+        )
+
+        XCTAssertEqual(item?.text, "• Second item")
+        XCTAssertEqual(item?.boundingBox, secondLine.boundingBox)
+    }
+
+    func testListItemDoesNotHitBlankSpaceAfterShortFinalLine() {
+        let firstLine = RecognizedTextLine(
+            text: "• A long first line that establishes the item width",
+            boundingBox: CGRect(x: 0.10, y: 0.72, width: 0.70, height: 0.04)
+        )
+        let finalLine = RecognizedTextLine(
+            text: "tail",
+            boundingBox: CGRect(x: 0.15, y: 0.66, width: 0.10, height: 0.04)
+        )
+        let followingItem = RecognizedTextLine(
+            text: "• Following item",
+            boundingBox: CGRect(x: 0.10, y: 0.60, width: 0.30, height: 0.04)
+        )
+        let paragraph = RecognizedParagraph(
+            text: [firstLine.text, finalLine.text, followingItem.text].joined(separator: "\n"),
+            lines: [firstLine, finalLine, followingItem],
+            boundingBox: firstLine.boundingBox
+                .union(finalLine.boundingBox)
+                .union(followingItem.boundingBox)
+        )
+
+        let item = OCRService.listItem(
+            at: CGPoint(x: 0.60, y: 0.67),
+            in: paragraph,
+            rawLines: paragraph.lines
+        )
+
+        XCTAssertNil(item)
+    }
+
+    func testListItemKeepsIndentedContinuationButDropsFollowingItem() {
+        let firstLine = RecognizedTextLine(
+            text: "• CLI compatibility: Claude, Gemini, Codex,",
+            boundingBox: CGRect(x: 0.10, y: 0.72, width: 0.44, height: 0.04)
+        )
+        let continuationLine = RecognizedTextLine(
+            text: "OpenCode, Qwen, OpenClaw",
+            boundingBox: CGRect(x: 0.15, y: 0.66, width: 0.34, height: 0.04)
+        )
+        let followingItem = RecognizedTextLine(
+            text: "• Visual interface combined with command-line power",
+            boundingBox: CGRect(x: 0.10, y: 0.60, width: 0.50, height: 0.04)
+        )
+        let expectedBounds = firstLine.boundingBox.union(continuationLine.boundingBox)
+        let paragraph = RecognizedParagraph(
+            text: [firstLine.text, continuationLine.text, followingItem.text].joined(separator: "\n"),
+            lines: [firstLine, continuationLine, followingItem],
+            boundingBox: expectedBounds.union(followingItem.boundingBox)
+        )
+
+        let item = OCRService.listItem(
+            at: CGPoint(x: 0.22, y: 0.68),
+            in: paragraph,
+            rawLines: paragraph.lines
+        )
+
+        XCTAssertEqual(
+            item?.text,
+            "• CLI compatibility: Claude, Gemini, Codex,\nOpenCode, Qwen, OpenClaw"
+        )
+        XCTAssertEqual(item?.lines, [firstLine, continuationLine])
+        XCTAssertEqual(item?.boundingBox, expectedBounds)
+    }
+
+    func testListItemPairsSeparateBulletWithItsOwnBodyLine() {
+        let firstBullet = RecognizedTextLine(
+            text: "•",
+            boundingBox: CGRect(x: 0.10, y: 0.72, width: 0.01, height: 0.02)
+        )
+        let firstBody = RecognizedTextLine(
+            text: "First item",
+            boundingBox: CGRect(x: 0.13, y: 0.72, width: 0.20, height: 0.04)
+        )
+        let secondBullet = RecognizedTextLine(
+            text: "•",
+            boundingBox: CGRect(x: 0.10, y: 0.68, width: 0.01, height: 0.02)
+        )
+        let secondBody = RecognizedTextLine(
+            text: "Second item",
+            boundingBox: CGRect(x: 0.13, y: 0.68, width: 0.20, height: 0.04)
+        )
+        let rawLines = [firstBullet, firstBody, secondBullet, secondBody]
+        let paragraphs = OCRService.groupParagraphs(from: rawLines)
+
+        XCTAssertEqual(paragraphs.count, 1)
+        let item = OCRService.listItem(
+            at: CGPoint(x: 0.20, y: 0.70),
+            in: paragraphs[0],
+            rawLines: rawLines
+        )
+
+        XCTAssertEqual(item?.text, "• Second item")
+        XCTAssertEqual(
+            item?.boundingBox,
+            secondBullet.boundingBox.union(secondBody.boundingBox)
+        )
+    }
+
+    func testListItemRecognizesFullWidthOrderedMarkers() {
+        let firstLine = RecognizedTextLine(
+            text: "１．第一项",
+            boundingBox: CGRect(x: 0.10, y: 0.72, width: 0.18, height: 0.04)
+        )
+        let secondLine = RecognizedTextLine(
+            text: "（２）第二项",
+            boundingBox: CGRect(x: 0.10, y: 0.64, width: 0.20, height: 0.04)
+        )
+        let paragraph = RecognizedParagraph(
+            text: "\(firstLine.text)\n\(secondLine.text)",
+            lines: [firstLine, secondLine],
+            boundingBox: firstLine.boundingBox.union(secondLine.boundingBox)
+        )
+
+        let item = OCRService.listItem(
+            at: CGPoint(x: 0.18, y: 0.66),
+            in: paragraph,
+            rawLines: paragraph.lines
+        )
+
+        XCTAssertEqual(item?.text, "（２）第二项")
+        XCTAssertEqual(item?.lines, [secondLine])
+        XCTAssertEqual(item?.boundingBox, secondLine.boundingBox)
+    }
+
+    func testListItemReturnsNilForOrdinaryParagraphWithoutMarker() {
+        let firstLine = RecognizedTextLine(
+            text: "This is an ordinary sentence.",
+            boundingBox: CGRect(x: 0.10, y: 0.72, width: 0.38, height: 0.04)
+        )
+        let secondLine = RecognizedTextLine(
+            text: "This is another ordinary sentence.",
+            boundingBox: CGRect(x: 0.10, y: 0.64, width: 0.42, height: 0.04)
+        )
+        let paragraph = RecognizedParagraph(
+            text: "\(firstLine.text)\n\(secondLine.text)",
+            lines: [firstLine, secondLine],
+            boundingBox: firstLine.boundingBox.union(secondLine.boundingBox)
+        )
+
+        let item = OCRService.listItem(
+            at: CGPoint(x: 0.22, y: 0.66),
+            in: paragraph,
+            rawLines: paragraph.lines
+        )
+
+        XCTAssertNil(item)
+    }
+
+    func testListItemReturnsNilOutsideItemSoCallerKeepsManualParagraph() {
+        let firstLine = RecognizedTextLine(
+            text: "• First item",
+            boundingBox: CGRect(x: 0.10, y: 0.72, width: 0.30, height: 0.04)
+        )
+        let secondLine = RecognizedTextLine(
+            text: "• Second item",
+            boundingBox: CGRect(x: 0.10, y: 0.60, width: 0.32, height: 0.04)
+        )
+        let originalText = "\(firstLine.text)\n\(secondLine.text)"
+        let paragraph = RecognizedParagraph(
+            text: originalText,
+            lines: [firstLine, secondLine],
+            boundingBox: firstLine.boundingBox.union(secondLine.boundingBox)
+        )
+
+        let item = OCRService.listItem(
+            at: CGPoint(x: 0.20, y: 0.66),
+            in: paragraph,
+            rawLines: paragraph.lines
+        )
+
+        XCTAssertNil(item)
+        XCTAssertEqual(paragraph.text, originalText)
+    }
 }

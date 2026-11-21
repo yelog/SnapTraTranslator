@@ -542,7 +542,11 @@ struct GeneralSettingsView: View {
 
                     ToggleRow(
                         title: L("Double-tap Sentence Translation"),
-                        subtitle: L("Start sentence translation after double-tapping the hotkey"),
+                        subtitle: L(
+                            model.settings.doubleTapSentenceTranslationMode == .manualRegion
+                                ? "Double-tap to type, paste, or drag to translate"
+                                : "Start sentence translation after double-tapping the hotkey"
+                        ),
                         isOn: $model.settings.ocrSentenceTranslationEnabled
                     )
 
