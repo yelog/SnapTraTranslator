@@ -299,14 +299,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(titleItem)
         
         menu.addItem(.separator())
-
-        let translateTextItem = NSMenuItem(
-            title: L("Translate Text..."),
-            action: #selector(openManualInputTranslation),
-            keyEquivalent: ""
-        )
-        translateTextItem.target = self
-        menu.addItem(translateTextItem)
         
         // Status section - toggle items with checkmarks
         // Continuous translation toggle
@@ -526,13 +518,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     @MainActor @objc private func toggleContinuousTranslation() {
         model.settings.continuousTranslation.toggle()
-    }
-
-    @MainActor @objc private func openManualInputTranslation() {
-        DispatchQueue.main.async {
-            NSApp.activate(ignoringOtherApps: true)
-            self.model.beginManualInputTranslation()
-        }
     }
 
     @objc private func quitApp() {

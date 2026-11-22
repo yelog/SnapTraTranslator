@@ -37,7 +37,7 @@ struct OverlayView: View {
             }
             return min(targetWidth, availableWidth)
         }
-        return wordOverlayWidth
+        return model.overlayPreferredWidth ?? wordOverlayWidth
     }
 
     private var paragraphHeightLimit: CGFloat? {
@@ -71,7 +71,6 @@ struct OverlayView: View {
     private var showsWordOverlayControls: Bool {
         !model.settings.continuousTranslation
             || model.isTapKeptOverlayPresented
-            || model.isManualInputModeActive
     }
 
     private var useSelectableWordText: Bool {
@@ -951,7 +950,7 @@ struct OverlayView: View {
     ) -> some View {
         let showsDetails = singleSourceResult.map { paragraphHasSourceDetails($0) } ?? false
         let showsOriginalEditorToggle = originalVisibility.showsOriginalEditorToggle
-        let showsRegionSelection = isParagraphOverlayMode && !model.isManualInputModeActive
+        let showsRegionSelection = isParagraphOverlayMode
         let hasOriginalText = !originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let showsReplaceSelectedText = replacementSourceType.map {
             model.showsSelectedTextReplacement(using: $0)
@@ -972,12 +971,6 @@ struct OverlayView: View {
             Toggle(L("Auto Read Aloud"), isOn: autoReadAloudBinding)
 
             Divider()
-
-            if let scopeTitle = model.paragraphListScopeActionTitle, !scopeTitle.isEmpty {
-                Button(scopeTitle) {
-                    model.toggleParagraphListScope()
-                }
-            }
 
             if showsOriginalEditorToggle {
                 Button {

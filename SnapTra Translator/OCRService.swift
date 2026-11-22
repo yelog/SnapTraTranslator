@@ -27,7 +27,11 @@ final class OCRService {
         category: "OCR"
     )
 
-    private let recognitionExecutor = OCRRecognitionExecutor()
+    private let recognitionExecutor: OCRRecognitionExecutor
+
+    init(recognitionExecutor: OCRRecognitionExecutor = OCRRecognitionExecutor()) {
+        self.recognitionExecutor = recognitionExecutor
+    }
 
     func recognizeWords(in image: CGImage, language: String) async throws -> [RecognizedWord] {
         let observations = try await recognizeObservations(in: image, language: language)
@@ -49,6 +53,69 @@ final class OCRService {
         let lines = OCRService.extractLines(from: observations)
         let paragraphs = OCRService.groupParagraphs(from: lines)
         return (paragraphs, lines)
+    }
+
+    func recognizeCursorParagraph(
+        in image: CGImage,
+        language: String,
+        normalizedPoint: CGPoint,
+        readHoveredText: () async -> RecognizedTextLine?
+    ) async throws -> ParagraphSelectionResult {
+        let recognitionError: Error?
+        do {
+            let result = try await recognizeCursorParagraph(
+                in: image,
+                language: language,
+                mode: .accurate,
+                normalizedPoint: normalizedPoint
+            )
+            switch result {
+            case .english, .textLine:
+                return result
+            case .noText:
+                recognitionError = nil
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            recognitionError = error
+        }
+
+        try Task.checkCancellation()
+        let hoveredText = await readHoveredText()
+        try Task.checkCancellation()
+        if let hoveredText {
+            Self.logger.debug("Cursor paragraph read using accessibility text")
+            return .textLine(hoveredText)
+        }
+
+        guard let recognitionError else { return .noText }
+        guard OCRRecognitionExecutor.isEngineFailure(recognitionError) else { throw recognitionError }
+        do {
+            return try await recognizeCursorParagraph(
+                in: image,
+                language: language,
+                mode: .fast,
+                normalizedPoint: normalizedPoint
+            )
+        } catch OCRExecutionError.unsupportedFastLanguage {
+            throw recognitionError
+        }
+    }
+
+    private func recognizeCursorParagraph(
+        in image: CGImage,
+        language: String,
+        mode: OCRRecognitionMode,
+        normalizedPoint: CGPoint
+    ) async throws -> ParagraphSelectionResult {
+        let observations = try await recognitionExecutor.recognize(in: image, language: language, mode: mode)
+        let lines = Self.extractLines(from: observations)
+        return Self.selectParagraphWithLanguageCheck(
+            from: Self.groupParagraphs(from: lines),
+            lines: lines,
+            normalizedPoint: normalizedPoint
+        )
     }
 
     private func recognizeObservations(
@@ -283,117 +350,6 @@ final class OCRService {
         }
 
         return allParagraphs
-    }
-
-    /// Returns only unambiguous list-item subsets of the supplied paragraph.
-    nonisolated static func listItems(
-        in paragraph: RecognizedParagraph,
-        rawLines: [RecognizedTextLine]
-    ) -> [RecognizedParagraph] {
-        let rows = listItemRows(in: paragraph, rawLines: rawLines)
-        guard !rows.isEmpty else { return [] }
-
-        var items: [RecognizedParagraph] = []
-        for startIndex in rows.indices where isListItemStart(rows[startIndex]) {
-            guard let itemLines = listItemLines(startingAt: startIndex, rows: rows),
-                  let firstLine = itemLines.first else {
-                continue
-            }
-
-            let boundingBox = itemLines.dropFirst().reduce(firstLine.boundingBox) { result, line in
-                result.union(line.boundingBox)
-            }
-            guard boundingBox.width > 0, boundingBox.height > 0 else {
-                continue
-            }
-
-            let text = itemLines
-                .map(\.text)
-                .joined(separator: "\n")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { continue }
-
-            let item = RecognizedParagraph(
-                text: text,
-                lines: itemLines,
-                boundingBox: boundingBox
-            )
-            guard !itemCoversEntireParagraph(item, paragraph: paragraph) else {
-                continue
-            }
-            items.append(item)
-        }
-
-        return items
-    }
-
-    /// Selects one of the cached items using the pointer position.
-    nonisolated static func listItem(
-        at normalizedPoint: CGPoint,
-        among items: [RecognizedParagraph]
-    ) -> RecognizedParagraph? {
-        guard !items.isEmpty else { return nil }
-
-        let strictHits = items.indices.filter { index in
-            listItemContainsPoint(
-                items[index],
-                normalizedPoint: normalizedPoint,
-                tolerance: 0
-            )
-        }
-        let resolvedHits = strictHits.isEmpty
-            ? items.indices.filter { index in
-                listItemContainsPoint(
-                    items[index],
-                    normalizedPoint: normalizedPoint,
-                    tolerance: 0.003
-                )
-            }
-            : strictHits
-
-        guard resolvedHits.count == 1 else { return nil }
-        return items[resolvedHits[0]]
-    }
-
-    /// Convenience wrapper for callers that do not cache the item list.
-    nonisolated static func listItem(
-        at normalizedPoint: CGPoint,
-        in paragraph: RecognizedParagraph,
-        rawLines: [RecognizedTextLine]
-    ) -> RecognizedParagraph? {
-        listItem(
-            at: normalizedPoint,
-            among: listItems(in: paragraph, rawLines: rawLines)
-        )
-    }
-
-    private nonisolated static func listItemContainsPoint(
-        _ item: RecognizedParagraph,
-        normalizedPoint: CGPoint,
-        tolerance: CGFloat
-    ) -> Bool {
-        item.lines.contains { line in
-            line.boundingBox
-                .insetBy(dx: -tolerance, dy: -tolerance)
-                .contains(normalizedPoint)
-        }
-    }
-
-    private nonisolated static func itemCoversEntireParagraph(
-        _ item: RecognizedParagraph,
-        paragraph: RecognizedParagraph
-    ) -> Bool {
-        let paragraphBounds = listParagraphBounds(for: paragraph)
-        guard paragraphBounds.width > 0, paragraphBounds.height > 0 else {
-            return false
-        }
-
-        let tolerance: CGFloat = 0.001
-        let itemBounds = item.boundingBox
-        return itemBounds.minX <= paragraphBounds.minX + tolerance
-            && itemBounds.maxX >= paragraphBounds.maxX - tolerance
-            && itemBounds.minY <= paragraphBounds.minY + tolerance
-            && itemBounds.maxY >= paragraphBounds.maxY - tolerance
     }
 
     nonisolated static func selectParagraph(
@@ -887,185 +843,6 @@ final class OCRService {
         return false
     }
 
-    private nonisolated static func listItemRows(
-        in paragraph: RecognizedParagraph,
-        rawLines: [RecognizedTextLine]
-    ) -> [OCRListItemRow] {
-        let bodyLines = paragraph.lines.filter { line in
-            !line.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && line.boundingBox.width > 0
-                && line.boundingBox.height > 0
-        }
-        guard !bodyLines.isEmpty else { return [] }
-
-        return recoverStandaloneMarkers(in: bodyLines, rawLines: rawLines).map { line in
-            OCRListItemRow(
-                line: line,
-                marker: ParagraphTextStructure.listItemMarker(in: line.text)
-            )
-        }
-    }
-
-    private nonisolated static func recoverStandaloneMarkers(
-        in bodyLines: [RecognizedTextLine],
-        rawLines: [RecognizedTextLine]
-    ) -> [RecognizedTextLine] {
-        let standaloneMarkers = rawLines.compactMap { line -> RecognizedTextLine? in
-            guard let marker = ParagraphTextStructure.listItemMarker(in: line.text),
-                  marker.body == nil,
-                  line.boundingBox.width > 0,
-                  line.boundingBox.height > 0 else {
-                return nil
-            }
-            return line
-        }
-        guard !standaloneMarkers.isEmpty else { return bodyLines }
-
-        var markerIndicesByBodyIndex: [Int: [Int]] = [:]
-        for (markerIndex, markerLine) in standaloneMarkers.enumerated() {
-            let candidateBodyIndices = bodyLines.indices.filter { bodyIndex in
-                canAttachStandaloneMarker(
-                    markerLine,
-                    to: bodyLines[bodyIndex]
-                )
-            }
-            if candidateBodyIndices.count == 1 {
-                markerIndicesByBodyIndex[candidateBodyIndices[0], default: []]
-                    .append(markerIndex)
-            }
-        }
-
-        var recoveredLines = bodyLines
-        for (bodyIndex, markerIndices) in markerIndicesByBodyIndex
-        where markerIndices.count == 1 {
-            let markerLine = standaloneMarkers[markerIndices[0]]
-            guard let marker = ParagraphTextStructure
-                .listItemMarker(in: markerLine.text)?
-                .marker else {
-                continue
-            }
-
-            let bodyLine = bodyLines[bodyIndex]
-            recoveredLines[bodyIndex] = RecognizedTextLine(
-                text: "\(marker) \(bodyLine.text)",
-                boundingBox: markerLine.boundingBox.union(bodyLine.boundingBox)
-            )
-        }
-        return recoveredLines
-    }
-
-    private nonisolated static func canAttachStandaloneMarker(
-        _ markerLine: RecognizedTextLine,
-        to bodyLine: RecognizedTextLine
-    ) -> Bool {
-        guard ParagraphTextStructure.listItemMarker(in: bodyLine.text) == nil,
-              markerLine.boundingBox.minX < bodyLine.boundingBox.minX,
-              verticalLineOverlapRatio(markerLine, bodyLine) >= 0.5 else {
-            return false
-        }
-
-        let maxHeight = max(markerLine.boundingBox.height, bodyLine.boundingBox.height)
-        guard maxHeight > 0 else { return false }
-        let horizontalGap = bodyLine.boundingBox.minX - markerLine.boundingBox.maxX
-        return horizontalGap >= -maxHeight * 0.25
-            && horizontalGap <= min(max(maxHeight * 4, 0.04), 0.08)
-    }
-
-    private nonisolated static func listParagraphBounds(
-        for paragraph: RecognizedParagraph
-    ) -> CGRect {
-        if paragraph.boundingBox.width > 0, paragraph.boundingBox.height > 0 {
-            return paragraph.boundingBox
-        }
-
-        guard let firstLine = paragraph.lines.first else { return .zero }
-        return paragraph.lines.dropFirst().reduce(firstLine.boundingBox) { result, line in
-            result.union(line.boundingBox)
-        }
-    }
-
-    private nonisolated static func isListItemStart(_ row: OCRListItemRow) -> Bool {
-        guard let marker = row.marker else { return false }
-        return marker.body != nil
-    }
-
-    private nonisolated static func listItemLines(
-        startingAt startIndex: Int,
-        rows: [OCRListItemRow]
-    ) -> [RecognizedTextLine]? {
-        guard rows.indices.contains(startIndex),
-              isListItemStart(rows[startIndex]) else {
-            return nil
-        }
-
-        let startLine = rows[startIndex].line
-        let markerLeadingX = startLine.boundingBox.minX
-        let markerLineHeight = startLine.boundingBox.height
-        var itemLines = [startLine]
-        var previousLine = startLine
-
-        for index in (startIndex + 1)..<rows.count {
-            let row = rows[index]
-            if isListItemStart(row) {
-                break
-            }
-
-            guard row.marker == nil else {
-                return nil
-            }
-
-            let currentLine = row.line
-            if verticalLineOverlapRatio(previousLine, currentLine) >= 0.45 {
-                return nil
-            }
-            guard isReliableListContinuation(
-                previous: previousLine,
-                current: currentLine,
-                markerLeadingX: markerLeadingX,
-                markerLineHeight: markerLineHeight
-            ) else {
-                break
-            }
-
-            itemLines.append(currentLine)
-            previousLine = currentLine
-        }
-
-        return itemLines
-    }
-
-    private nonisolated static func isReliableListContinuation(
-        previous: RecognizedTextLine,
-        current: RecognizedTextLine,
-        markerLeadingX: CGFloat,
-        markerLineHeight: CGFloat
-    ) -> Bool {
-        guard shouldJoinParagraph(previous: previous, next: current),
-              current.boundingBox.minX <= previous.boundingBox.maxX else {
-            return false
-        }
-
-        let indent = current.boundingBox.minX - markerLeadingX
-        let indentThreshold = max(markerLineHeight * 0.35, 0.012)
-        let maximumIndent = max(markerLineHeight * 8, 0.16)
-        return indent > indentThreshold && indent <= maximumIndent
-    }
-
-    private nonisolated static func verticalLineOverlapRatio(
-        _ lhs: RecognizedTextLine,
-        _ rhs: RecognizedTextLine
-    ) -> CGFloat {
-        let minHeight = min(lhs.boundingBox.height, rhs.boundingBox.height)
-        guard minHeight > 0 else { return 0 }
-
-        let overlap = max(
-            0,
-            min(lhs.boundingBox.maxY, rhs.boundingBox.maxY)
-                - max(lhs.boundingBox.minY, rhs.boundingBox.minY)
-        )
-        return overlap / minHeight
-    }
-
     nonisolated private static func mergeHorizontallyAdjacentLineFragments(
         in lines: [RecognizedTextLine]
     ) -> [RecognizedTextLine] {
@@ -1298,9 +1075,4 @@ final class OCRService {
             return lhsDistance < rhsDistance
         }
     }
-}
-
-private struct OCRListItemRow {
-    let line: RecognizedTextLine
-    let marker: ParagraphListItemMarker?
 }

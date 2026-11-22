@@ -142,6 +142,57 @@ nonisolated final class SelectedTextService: @unchecked Sendable {
         )
     }
 
+    @MainActor
+    func hoveredStaticText(request: SelectedTextProbeRequest) async -> (text: String, bounds: CGRect)? {
+        guard let processIdentifier = request.frontmostApplicationProcessIdentifier,
+              processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == processIdentifier,
+              request.hasCurrentScreenConfiguration else { return nil }
+
+        let hoveredText = try? await probeExecutor.execute { [self] cancellation -> (text: String, bounds: CGRect)? in
+            let application = AXUIElementCreateApplication(processIdentifier)
+            configureMessagingTimeout(for: application, timeout: 0.1)
+            guard let hoveredElement = element(
+                at: request.accessibilityPoint,
+                from: application,
+                source: "frontmostApp"
+            ) else {
+                return nil
+            }
+
+            try cancellation.checkCancellation()
+            var elementProcessIdentifier: pid_t = 0
+            guard AXUIElementGetPid(hoveredElement, &elementProcessIdentifier) == .success,
+                  elementProcessIdentifier == processIdentifier else { return nil }
+            configureMessagingTimeout(for: hoveredElement, timeout: 0.1)
+
+            let attributes = [kAXRoleAttribute, kAXValueAttribute, kAXPositionAttribute, kAXSizeAttribute] as CFArray
+            var rawValues: CFArray?
+            guard AXUIElementCopyMultipleAttributeValues(hoveredElement, attributes, [], &rawValues) == .success,
+                  let values = rawValues as? [AnyObject], values.count == 4,
+                  values[0] as? String == kAXStaticTextRole,
+                  let text = (values[1] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  text.unicodeScalars.contains(where: CharacterSet.letters.contains),
+                  CFGetTypeID(values[2]) == AXValueGetTypeID(),
+                  CFGetTypeID(values[3]) == AXValueGetTypeID() else { return nil }
+
+            var position = CGPoint.zero
+            var size = CGSize.zero
+            guard AXValueGetValue(unsafeBitCast(values[2], to: AXValue.self), .cgPoint, &position),
+                  AXValueGetValue(unsafeBitCast(values[3], to: AXValue.self), .cgSize, &size),
+                  [position.x, position.y, size.width, size.height].allSatisfy(\.isFinite),
+                  size.width > 0, size.height > 0 else { return nil }
+
+            let bounds = request.normalizedScreenRect(CGRect(origin: position, size: size))
+            guard bounds.contains(request.mouseLocation) else { return nil }
+            return (text, bounds)
+        }
+
+        guard !Task.isCancelled, request.hasCurrentScreenConfiguration,
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == processIdentifier else { return nil }
+        return hoveredText
+    }
+
     /// Clipboard-based fallback that uses Cmd+C simulation.
     /// Must be called from an async context to avoid blocking the main thread.
     @MainActor

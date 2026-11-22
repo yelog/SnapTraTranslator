@@ -77,8 +77,8 @@ final class ScreenCaptureService {
         }
     }
 
-    func captureCurrentDisplay(containing point: CGPoint) async -> (image: CGImage, region: CaptureRegion)? {
-        guard let screen = screen(containing: point) else {
+    func captureCurrentDisplay(at mouseLocation: CGPoint) async -> (image: CGImage, region: CaptureRegion)? {
+        guard let screen = screen(containing: mouseLocation) else {
             Self.logger.error("Display capture failed: no screen contains cursor")
             return nil
         }

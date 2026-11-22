@@ -2645,41 +2645,6 @@
         }
       }
     },
-    "Double-tap to type, paste, or drag to translate" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Double-tap to type, paste, or drag to translate"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダブルタップで入力・貼り付け・ドラッグ翻訳"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "두 번 탭하여 입력, 붙여넣기 또는 드래그로 번역"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "双击后输入、粘贴或拖选框选翻译"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "雙擊後輸入、貼上或拖選框選翻譯"
-          }
-        }
-      }
-    },
     "Download" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5350,25 +5315,7 @@
             "value" : "Model"
           }
         },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "モデル"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "모델"
-          }
-        },
         "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "模型"
-          }
-        },
-        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "模型"
@@ -9057,41 +9004,6 @@
         }
       }
     },
-    "Translate Entire List" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Translate Entire List"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "リスト全体を翻訳"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "전체 목록 번역"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "翻译整段内容"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "翻譯整段內容"
-          }
-        }
-      }
-    },
     "Translate from" : {
       "localizations" : {
         "en" : {
@@ -9122,41 +9034,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "翻譯來源"
-          }
-        }
-      }
-    },
-    "Translate Only This Item" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Translate Only This Item"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この項目のみ翻訳"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이 항목만 번역"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅翻译此条目"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "僅翻譯此項目"
           }
         }
       }
@@ -9192,41 +9069,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "翻譯選取文字"
-          }
-        }
-      }
-    },
-    "Translate Text..." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Translate Text..."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "テキストを翻訳..."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "텍스트 번역..."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "输入翻译..."
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "輸入翻譯..."
           }
         }
       }

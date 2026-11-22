@@ -30,7 +30,6 @@ A lightweight macOS menu bar app that instantly translates words under your curs
 - **Continuous translation** - Keep translating as you move the mouse while holding the hotkey
 - **Single lookup mode** - One translation per hotkey press with interactive bubble (copy, close buttons)
 - **Tap-to-keep bubble** - Optionally release the hotkey after a word or selected-text lookup and move the mouse to dismiss
-- **Manual text translation** - Double-tap the hotkey to type or paste text, or drag to select a screen region; also available from the menu bar
 
 ### Supported Languages
 Chinese (Simplified), Chinese (Traditional), English, Japanese, Korean, French, German, Spanish, Italian, Portuguese, Russian, Arabic, Thai, Vietnamese
@@ -82,8 +81,7 @@ Debug builds run unsandboxed for local accessibility testing, while Release App 
 1. **Grant permissions** - Launch the app and grant Screen Recording permission when prompted
 2. **Configure settings** - Set your preferred hotkey and language pair in the settings window
 3. **Translate** - Hold the hotkey and hover over any text; a bubble appears with translation, phonetics, and definitions
-4. **Type or paste** - Double-tap the hotkey to type or paste text, drag to select a screen region, or choose "Translate Text..." from the menu bar
-5. **Dismiss** - Release the hotkey to dismiss, or enable tap-to-keep and move the mouse to close the bubble
+4. **Dismiss** - Release the hotkey to dismiss, or enable tap-to-keep and move the mouse to close the bubble
 
 ## Troubleshooting
 

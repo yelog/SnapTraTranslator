@@ -7,11 +7,6 @@ enum ParagraphTextBlockKind: Equatable {
     case blankLine
 }
 
-nonisolated struct ParagraphListItemMarker: Equatable {
-    let marker: String
-    let body: String?
-}
-
 struct ParagraphTextBlock: Equatable {
     let kind: ParagraphTextBlockKind
     var bodyLines: [String]
@@ -178,36 +173,6 @@ struct ParagraphTextStructure: Equatable {
         return currentLeadingX > markerLeadingX + indentThreshold
     }
 
-    /// Parses a list marker while allowing the body to be on a separate Vision observation.
-    nonisolated static func listItemMarker(in text: String) -> ParagraphListItemMarker? {
-        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty,
-              let match = listItemMarkerRegex.firstMatch(
-                in: trimmedText,
-                options: [],
-                range: NSRange(trimmedText.startIndex..., in: trimmedText)
-              ),
-              let markerRange = Range(match.range(at: 1), in: trimmedText),
-              let bodyRange = Range(match.range(at: 2), in: trimmedText) else {
-            return nil
-        }
-
-        let marker = String(trimmedText[markerRange])
-        let body = String(trimmedText[bodyRange])
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let requiresWhitespace = marker.last == "." || marker.last == ")"
-        if requiresWhitespace,
-           !body.isEmpty,
-           trimmedText[markerRange.upperBound].isWhitespace == false {
-            return nil
-        }
-
-        return ParagraphListItemMarker(
-            marker: marker,
-            body: body.isEmpty ? nil : body
-        )
-    }
-
     private static func markerMatch(in text: String) -> MarkerMatch? {
         for marker in bulletMarkers {
             guard text.hasPrefix(marker) else { continue }
@@ -254,10 +219,6 @@ struct ParagraphTextStructure: Equatable {
 
     private static let orderedMarkerRegex = try! NSRegularExpression(
         pattern: #"^((?:\d+|[A-Za-z])[.)])\s+(.+)$"#
-    )
-
-    nonisolated private static let listItemMarkerRegex = try! NSRegularExpression(
-        pattern: #"^((?:[•·●○▪・◦∙⋅▫■□►▸＊]|[-–—*](?=\s|$)|(?:\p{N}+|[A-Za-z]|[零〇一二三四五六七八九十百千两]+)[.)．、）]|[（(](?:\p{N}+|[A-Za-z]|[零〇一二三四五六七八九十百千两]+)[）)]|[①-⑳⑴-⒇⒈-⒛⓫-⓴]))\s*(.*)$"#
     )
 }
 

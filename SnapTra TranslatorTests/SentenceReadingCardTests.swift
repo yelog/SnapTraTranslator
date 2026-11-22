@@ -40,7 +40,7 @@ final class SentenceReadingCardTests: XCTestCase {
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
         let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
         let container = try ModelContainer(for: WordRecord.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
-        return AppModel(settings: settings, modelContext: container.mainContext, startsBackgroundServices: false)
+        return AppModel(settings: settings, modelContext: container.mainContext)
     }
 
     func testNativeCardKeepsItsReadingWidthAsTranslationStreams() throws {

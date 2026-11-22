@@ -76,6 +76,75 @@ final class OCRRecognitionExecutorTests: XCTestCase {
         XCTAssertEqual(stub.modes, [.accurate, .fast, .accurate])
     }
 
+    func testCursorParagraphStillTriesAccurateDuringWordCooldown() async throws {
+        let stub = OCRRecognizerStub { call, _, _, _ in
+            if call == 1 { throw Self.engineFailure }
+            return []
+        }
+        let executor = stub.executor()
+        let service = OCRService(recognitionExecutor: executor)
+        let image = try makeImage()
+
+        _ = try await executor.recognize(in: image, language: "en")
+        _ = try await service.recognizeCursorParagraph(in: image, language: "en", normalizedPoint: .zero) { nil }
+        _ = try await executor.recognize(in: image, language: "en")
+
+        XCTAssertEqual(stub.modes, [.accurate, .fast, .accurate, .fast])
+    }
+
+    func testCursorParagraphFastFallbackDoesNotStartWordCooldown() async throws {
+        let stub = OCRRecognizerStub { call, _, _, _ in
+            if call == 1 { throw Self.engineFailure }
+            return []
+        }
+        let executor = stub.executor()
+        let service = OCRService(recognitionExecutor: executor)
+        let image = try makeImage()
+
+        _ = try await service.recognizeCursorParagraph(in: image, language: "en", normalizedPoint: .zero) { nil }
+        _ = try await executor.recognize(in: image, language: "en")
+
+        XCTAssertEqual(stub.modes, [.accurate, .fast, .accurate])
+    }
+
+    func testCursorParagraphUsesHoveredTextWhenAccurateOCRFindsNoMatchingLine() async throws {
+        let stub = OCRRecognizerStub { _, _, _, _ in [] }
+        let service = OCRService(recognitionExecutor: stub.executor())
+        let bounds = CGRect(x: 0.10, y: 0.56, width: 0.33, height: 0.04)
+        let expectedLine = RecognizedTextLine(text: "这篇帖子有多少个赞？", boundingBox: bounds)
+
+        let selection = try await service.recognizeCursorParagraph(
+            in: makeImage(),
+            language: "en",
+            normalizedPoint: CGPoint(x: bounds.midX, y: bounds.midY)
+        ) { expectedLine }
+
+        guard case .textLine(let line) = selection else {
+            return XCTFail("Expected the hovered text when accurate OCR finds no line at the cursor")
+        }
+        XCTAssertEqual(line, expectedLine)
+        XCTAssertEqual(stub.modes, [.accurate])
+    }
+
+    func testCursorParagraphUsesHoveredTextBeforeStartingFastOCR() async throws {
+        let stub = OCRRecognizerStub { _, _, _, _ in throw Self.engineFailure }
+        let service = OCRService(recognitionExecutor: stub.executor())
+        let bounds = CGRect(x: 0.10, y: 0.56, width: 0.33, height: 0.04)
+        let expectedLine = RecognizedTextLine(text: "这篇帖子有多少个赞？", boundingBox: bounds)
+
+        let selection = try await service.recognizeCursorParagraph(
+            in: makeImage(),
+            language: "en",
+            normalizedPoint: CGPoint(x: bounds.midX, y: bounds.midY)
+        ) { expectedLine }
+
+        guard case .textLine(let line) = selection else {
+            return XCTFail("Expected the text at the cursor when Vision is unavailable")
+        }
+        XCTAssertEqual(line, expectedLine)
+        XCTAssertEqual(stub.modes, [.accurate])
+    }
+
     func testUnsupportedSourceNeverFallsBackToEnglish() async throws {
         for language in ["zh-Hans", "zh-Hant", "ja", "ko"] {
             let stub = OCRRecognizerStub { _, _, _, _ in throw Self.engineFailure }

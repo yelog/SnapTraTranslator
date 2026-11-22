@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 private final class OverlayPanel: NSPanel {
@@ -98,221 +99,13 @@ enum ManualRegionSelectionPresentationPolicy {
     static let acceptsFirstMouse = true
 }
 
-private final class ManualRegionInputTextField: NSTextField, NSTextFieldDelegate {
-    var onSubmit: ((String) -> Void)?
-    var onCancel: (() -> Void)?
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        delegate = self
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func keyDown(with event: NSEvent) {
-        let hasMarkedText = (currentEditor() as? NSTextView)?.hasMarkedText() == true
-
-        if event.keyCode == 53, !hasMarkedText {
-            onCancel?()
-            return
-        }
-
-        if (event.keyCode == 36 || event.keyCode == 76), !hasMarkedText {
-            onSubmit?(stringValue)
-            return
-        }
-
-        super.keyDown(with: event)
-    }
-
-    func control(
-        _ control: NSControl,
-        textView: NSTextView,
-        doCommandBy commandSelector: Selector
-    ) -> Bool {
-        guard !textView.hasMarkedText() else { return false }
-
-        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            onCancel?()
-            return true
-        }
-
-        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-            onSubmit?(stringValue)
-            return true
-        }
-
-        return false
-    }
-}
-
-private final class ManualRegionInputBarView: NSView {
-    let textField = ManualRegionInputTextField(frame: .zero)
-    var onSubmit: ((String) -> Void)? {
-        didSet { textField.onSubmit = onSubmit }
-    }
-    var onCancel: (() -> Void)? {
-        didSet { textField.onCancel = onCancel }
-    }
-
-    private let iconView = NSImageView(frame: .zero)
-    private let returnHint = NSTextField(labelWithString: "↵")
-    private let horizontalPadding: CGFloat = 16
-    private let iconSize: CGFloat = 18
-    private let returnHintSize = CGSize(width: 24, height: 20)
-
-    override var isFlipped: Bool { true }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.shadowColor = NSColor.black.cgColor
-        layer?.shadowOpacity = 0.24
-        layer?.shadowRadius = 18
-        layer?.shadowOffset = CGSize(width: 0, height: -6)
-
-        iconView.image = NSImage(
-            systemSymbolName: "character.cursor.ibeam",
-            accessibilityDescription: nil
-        )
-        iconView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
-        iconView.contentTintColor = .secondaryLabelColor
-        addSubview(iconView)
-
-        textField.isBordered = false
-        textField.isBezeled = false
-        textField.drawsBackground = false
-        textField.focusRingType = .none
-        textField.font = .systemFont(ofSize: 15, weight: .regular)
-        textField.textColor = .labelColor
-        textField.placeholderString = L("Type or paste text to translate")
-        textField.usesSingleLineMode = true
-        textField.cell?.wraps = false
-        textField.cell?.isScrollable = true
-        textField.cell?.lineBreakMode = .byTruncatingTail
-        addSubview(textField)
-
-        returnHint.font = .systemFont(ofSize: 12, weight: .medium)
-        returnHint.textColor = .tertiaryLabelColor
-        returnHint.alignment = .center
-        returnHint.isBordered = false
-        returnHint.drawsBackground = false
-        returnHint.toolTip = L("Return to translate")
-        addSubview(returnHint)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func layout() {
-        super.layout()
-
-        let contentHeight = min(24, bounds.height)
-        let iconY = (bounds.height - iconSize) / 2
-        iconView.frame = CGRect(
-            x: horizontalPadding,
-            y: iconY,
-            width: iconSize,
-            height: iconSize
-        )
-
-        let hintX = bounds.width - horizontalPadding - returnHintSize.width
-        returnHint.frame = CGRect(
-            x: hintX,
-            y: (bounds.height - returnHintSize.height) / 2,
-            width: returnHintSize.width,
-            height: returnHintSize.height
-        )
-
-        let textX = iconView.frame.maxX + 10
-        textField.frame = CGRect(
-            x: textX,
-            y: (bounds.height - contentHeight) / 2,
-            width: max(0, hintX - textX - 10),
-            height: contentHeight
-        )
-
-        layer?.shadowPath = CGPath(
-            roundedRect: bounds,
-            cornerWidth: 14,
-            cornerHeight: 14,
-            transform: nil
-        )
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-
-        let backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.97)
-        let borderColor = NSColor.separatorColor.withAlphaComponent(0.55)
-        let path = NSBezierPath(
-            roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
-            xRadius: 14,
-            yRadius: 14
-        )
-        backgroundColor.setFill()
-        path.fill()
-
-        borderColor.setStroke()
-        path.lineWidth = 1
-        path.stroke()
-
-        let hintRect = returnHint.frame.insetBy(dx: 2, dy: 2)
-        NSColor.secondaryLabelColor.withAlphaComponent(0.09).setFill()
-        NSBezierPath(roundedRect: hintRect, xRadius: 5, yRadius: 5).fill()
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        needsDisplay = true
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(textField)
-    }
-
-    func focusTextField() {
-        window?.makeFirstResponder(textField)
-    }
-}
-
 private final class ManualRegionSelectionView: NSView {
     var onComplete: (CGRect) -> Void = { _ in }
-    var onTextSubmit: (String) -> Void = { _ in }
     var onCancel: () -> Void = {}
 
     private var dragStart: CGPoint?
     private var dragCurrent: CGPoint?
     private let minimumSelectionSize = CGSize(width: 12, height: 12)
-    private let inputBar: ManualRegionInputBarView?
-    private let inputBarHeight: CGFloat = 52
-    private let inputBarWidth: CGFloat = 620
-    private let inputBarTopInset: CGFloat = 54
-
-    init(frame frameRect: NSRect, showsInputBar: Bool) {
-        inputBar = showsInputBar ? ManualRegionInputBarView(frame: .zero) : nil
-        super.init(frame: frameRect)
-
-        if let inputBar {
-            inputBar.onSubmit = { [weak self] text in
-                self?.submitInput(text)
-            }
-            inputBar.onCancel = { [weak self] in
-                self?.requestCancel()
-            }
-            addSubview(inputBar)
-        }
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -322,24 +115,7 @@ private final class ManualRegionSelectionView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if inputBar == nil {
-            window?.makeFirstResponder(self)
-        } else {
-            focusInput()
-        }
-    }
-
-    override func layout() {
-        super.layout()
-        guard let inputBar else { return }
-
-        let barWidth = min(inputBarWidth, max(320, bounds.width - 64))
-        inputBar.frame = CGRect(
-            x: (bounds.width - barWidth) / 2,
-            y: bounds.maxY - inputBarTopInset - inputBarHeight,
-            width: barWidth,
-            height: inputBarHeight
-        )
+        window?.makeFirstResponder(self)
     }
 
     override func resetCursorRects() {
@@ -366,7 +142,6 @@ private final class ManualRegionSelectionView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        inputBar?.focusTextField()
         dragStart = event.locationInWindow
         dragCurrent = event.locationInWindow
         needsDisplay = true
@@ -394,19 +169,11 @@ private final class ManualRegionSelectionView: NSView {
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 {
-            requestCancel()
+            resetSelection()
+            onCancel()
             return
         }
         super.keyDown(with: event)
-    }
-
-    func focusInput() {
-        guard let inputBar else { return }
-        DispatchQueue.main.async { [weak self, weak inputBar] in
-            guard let self, let inputBar else { return }
-            self.window?.makeKey()
-            self.window?.makeFirstResponder(inputBar.textField)
-        }
     }
 
     private var selectionRect: CGRect? {
@@ -425,21 +192,6 @@ private final class ManualRegionSelectionView: NSView {
         needsDisplay = true
     }
 
-    private func submitInput(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            NSSound.beep()
-            return
-        }
-        resetSelection()
-        onTextSubmit(trimmed)
-    }
-
-    private func requestCancel() {
-        resetSelection()
-        onCancel()
-    }
-
     private func drawHint() {
         let text = L("Drag to select a region to translate · Esc to cancel")
         let attributes: [NSAttributedString.Key: Any] = [
@@ -449,15 +201,9 @@ private final class ManualRegionSelectionView: NSView {
         ]
         let attributed = NSAttributedString(string: "  \(text)  ", attributes: attributes)
         let size = attributed.size()
-        let hintY: CGFloat
-        if let inputBar {
-            hintY = inputBar.frame.minY - size.height - 12
-        } else {
-            hintY = bounds.maxY - size.height - 28
-        }
         let rect = CGRect(
             x: bounds.midX - size.width / 2,
-            y: hintY,
+            y: bounds.maxY - size.height - 28,
             width: size.width,
             height: size.height
         )
@@ -469,11 +215,7 @@ final class ManualRegionSelectionWindowController {
     private var panels: [NSPanel] = []
     private var didFinish = false
 
-    func begin(
-        onComplete: @escaping (CGRect) -> Void,
-        onTextSubmit: @escaping (String) -> Void,
-        onCancel: @escaping () -> Void
-    ) {
+    func begin(onComplete: @escaping (CGRect) -> Void, onCancel: @escaping () -> Void) {
         hide()
         didFinish = false
 
@@ -481,19 +223,8 @@ final class ManualRegionSelectionWindowController {
             NSApp.activate(ignoringOtherApps: true)
         }
 
-        let mouseLocation = NSEvent.mouseLocation
-        let activeScreen = NSScreen.screens.first {
-            NSMouseInRect(mouseLocation, $0.frame, false)
-        } ?? NSScreen.main
-        var activePanel: NSPanel?
-        var activeSelectionView: ManualRegionSelectionView?
-
         for screen in NSScreen.screens {
-            let isActiveScreen = activeScreen.map { $0.frame == screen.frame } ?? false
-            let selectionView = ManualRegionSelectionView(
-                frame: CGRect(origin: .zero, size: screen.frame.size),
-                showsInputBar: isActiveScreen
-            )
+            let selectionView = ManualRegionSelectionView(frame: CGRect(origin: .zero, size: screen.frame.size))
             selectionView.autoresizingMask = [.width, .height]
             let panel = ManualRegionSelectionPanel(
                 contentRect: screen.frame,
@@ -520,12 +251,6 @@ final class ManualRegionSelectionWindowController {
                 self.hide()
                 onComplete(rect)
             }
-            selectionView.onTextSubmit = { [weak self] text in
-                guard let self, !self.didFinish else { return }
-                self.didFinish = true
-                self.hide()
-                onTextSubmit(text)
-            }
             selectionView.onCancel = { [weak self] in
                 guard let self, !self.didFinish else { return }
                 self.didFinish = true
@@ -537,21 +262,10 @@ final class ManualRegionSelectionWindowController {
             panels.append(panel)
             panel.setFrame(screen.frame, display: true)
             panel.orderFrontRegardless()
+            panel.makeKeyAndOrderFront(nil)
+            panel.makeFirstResponder(selectionView)
             selectionView.needsDisplay = true
             panel.displayIfNeeded()
-
-            if isActiveScreen {
-                activePanel = panel
-                activeSelectionView = selectionView
-            }
-        }
-
-        if let activePanel, let activeSelectionView {
-            activePanel.makeKeyAndOrderFront(nil)
-            activePanel.makeFirstResponder(activeSelectionView)
-            activeSelectionView.focusInput()
-        } else if let firstPanel = panels.first {
-            firstPanel.makeKeyAndOrderFront(nil)
         }
     }
 
@@ -563,77 +277,11 @@ final class ManualRegionSelectionWindowController {
     }
 }
 
-// MARK: - Paragraph Highlight Layout
+// MARK: - Paragraph Highlight View Model
 
-enum ParagraphHighlightLayout {
-    /// Converts AppKit screen-space line rectangles into the window's top-left
-    /// local coordinate space. Invalid or off-window rectangles are ignored.
-    nonisolated static func localLineRects(
-        in windowFrame: CGRect,
-        lineRects: [CGRect]
-    ) -> [CGRect] {
-        guard !windowFrame.isNull, !windowFrame.isEmpty else { return [] }
-
-        let converted = lineRects.compactMap { lineRect -> CGRect? in
-            guard isFinite(lineRect) else { return nil }
-            let clipped = lineRect.intersection(windowFrame)
-            guard !clipped.isNull, !clipped.isEmpty else { return nil }
-
-            return CGRect(
-                x: clipped.minX - windowFrame.minX,
-                y: windowFrame.maxY - clipped.maxY,
-                width: clipped.width,
-                height: clipped.height
-            )
-        }
-
-        return converted.isEmpty
-            ? [CGRect(origin: .zero, size: windowFrame.size)]
-            : converted
-    }
-
-    nonisolated private static func isFinite(_ rect: CGRect) -> Bool {
-        rect.origin.x.isFinite
-            && rect.origin.y.isFinite
-            && rect.size.width.isFinite
-            && rect.size.height.isFinite
-    }
-}
-
-struct ParagraphHighlightVisualStyle: Equatable {
-    static let leadingGuideWidth: CGFloat = 2
-
-    let fillOpacity: Double
-    let leadingGuideOpacity: Double
-
-    nonisolated static func resolve(increaseContrast: Bool) -> Self {
-        if increaseContrast {
-            return Self(fillOpacity: 0.18, leadingGuideOpacity: 0.95)
-        }
-
-        return Self(fillOpacity: 0.1, leadingGuideOpacity: 0.72)
-    }
-}
-
-enum ParagraphHighlightHandleVisibility {
-    nonisolated static func isVisible(
-        for corner: ParagraphHighlightResizeCorner,
-        hoveredCorner: ParagraphHighlightResizeCorner?,
-        activeCorner: ParagraphHighlightResizeCorner?,
-        isAdjusting: Bool
-    ) -> Bool {
-        isAdjusting || hoveredCorner == corner || activeCorner == corner
-    }
-}
-
-struct ParagraphHighlightEntrancePolicy: Equatable {
-    nonisolated static let animatedDuration: TimeInterval = 0.11
-
-    let duration: TimeInterval
-
-    nonisolated static func resolve(reduceMotion: Bool) -> Self {
-        Self(duration: reduceMotion ? 0 : animatedDuration)
-    }
+@MainActor
+final class ParagraphHighlightViewModel: ObservableObject {
+    @Published var isActive = false
 }
 
 enum ParagraphHighlightResizeCorner: CaseIterable, Equatable {
@@ -885,46 +533,47 @@ enum ParagraphHighlightResizeGeometry {
 // MARK: - Paragraph Highlight View
 
 private struct ParagraphHighlightView: View {
-    var lineRects: [CGRect]
-    var isAdjusting: Bool
+    @ObservedObject var model: ParagraphHighlightViewModel
     var onResizeChanged: (ParagraphHighlightResizeCorner, CGPoint) -> Void
     var onResizeEnded: (ParagraphHighlightResizeCorner, CGPoint) -> Void
+    private let accentColor = Color(red: 0.18, green: 0.88, blue: 0.42)
+    private let handleSize: CGFloat = 36
+    /// Half-width of the soft gradient halo on each side of the beam core
+    private let beamHaloHalf: CGFloat = 28
+    /// Width of the hard bright core line
+    private let beamCoreWidth: CGFloat = 2.5
+    /// Single-pass duration in seconds (left→right or right→left)
+    private let scanDuration: TimeInterval = 1.4
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @State private var appeared = false
+    @State private var startDate: Date = .now
     @State private var hoveredCorner: ParagraphHighlightResizeCorner?
     @State private var activeResizeCorner: ParagraphHighlightResizeCorner?
-
-    private let highlightColor = Color(nsColor: .systemBlue)
-    private let handleSize: CGFloat = 36
-
-    private var visualStyle: ParagraphHighlightVisualStyle {
-        ParagraphHighlightVisualStyle.resolve(
-            increaseContrast: colorSchemeContrast == .increased
-        )
-    }
 
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
             let cornerLength = min(min(size.width, size.height) * 0.22, 22)
-            let style = visualStyle
 
             ZStack {
-                Canvas { context, _ in
-                    drawHighlights(context: context, style: style)
+                // Layer 1 — ambient fill
+                Rectangle()
+                    .fill(accentColor.opacity(0.05))
+
+                // Layer 2 — scan beam via TimelineView, only when active
+                if model.isActive {
+                    TimelineView(.animation) { timeline in
+                        Canvas { ctx, canvasSize in
+                            let elapsed = timeline.date.timeIntervalSince(startDate)
+                            let centerX = beamCenterX(elapsed: elapsed, width: canvasSize.width)
+                            drawBeam(ctx: ctx, canvasSize: canvasSize, centerX: centerX)
+                        }
+                    }
                 }
 
+                // Layer 3 — corner brackets
                 ForEach(ParagraphHighlightResizeCorner.allCases, id: \.self) { corner in
-                    if ParagraphHighlightHandleVisibility.isVisible(
-                        for: corner,
-                        hoveredCorner: hoveredCorner,
-                        activeCorner: activeResizeCorner,
-                        isAdjusting: isAdjusting
-                    ) {
-                        cornerFeedback(for: corner, in: size, cornerLength: cornerLength)
-                    }
+                    cornerFeedback(for: corner, in: size, cornerLength: cornerLength)
                 }
 
                 ParagraphHighlightResizeInteractionView(
@@ -941,48 +590,80 @@ private struct ParagraphHighlightView: View {
                 .frame(width: size.width, height: size.height)
             }
             .opacity(appeared ? 1 : 0)
+            .scaleEffect(appeared ? 1 : 0.97)
             .onAppear {
-                let entrance = ParagraphHighlightEntrancePolicy.resolve(reduceMotion: reduceMotion)
-                if reduceMotion {
+                startDate = .now
+                withAnimation(.easeOut(duration: 0.25)) {
                     appeared = true
-                } else {
-                    withAnimation(.easeOut(duration: entrance.duration)) {
-                        appeared = true
-                    }
                 }
             }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hoveredCorner)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: activeResizeCorner)
+            .onChange(of: model.isActive) { _, isActive in
+                if isActive {
+                    startDate = .now
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: hoveredCorner)
+            .animation(.easeOut(duration: 0.12), value: activeResizeCorner)
         }
     }
 
-    private func drawHighlights(
-        context: GraphicsContext,
-        style: ParagraphHighlightVisualStyle
-    ) {
-        for rect in lineRects where rect.width > 0 && rect.height > 0 {
-            let radius = min(4, rect.width / 2, rect.height / 2)
-            let fillPath = RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .path(in: rect)
-            context.fill(
-                fillPath,
-                with: .color(highlightColor.opacity(style.fillOpacity))
-            )
+    // MARK: - Beam position
 
-            let verticalInset = min(2, rect.height * 0.2)
-            let guideHeight = rect.height - verticalInset * 2
-            guard guideHeight > 0 else { continue }
+    /// Returns beam center x for the given elapsed time using a ping-pong easeInOut curve.
+    private func beamCenterX(elapsed: TimeInterval, width: CGFloat) -> CGFloat {
+        // Travel range: from -halo to width+halo
+        let travel = width + beamHaloHalf * 2
+        let period = scanDuration * 2          // full round-trip
+        let t = elapsed.truncatingRemainder(dividingBy: period) / period  // 0…1 over one round-trip
+        // ping-pong: 0→1 then 1→0
+        let raw = t < 0.5 ? t * 2 : (1 - t) * 2
+        // easeInOut
+        let eased = raw < 0.5
+            ? 2 * raw * raw
+            : 1 - pow(-2 * raw + 2, 2) / 2
+        return -beamHaloHalf + eased * travel
+    }
 
-            let guideRect = CGRect(
-                x: rect.minX + 1,
-                y: rect.minY + verticalInset,
-                width: ParagraphHighlightVisualStyle.leadingGuideWidth,
-                height: guideHeight
+    // MARK: - Beam drawing
+
+    private func drawBeam(ctx: GraphicsContext, canvasSize: CGSize, centerX: CGFloat) {
+        let totalHalf = beamHaloHalf + beamCoreWidth / 2
+
+        // --- Soft halo gradient ---
+        let haloLeft  = centerX - totalHalf
+        let haloRight = centerX + totalHalf
+        let clampedLeft  = max(0, haloLeft)
+        let clampedRight = min(canvasSize.width, haloRight)
+        if clampedRight > clampedLeft {
+            let haloRect = CGRect(x: clampedLeft, y: 0,
+                                  width: clampedRight - clampedLeft,
+                                  height: canvasSize.height)
+            let haloGradient = Gradient(stops: [
+                .init(color: accentColor.opacity(0),    location: 0),
+                .init(color: accentColor.opacity(0.18), location: 0.35),
+                .init(color: accentColor.opacity(0.55), location: 0.48),
+                .init(color: accentColor.opacity(0.55), location: 0.52),
+                .init(color: accentColor.opacity(0.18), location: 0.65),
+                .init(color: accentColor.opacity(0),    location: 1),
+            ])
+            ctx.fill(
+                Path(haloRect),
+                with: .linearGradient(
+                    haloGradient,
+                    startPoint: CGPoint(x: haloLeft,  y: canvasSize.height / 2),
+                    endPoint:   CGPoint(x: haloRight, y: canvasSize.height / 2)
+                )
             )
-            context.fill(
-                Path(roundedRect: guideRect, cornerRadius: 1),
-                with: .color(highlightColor.opacity(style.leadingGuideOpacity))
-            )
+        }
+
+        // --- Hard bright core ---
+        let coreLeft  = max(0, centerX - beamCoreWidth / 2)
+        let coreRight = min(canvasSize.width, centerX + beamCoreWidth / 2)
+        if coreRight > coreLeft {
+            let coreRect = CGRect(x: coreLeft, y: 0,
+                                  width: coreRight - coreLeft,
+                                  height: canvasSize.height)
+            ctx.fill(Path(coreRect), with: .color(accentColor.opacity(0.9)))
         }
     }
 
@@ -1002,13 +683,13 @@ private struct ParagraphHighlightView: View {
 
         cornerBracket(for: corner, size: size, cornerLength: cornerLength)
             .stroke(
-                highlightColor.opacity(feedback.opacity),
+                accentColor.opacity(feedback.opacity),
                 style: StrokeStyle(lineWidth: feedback.lineWidth, lineCap: .round, lineJoin: .round)
             )
 
         if feedback.showsGrip {
             Circle()
-                .fill(highlightColor.opacity(feedback.opacity))
+                .fill(accentColor.opacity(feedback.opacity))
                 .overlay(
                     Circle()
                         .stroke(Color.white.opacity(0.8), lineWidth: 1)
@@ -1271,6 +952,7 @@ private final class ParagraphHighlightResizeInteractionNSView: NSView {
 }
 
 final class ParagraphHighlightWindowController: NSWindowController {
+    private let model = ParagraphHighlightViewModel()
     private let hostingView: NSHostingView<AnyView>
     private var resizeStartFrame: CGRect?
     private var resizeStartMouseLocation: CGPoint?
@@ -1310,25 +992,14 @@ final class ParagraphHighlightWindowController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    /// Shows the source highlight. `rect` and every entry in `lineRects` use
-    /// AppKit screen coordinates.
-    func show(
-        at rect: CGRect,
-        lineRects: [CGRect] = [],
-        isAdjusting: Bool = false
-    ) {
+    func show(at rect: CGRect) {
         guard rect.width > 0, rect.height > 0 else {
             hide()
             return
         }
 
-        let localLineRects = ParagraphHighlightLayout.localLineRects(
-            in: rect,
-            lineRects: lineRects
-        )
         hostingView.rootView = AnyView(ParagraphHighlightView(
-            lineRects: localLineRects,
-            isAdjusting: isAdjusting,
+            model: model,
             onResizeChanged: { [weak self] corner, mouseLocation in
                 self?.updateResize(corner: corner, mouseLocation: mouseLocation)
             },
@@ -1336,12 +1007,14 @@ final class ParagraphHighlightWindowController: NSWindowController {
                 self?.completeResize(corner: corner, mouseLocation: mouseLocation)
             }
         ))
+        model.isActive = true
         guard let window else { return }
         window.setFrame(rect, display: true)
         window.orderFrontRegardless()
     }
 
     func hide() {
+        model.isActive = false
         resizeStartFrame = nil
         resizeStartMouseLocation = nil
         hostingView.rootView = AnyView(EmptyView())
@@ -1358,6 +1031,7 @@ final class ParagraphHighlightWindowController: NSWindowController {
         if resizeStartFrame == nil {
             resizeStartFrame = window.frame
             resizeStartMouseLocation = mouseLocation
+            model.isActive = false
             onResizeBegan?()
         }
         guard let resizeStartFrame, let resizeStartMouseLocation else { return }
@@ -1385,6 +1059,7 @@ final class ParagraphHighlightWindowController: NSWindowController {
         )
         resizeStartFrame = nil
         resizeStartMouseLocation = nil
+        model.isActive = true
         window.setFrame(finalFrame, display: true)
         onResizeCompleted?(finalFrame)
     }
@@ -1792,7 +1467,7 @@ final class OverlayWindowController: NSWindowController {
     }
 
     private func paragraphFrame(for anchor: CGPoint) -> CGRect {
-        let sourceRect = manualOrigin == nil ? model.paragraphPlacementRect : nil
+        let sourceRect = manualOrigin == nil ? model.activeParagraphRect : nil
         let sourceCenter = sourceRect.map { CGPoint(x: $0.midX, y: $0.midY) }
         let screenFrame = visibleScreenFrame(for: manualOrigin ?? sourceCenter ?? anchor)
         let layout = ParagraphOverlayLayout(

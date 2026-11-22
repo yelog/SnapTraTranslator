@@ -184,13 +184,22 @@ nonisolated final class OCRRecognitionExecutor: @unchecked Sendable {
         self.recognizer = recognizer
     }
 
-    func recognize(in image: CGImage, language: String) async throws -> [VNRecognizedTextObservation] {
+    func recognize(
+        in image: CGImage,
+        language: String,
+        mode: OCRRecognitionMode? = nil
+    ) async throws -> [VNRecognizedTextObservation] {
         try Task.checkCancellation()
         let cancellation = OCRRequestCancellation()
         return try await withTaskCancellationHandler {
-            let observations = try await recognizeWithRecovery(
-                image: image, language: language, cancellation: cancellation
-            )
+            let observations: [VNRecognizedTextObservation]
+            if let mode {
+                observations = try await attempt(image, language: language, mode: mode, cancellation: cancellation)
+            } else {
+                observations = try await recognizeWithRecovery(
+                    image: image, language: language, cancellation: cancellation
+                )
+            }
             try Task.checkCancellation()
             try cancellation.checkCancellation()
             return observations
