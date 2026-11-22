@@ -22,10 +22,13 @@ enum InPlaceTranslationState: Equatable {
 }
 
 enum InPlaceTranslationPresentationPolicy {
-    static func shouldShowWindow(for state: InPlaceTranslationState) -> Bool {
+    static func shouldShowWindow(
+        for state: InPlaceTranslationState,
+        selectionMode: DoubleTapSentenceTranslationMode?
+    ) -> Bool {
         switch state {
         case .loading:
-            return false
+            return selectionMode == .manualRegion
         case .ready, .failed:
             return true
         }
@@ -276,6 +279,7 @@ struct InPlaceTranslationView: View {
 struct InPlaceImageTranslationContent: Equatable {
     var state: InPlaceImageTranslationState
     var sourceRect: CGRect
+    let showsLoadingScan: Bool
 }
 
 enum InPlaceImageTranslationState: Equatable {
@@ -320,7 +324,11 @@ struct InPlaceImageTranslationView: View {
             ZStack {
                 switch content.state {
                 case .loading:
-                    InPlaceImageTranslationLoadingView()
+                    if content.showsLoadingScan {
+                        InPlaceImageTranslationLoadingView()
+                    } else {
+                        InPlaceTranslationProgressView()
+                    }
                 case .ready(let imageData):
                     if let image = NSImage(data: imageData) {
                         Image(nsImage: image)
@@ -354,6 +362,16 @@ struct InPlaceImageTranslationView: View {
                 .lineLimit(3)
                 .padding(size.height < 32 ? 4 : 8)
         }
+    }
+}
+
+private struct InPlaceTranslationProgressView: View {
+    var body: some View {
+        ProgressView()
+            .controlSize(.small)
+            .padding(2)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .accessibilityLabel(Text("Translating"))
     }
 }
 
@@ -553,14 +571,21 @@ final class InPlaceTranslationWindowController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func show(content: InPlaceTranslationContent) {
+    func show(content: InPlaceTranslationContent, selectionMode: DoubleTapSentenceTranslationMode?) {
         guard let window else { return }
-        guard InPlaceTranslationPresentationPolicy.shouldShowWindow(for: content.translationState) else {
+        guard InPlaceTranslationPresentationPolicy.shouldShowWindow(
+            for: content.translationState,
+            selectionMode: selectionMode
+        ) else {
             hide()
             return
         }
 
-        hostingView.rootView = AnyView(InPlaceTranslationView(content: content))
+        if content.translationState == .loading {
+            hostingView.rootView = AnyView(InPlaceTranslationProgressView())
+        } else {
+            hostingView.rootView = AnyView(InPlaceTranslationView(content: content))
+        }
         window.setFrame(content.sourceRect, display: true)
         window.orderFrontRegardless()
         if case .ready = content.translationState {

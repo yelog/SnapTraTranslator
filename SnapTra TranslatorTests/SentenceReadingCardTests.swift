@@ -43,6 +43,78 @@ final class SentenceReadingCardTests: XCTestCase {
         return AppModel(settings: settings, modelContext: container.mainContext)
     }
 
+    func testCursorLineScanSurvivesPersistentReleaseBeforeOrAfterRecognition() throws {
+        let model = try makeModel()
+        defer { model.dismissOverlay() }
+        let lineRect = CGRect(x: 104, y: 320, width: 512, height: 18)
+        let anchor = CGPoint(x: lineRect.midX, y: lineRect.midY)
+        let content = ParagraphOverlayContent(originalText: "我用 AI 给 Java 写了个指标", translationState: .loading)
+
+        for releaseBeforeResult in [false, true] {
+            model.overlayState = .paragraphLoading
+            if releaseBeforeResult { model.handlePersistentSentenceOverlayRelease() }
+            model.setParagraphSourceRegion(lineRect, selectionMode: .cursorParagraph)
+            model.updateOverlay(state: .paragraphResult(content), anchor: anchor)
+            if !releaseBeforeResult { model.handlePersistentSentenceOverlayRelease() }
+            XCTAssertTrue(model.isParagraphOverlayPinned)
+            XCTAssertEqual(model.visibleSourceHighlightFrame, lineRect)
+
+            var translated = content
+            translated.translationState = .ready("I wrote a Java metric using AI.")
+            model.updateOverlay(state: .paragraphResult(translated))
+            XCTAssertEqual(model.visibleSourceHighlightFrame, lineRect)
+            model.dismissOverlay()
+            XCTAssertNil(model.visibleSourceHighlightFrame)
+        }
+    }
+
+    func testWordLookupClearsPreviousSentenceScanAndKeepsOnlyTheCardAfterTap() throws {
+        let model = try makeModel()
+        defer { model.dismissOverlay() }
+        model.settings.keepWordOverlayAfterTap = true
+        let sentenceRect = CGRect(x: 184, y: 264, width: 320, height: 32)
+        model.setParagraphSourceRegion(sentenceRect, selectionMode: .cursorParagraph)
+        XCTAssertEqual(model.visibleSourceHighlightFrame, sentenceRect)
+        model.handleHotkeyTrigger()
+        XCTAssertNil(model.visibleSourceHighlightFrame)
+        XCTAssertNil(model.activeParagraphRect)
+
+        var content = OverlayContent(
+            word: "Table",
+            phonetic: nil,
+            primaryTranslationState: .loading,
+            usesCompactPrimaryTranslationStyle: false
+        )
+        model.updateOverlay(state: .result(content), anchor: sentenceRect.origin)
+        XCTAssertNil(model.visibleSourceHighlightFrame)
+        model.handleHotkeyTapRelease()
+        content.primaryTranslationState = .ready("餐桌", isFallback: false)
+        model.updateOverlay(state: .result(content))
+        XCTAssertTrue(model.isTapKeptOverlayPresented)
+        XCTAssertEqual(model.overlayState, .result(content))
+        XCTAssertNil(model.visibleSourceHighlightFrame)
+    }
+
+    func testManualSelectionKeepsItsAnchorWithoutStartingOrRetainingAnAutomaticScan() throws {
+        let model = try makeModel()
+        defer { model.dismissOverlay() }
+        model.settings.doubleTapSentenceTranslationMode = .cursorParagraph
+        let automatic = CGRect(x: 100, y: 220, width: 400, height: 22)
+        let manual = automatic.insetBy(dx: -8, dy: -4)
+        model.setParagraphSourceRegion(automatic, selectionMode: .cursorParagraph)
+        XCTAssertEqual(model.visibleSourceHighlightFrame, automatic)
+
+        model.setParagraphSourceRegion(manual, selectionMode: .manualRegion)
+        model.overlayState = .paragraphLoading
+        model.handlePersistentSentenceOverlayRelease()
+        model.updateOverlay(state: .paragraphResult(
+            ParagraphOverlayContent(originalText: "Table", translationState: .ready("表格"))
+        ))
+        XCTAssertTrue(model.isParagraphOverlayPinned)
+        XCTAssertEqual(model.activeParagraphRect, manual)
+        XCTAssertNil(model.visibleSourceHighlightFrame)
+    }
+
     func testNativeCardKeepsItsReadingWidthAsTranslationStreams() throws {
         let model = try makeModel()
         let source = "Together AI model catalog now includes embedding and rerank model types."

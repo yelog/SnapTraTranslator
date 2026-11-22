@@ -136,10 +136,13 @@ final class InPlaceTranslationLayoutTests: XCTestCase {
         XCTAssertGreaterThan(style.backgroundColor.relativeTestLuminance, 0.9)
     }
 
-    func testInPlacePresentationPolicyHidesLoadingWindow() {
-        XCTAssertFalse(InPlaceTranslationPresentationPolicy.shouldShowWindow(for: .loading))
-        XCTAssertTrue(InPlaceTranslationPresentationPolicy.shouldShowWindow(for: .ready("Translated text")))
-        XCTAssertTrue(InPlaceTranslationPresentationPolicy.shouldShowWindow(for: .failed("Failed")))
+    func testInPlaceManualLoadingHasItsOwnIndicatorAndAutomaticLoadingUsesTheSourceScan() {
+        XCTAssertFalse(InPlaceTranslationPresentationPolicy.shouldShowWindow(for: .loading, selectionMode: .cursorParagraph))
+        XCTAssertTrue(InPlaceTranslationPresentationPolicy.shouldShowWindow(for: .loading, selectionMode: .manualRegion))
+        for mode in DoubleTapSentenceTranslationMode.allCases {
+            XCTAssertTrue(InPlaceTranslationPresentationPolicy.shouldShowWindow(for: .ready("Translated text"), selectionMode: mode))
+            XCTAssertTrue(InPlaceTranslationPresentationPolicy.shouldShowWindow(for: .failed("Failed"), selectionMode: mode))
+        }
     }
 
     func testImageTranslationLoadingAppearanceDoesNotDimOriginalImage() {

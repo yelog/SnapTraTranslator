@@ -3,6 +3,24 @@ import XCTest
 @testable import SnapTra_Translator
 
 final class ParagraphOverlayLayoutTests: XCTestCase {
+    @MainActor
+    func testAutomaticSentenceScanRemainsVisibleAndResizableUntilDismissed() throws {
+        let controller = ParagraphHighlightWindowController()
+        defer { controller.hide() }
+        let window = try XCTUnwrap(controller.window)
+        for height: CGFloat in [18, 72] {
+            let rect = CGRect(x: 112, y: 216, width: 280, height: height)
+            controller.show(at: rect)
+            XCTAssertFalse(window.ignoresMouseEvents)
+            controller.finishGesture(keepingOverlay: true)
+            XCTAssertEqual(controller.visibleFrame, rect)
+            XCTAssertFalse(window.ignoresMouseEvents)
+        }
+
+        controller.finishGesture(keepingOverlay: false)
+        XCTAssertNil(controller.visibleFrame)
+    }
+
     func testManualRegionSelectionPresentationKeepsBrowserFocusAndAcceptsInitialClick() {
         XCTAssertFalse(ManualRegionSelectionPresentationPolicy.activatesApplication)
         XCTAssertTrue(ManualRegionSelectionPresentationPolicy.acceptsFirstMouse)

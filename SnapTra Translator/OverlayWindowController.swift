@@ -534,6 +534,7 @@ enum ParagraphHighlightResizeGeometry {
 
 private struct ParagraphHighlightView: View {
     @ObservedObject var model: ParagraphHighlightViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var onResizeChanged: (ParagraphHighlightResizeCorner, CGPoint) -> Void
     var onResizeEnded: (ParagraphHighlightResizeCorner, CGPoint) -> Void
     private let accentColor = Color(red: 0.18, green: 0.88, blue: 0.42)
@@ -561,7 +562,7 @@ private struct ParagraphHighlightView: View {
                     .fill(accentColor.opacity(0.05))
 
                 // Layer 2 — scan beam via TimelineView, only when active
-                if model.isActive {
+                if model.isActive && !reduceMotion {
                     TimelineView(.animation) { timeline in
                         Canvas { ctx, canvasSize in
                             let elapsed = timeline.date.timeIntervalSince(startDate)
@@ -593,7 +594,7 @@ private struct ParagraphHighlightView: View {
             .scaleEffect(appeared ? 1 : 0.97)
             .onAppear {
                 startDate = .now
-                withAnimation(.easeOut(duration: 0.25)) {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
                     appeared = true
                 }
             }
@@ -993,7 +994,8 @@ final class ParagraphHighlightWindowController: NSWindowController {
     }
 
     func show(at rect: CGRect) {
-        guard rect.width > 0, rect.height > 0 else {
+        guard !rect.isEmpty, !rect.isInfinite,
+              [rect.origin.x, rect.origin.y, rect.width, rect.height].allSatisfy(\.isFinite) else {
             hide()
             return
         }
@@ -1011,6 +1013,12 @@ final class ParagraphHighlightWindowController: NSWindowController {
         guard let window else { return }
         window.setFrame(rect, display: true)
         window.orderFrontRegardless()
+    }
+
+    func finishGesture(keepingOverlay: Bool) {
+        if !keepingOverlay {
+            hide()
+        }
     }
 
     func hide() {

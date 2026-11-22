@@ -495,8 +495,9 @@ private enum OcrWordCandidateLoadResult: Sendable {
 final class AppModel: ObservableObject {
     @Published var overlayState: OverlayState = .idle
     var overlayAnchor: CGPoint = .zero
-    var activeParagraphRect: CGRect? = nil
-    @Published var overlayPreferredWidth: CGFloat? = nil
+    @Published private var paragraphSourceRegion: (rect: CGRect, selectionMode: DoubleTapSentenceTranslationMode)?
+    var activeParagraphRect: CGRect? { paragraphSourceRegion?.rect }
+    var overlayPreferredWidth: CGFloat? { activeParagraphRect.map { max(320, $0.width) } }
     @Published var isParagraphOverlayPinned: Bool = false
     @Published var isTapKeptOverlayPresented: Bool = false
     @Published private(set) var speechPlaybackState: SpeechPlaybackState = .idle
@@ -608,6 +609,7 @@ final class AppModel: ObservableObject {
 
     private let debugOverlayWindowController = DebugOverlayWindowController()
     private let paragraphHighlightWindowController = ParagraphHighlightWindowController()
+    var visibleSourceHighlightFrame: CGRect? { paragraphHighlightWindowController.visibleFrame }
     private let manualRegionSelectionWindowController = ManualRegionSelectionWindowController()
     private let inPlaceTranslationWindowController = InPlaceTranslationWindowController()
     private let inPlaceImageTranslationWindowController = InPlaceImageTranslationWindowController()
@@ -724,7 +726,8 @@ final class AppModel: ObservableObject {
         }
         paragraphHighlightWindowController.onResizeCompleted = { [weak self] rect in
             Task { @MainActor in
-                self?.handleParagraphRegionResizeCompleted(rect)
+                guard let self, self.paragraphSourceRegion?.selectionMode == .cursorParagraph else { return }
+                self.startParagraphRegionLookup(rect, selectionMode: .cursorParagraph)
             }
         }
         resolvedPermissions.refreshStatus()
@@ -762,7 +765,6 @@ final class AppModel: ObservableObject {
         hideInPlaceTranslation()
         tapKeptOverlayReleaseLocation = nil
         stopOverlayEscapeMonitoring()
-        paragraphHighlightWindowController.hide()
         let mouseLocation = NSEvent.mouseLocation
         lastOcrPosition = mouseLocation
         setOverlayAnchor(mouseLocation)
@@ -797,7 +799,7 @@ final class AppModel: ObservableObject {
         if !settings.debugShowOcrRegion {
             debugOverlayWindowController.hide()
         }
-        paragraphHighlightWindowController.hide()
+        paragraphHighlightWindowController.finishGesture(keepingOverlay: shouldKeepSentenceOverlayVisible)
 
         if shouldKeepSentenceOverlayVisible {
             stopMouseTracking()
@@ -830,7 +832,7 @@ final class AppModel: ObservableObject {
         tapKeptOverlayReleaseLocation = nil
         stopMouseTracking()
         debugOverlayWindowController.hide()
-        paragraphHighlightWindowController.hide()
+        paragraphHighlightWindowController.finishGesture(keepingOverlay: isSentenceTranslationPresented)
 
         switch PersistentSentencePresentationPolicy.resolve(
             isSentenceTranslationPresented: isSentenceTranslationPresented,
@@ -1041,7 +1043,7 @@ final class AppModel: ObservableObject {
     private func handleManualParagraphRegionSelectionCompleted(_ rect: CGRect) {
         isParagraphRegionInteractionActive = false
         shouldRestoreParagraphOverlayAfterManualRegionCancel = true
-        let didStartLookup = handleParagraphRegionResizeCompleted(rect)
+        let didStartLookup = startParagraphRegionLookup(rect, selectionMode: .manualRegion)
 
         guard isPersistentSentencePresentationPending else { return }
         if didStartLookup {
@@ -1055,6 +1057,7 @@ final class AppModel: ObservableObject {
         isParagraphRegionInteractionActive = false
         isPersistentSentencePresentationPending = false
         if shouldRestoreParagraphOverlayAfterManualRegionCancel, isParagraphOverlayPresented {
+            refreshParagraphSourceHighlight()
             overlayWindowController.show(at: overlayAnchor, makeKey: true)
             overlayWindowController.setInteractive(true)
         } else {
@@ -1159,6 +1162,7 @@ final class AppModel: ObservableObject {
         activeLookupMode = .word
         hideInPlaceTranslation()
         cancelActiveLookupWork(outcome: .superseded)
+        clearParagraphSourceRegion()
         let lookupID = UUID()
         let trace = LookupPerformanceTrace(lookupID: lookupID)
         activeLookupID = lookupID
@@ -1191,7 +1195,7 @@ final class AppModel: ObservableObject {
         guard !selectedTextReplacementCoordinator.isBusy else { return }
         hideInPlaceTranslation()
         cancelActiveLookupWork()
-        activeParagraphRect = nil
+        clearParagraphSourceRegion()
         let hoveredTextRequest = settings.sentenceTranslationPresentationMode == .overlayPanel
             && supportsSelectedTextTranslation
             && settings.selectedTextTranslationEnabled
@@ -1210,6 +1214,26 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func setParagraphSourceRegion(_ rect: CGRect, selectionMode: DoubleTapSentenceTranslationMode) {
+        paragraphSourceRegion = (rect, selectionMode)
+        refreshParagraphSourceHighlight()
+    }
+
+    private func refreshParagraphSourceHighlight() {
+        if let region = paragraphSourceRegion, region.selectionMode == .cursorParagraph,
+           !usesImageSentenceTranslation, !isParagraphRegionInteractionActive {
+            paragraphHighlightWindowController.show(at: region.rect)
+        } else {
+            paragraphHighlightWindowController.hide()
+        }
+    }
+
+    private func clearParagraphSourceRegion() {
+        guard paragraphSourceRegion != nil else { return }
+        paragraphSourceRegion = nil
+        paragraphHighlightWindowController.hide()
+    }
+
     private func handleParagraphRegionResizeBegan() {
         guard !selectedTextReplacementCoordinator.isBusy else { return }
         isParagraphRegionInteractionActive = true
@@ -1219,7 +1243,7 @@ final class AppModel: ObservableObject {
     }
 
     @discardableResult
-    private func handleParagraphRegionResizeCompleted(_ rect: CGRect) -> Bool {
+    private func startParagraphRegionLookup(_ rect: CGRect, selectionMode: DoubleTapSentenceTranslationMode) -> Bool {
         guard !selectedTextReplacementCoordinator.isBusy else { return false }
         isParagraphRegionInteractionActive = false
         guard rect.width > 0, rect.height > 0 else { return false }
@@ -1234,9 +1258,7 @@ final class AppModel: ObservableObject {
 
         let lookupID = UUID()
         activeLookupID = lookupID
-        activeParagraphRect = rect
-        overlayPreferredWidth = max(320, rect.width)
-        paragraphHighlightWindowController.show(at: rect)
+        setParagraphSourceRegion(rect, selectionMode: selectionMode)
         if settings.debugShowOcrRegion {
             debugOverlayWindowController.show(at: rect)
         }
@@ -1491,9 +1513,10 @@ final class AppModel: ObservableObject {
             } else {
                 debugOverlayWindowController.hide()
             }
-            await performResolvedOcrWordLookup(
+            await performWordLookup(
                 word: candidate.text,
-                request: request
+                lookupID: request.lookupID,
+                anchor: request.mouseLocation
             )
 
         case .failed(let message, let captureRect):
@@ -1505,17 +1528,6 @@ final class AppModel: ObservableObject {
         case .cancelled:
             return
         }
-    }
-
-    private func performResolvedOcrWordLookup(
-        word: String,
-        request: SinglePressLookupRequest
-    ) async {
-        await performWordLookup(
-            word: word,
-            lookupID: request.lookupID,
-            anchor: request.mouseLocation
-        )
     }
 
     private func performWordLookup(
@@ -1743,9 +1755,7 @@ final class AppModel: ObservableObject {
         lookupID: UUID,
         mouseLocation: CGPoint
     ) async {
-        activeParagraphRect = nil
-        overlayPreferredWidth = nil
-        paragraphHighlightWindowController.hide()
+        clearParagraphSourceRegion()
 
         let languagePair = resolveParagraphLanguagePair(for: snapshot.text)
         let sourceLanguage = languagePair.sourceLanguage
@@ -1864,9 +1874,9 @@ final class AppModel: ObservableObject {
                 updateOverlay(state: .paragraphResult(content), anchor: mouseLocation)
                 return
             case .textLine(let line):
-                paragraphHighlightWindowController.hide()
                 let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else {
+                    paragraphHighlightWindowController.hide()
                     let content = ParagraphOverlayContent(
                         originalText: nil,
                         translationState: .failed("No paragraph detected under cursor"),
@@ -1877,8 +1887,7 @@ final class AppModel: ObservableObject {
                 }
 
                 let lineRect = screenRect(for: line.boundingBox, in: capture.region.rect)
-                activeParagraphRect = lineRect
-                overlayPreferredWidth = max(320, lineRect.width)
+                setParagraphSourceRegion(lineRect, selectionMode: .cursorParagraph)
 
                 let languagePair = resolveParagraphLanguagePair(for: text)
                 let sourceLanguage = languagePair.sourceLanguage
@@ -1971,9 +1980,7 @@ final class AppModel: ObservableObject {
                     for: paragraph,
                     in: capture.region.rect
                 )
-                paragraphHighlightWindowController.show(at: paragraphRect)
-                activeParagraphRect = paragraphRect
-                overlayPreferredWidth = max(320, paragraphRect.width)
+                setParagraphSourceRegion(paragraphRect, selectionMode: .cursorParagraph)
 
                 let languagePair = resolveParagraphLanguagePair(for: paragraph.text)
                 let sourceLanguage = languagePair.sourceLanguage
@@ -2088,6 +2095,7 @@ final class AppModel: ObservableObject {
         let anchor = overlayAnchor
 
         guard let capture = await captureService.capture(rect: rect) else {
+            guard !Task.isCancelled, activeLookupID == lookupID else { return }
             let content = ParagraphOverlayContent(
                 originalText: nil,
                 translationState: .failed(L("Capture failed"))
@@ -2095,6 +2103,8 @@ final class AppModel: ObservableObject {
             updateOverlay(state: .paragraphResult(content), anchor: anchor)
             return
         }
+        guard !Task.isCancelled, activeLookupID == lookupID else { return }
+        paragraphSourceRegion?.rect = capture.region.rect
 
         if settings.debugShowOcrRegion {
             debugOverlayWindowController.show(at: capture.region.rect)
@@ -2109,8 +2119,6 @@ final class AppModel: ObservableObject {
                 return
             }
 
-            activeParagraphRect = capture.region.rect
-            overlayPreferredWidth = max(320, capture.region.rect.width)
             let languagePair = await resolveManualImageTranslationLanguagePair(from: capture.image)
 
             await performImageSentenceTranslation(
@@ -2139,9 +2147,6 @@ final class AppModel: ObservableObject {
                 updateOverlay(state: .paragraphResult(content), anchor: anchor)
                 return
             }
-
-            activeParagraphRect = capture.region.rect
-            overlayPreferredWidth = max(320, capture.region.rect.width)
 
             let bodyFontSize = estimatedDisplayFontSize(from: lines, in: capture.region.rect)
             let languagePair = resolveParagraphLanguagePair(for: text)
@@ -2923,6 +2928,7 @@ final class AppModel: ObservableObject {
         languagePair: LookupLanguagePair,
         lookupID: UUID
     ) async {
+        guard !Task.isCancelled, activeLookupID == lookupID else { return }
         let source = settings.imageTranslationSource
         let configuration = settings.imageTranslationProviderConfiguration(for: source.provider)
         let initialState: InPlaceImageTranslationState = source.isEnabled
@@ -3965,13 +3971,13 @@ final class AppModel: ObservableObject {
 
     private func presentInPlaceTranslationContent(_ content: InPlaceTranslationContent) {
         activeInPlaceTranslationContent = content
-        if InPlaceTranslationPresentationPolicy.shouldShowWindow(for: content.translationState) {
+        if content.translationState != .loading {
             paragraphHighlightWindowController.hide()
-            inPlaceTranslationWindowController.show(content: content)
-        } else {
-            paragraphHighlightWindowController.show(at: content.sourceRect)
-            inPlaceTranslationWindowController.hide()
         }
+        inPlaceTranslationWindowController.show(
+            content: content,
+            selectionMode: paragraphSourceRegion?.selectionMode
+        )
     }
 
     private func showInPlaceImageTranslation(
@@ -3980,7 +3986,8 @@ final class AppModel: ObservableObject {
     ) {
         let content = InPlaceImageTranslationContent(
             state: state,
-            sourceRect: rect
+            sourceRect: rect,
+            showsLoadingScan: paragraphSourceRegion?.selectionMode == .cursorParagraph
         )
         paragraphHighlightWindowController.hide()
         overlayWindowController.hideWindowOnly()
@@ -4268,9 +4275,7 @@ final class AppModel: ObservableObject {
         if overlayState != .idle {
             overlayState = .idle
         }
-        activeParagraphRect = nil
-        overlayPreferredWidth = nil
-        paragraphHighlightWindowController.hide()
+        clearParagraphSourceRegion()
         overlayWindowController.setInteractive(false)
         overlayWindowController.hide()
     }
@@ -4498,7 +4503,7 @@ final class AppModel: ObservableObject {
         if isWaitingForSelectedTextReplacementModifiers {
             let isInsideProtectedFrame: Bool = [
                 overlayWindowController.visibleFrame,
-                paragraphHighlightWindowController.visibleFrame,
+                visibleSourceHighlightFrame,
                 activeParagraphRect,
             ].contains { frame in
                 guard let frame, !frame.isNull, !frame.isEmpty else { return false }
@@ -4516,7 +4521,7 @@ final class AppModel: ObservableObject {
             isRegionInteractionActive: isParagraphRegionInteractionActive,
             protectedFrames: [
                 overlayWindowController.visibleFrame,
-                paragraphHighlightWindowController.visibleFrame,
+                visibleSourceHighlightFrame,
                 activeParagraphRect,
                 inPlaceTranslationWindowController.visibleFrame,
                 inPlaceImageTranslationWindowController.visibleFrame,
