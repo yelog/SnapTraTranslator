@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import QuartzCore
 import SwiftUI
 
 private final class OverlayPanel: NSPanel {
@@ -1149,7 +1150,7 @@ struct ParagraphOverlayLayout {
     private var screenHeightLimit: CGFloat {
         min(insetScreenFrame.height, floor(screenFrame.height * Self.maximumHeightFraction))
     }
-    private var placesBelow: Bool {
+    fileprivate var placesBelow: Bool {
         spaceBelow >= min(Self.minimumAdjacentHeight, screenHeightLimit) || spaceBelow >= spaceAbove
     }
 
@@ -1224,6 +1225,62 @@ struct ParagraphReadingCardEntrance: Equatable {
     }
 }
 
+private struct ParagraphOverlayMotion {
+    var targetFrame: CGRect
+    private(set) var frame: CGRect
+    private(set) var opacity: CGFloat
+    private var startTime: TimeInterval?
+    private let duration: TimeInterval
+    private let keepsTopEdge: Bool
+    private let isEntrance: Bool
+    private var progress: CGFloat = 0
+
+    init(
+        frame: CGRect,
+        opacity: CGFloat,
+        targetFrame: CGRect,
+        duration: TimeInterval,
+        keepsTopEdge: Bool,
+        isEntrance: Bool
+    ) {
+        self.frame = frame
+        self.opacity = opacity
+        self.targetFrame = targetFrame
+        self.duration = duration
+        self.keepsTopEdge = keepsTopEdge
+        self.isEntrance = isEntrance
+    }
+
+    mutating func advance(from previousTimestamp: TimeInterval, to targetTimestamp: TimeInterval) -> Bool {
+        let startTime = self.startTime ?? previousTimestamp
+        self.startTime = startTime
+        let elapsed = CGFloat(min(max((targetTimestamp - startTime) / duration, 0), 1))
+        let easedProgress = isEntrance
+            ? 1 - pow(1 - elapsed, 3)
+            : elapsed * elapsed * (3 - 2 * elapsed)
+        if easedProgress >= 1 {
+            frame = targetFrame
+            opacity = 1
+            return true
+        }
+
+        let nextProgress = max(progress, easedProgress)
+        let step = (nextProgress - progress) / (1 - progress)
+        let currentEdge = keepsTopEdge ? frame.maxY : frame.minY
+        let targetEdge = keepsTopEdge ? targetFrame.maxY : targetFrame.minY
+        let edge = currentEdge + (targetEdge - currentEdge) * step
+        frame = CGRect(
+            x: frame.minX + (targetFrame.minX - frame.minX) * step,
+            y: keepsTopEdge ? edge - targetFrame.height : edge,
+            width: targetFrame.width,
+            height: targetFrame.height
+        )
+        opacity += (1 - opacity) * step
+        progress = nextProgress
+        return false
+    }
+}
+
 // MARK: - Overlay Window Controller
 
 final class OverlayWindowController: NSWindowController {
@@ -1239,13 +1296,11 @@ final class OverlayWindowController: NSWindowController {
     private var manualOrigin: CGPoint?
     private var dragStartOrigin: CGPoint?
     private var paragraphOverlayMaxSize: CGSize?
-    private var paragraphFrameAnimationTask: Task<Void, Never>?
-    private var paragraphFrameAnimationID = UUID()
-    private var paragraphEntranceAnimationTask: Task<Void, Never>?
-    private var paragraphEntranceAnimationID = UUID()
+    private var placedParagraphSourceRect: CGRect?
+    private var paragraphMotion: ParagraphOverlayMotion?
+    private var paragraphDisplayLink: CADisplayLink?
     private let frameTolerance: CGFloat = 0.5
-    private let paragraphFrameAnimationDuration: TimeInterval = 0.18
-    private let paragraphFrameAnimationStepNanoseconds: UInt64 = 16_666_667
+    private let paragraphRelocationDuration: TimeInterval = 0.18
 
     var isManualParagraphPositioningActive: Bool {
         dragStartOrigin != nil
@@ -1328,16 +1383,18 @@ final class OverlayWindowController: NSWindowController {
             updateOverlayRootView()
         }
 
-        let targetFrame = measuredFrame(for: anchor)
+        let layout = isParagraphOverlay ? paragraphLayout(for: anchor) : nil
+        let targetFrame = measuredFrame(for: anchor, paragraphLayout: layout)
         window.collectionBehavior = Self.allSpacesCollectionBehavior
 
         var pendingEntrance: ParagraphReadingCardEntrance?
         if !wasVisible {
-            cancelParagraphFrameAnimation()
-            if isParagraphOverlay {
+            stopParagraphMotion()
+            placedParagraphSourceRect = layout?.sourceRect
+            if let layout {
                 let entrance = ParagraphReadingCardEntrance.resolve(
                     finalFrame: targetFrame,
-                    sourceRect: manualOrigin == nil ? model.activeParagraphRect : nil,
+                    sourceRect: layout.sourceRect,
                     reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
                 )
                 window.alphaValue = entrance.initialOpacity
@@ -1350,20 +1407,19 @@ final class OverlayWindowController: NSWindowController {
                 window.setFrame(targetFrame, display: true)
             }
         } else {
-            if !isParagraphOverlay {
-                cancelParagraphEntranceAnimation()
-            }
-            applyFrameIfNeeded(targetFrame)
+            updateVisibleFrame(targetFrame, paragraphLayout: layout)
         }
 
         // Reorder even when AppKit reports the window as visible. During a
         // Space switch that state can refer to the previous Space, which used
         // to make the overlay silently remain there.
         window.orderFrontRegardless()
-        if let pendingEntrance {
-            startParagraphEntranceAnimation(
-                from: pendingEntrance,
-                to: targetFrame
+        if let pendingEntrance, let layout {
+            startParagraphMotion(
+                to: targetFrame,
+                duration: pendingEntrance.duration,
+                keepsTopEdge: layout.placesBelow,
+                isEntrance: true
             )
         }
         onOrderedFront?()
@@ -1373,8 +1429,10 @@ final class OverlayWindowController: NSWindowController {
     }
 
     func hideWindowOnly() {
-        cancelParagraphFrameAnimation()
+        stopParagraphMotion()
+        placedParagraphSourceRect = nil
         window?.orderOut(nil)
+        window?.alphaValue = 1
     }
 
     func move(to anchor: CGPoint) {
@@ -1382,14 +1440,18 @@ final class OverlayWindowController: NSWindowController {
         lastAnchor = anchor
         manualOrigin = nil
         dragStartOrigin = nil
-        cancelParagraphFrameAnimation()
+        stopParagraphMotion()
+        window.alphaValue = 1
         guard window.isVisible else { return }
 
         if isParagraphOverlay {
-            applyFrameIfNeeded(paragraphFrame(for: anchor))
+            let layout = paragraphLayout(for: anchor)
+            placedParagraphSourceRect = layout.sourceRect
+            applyFrameIfNeeded(paragraphFrame(for: layout))
             return
         }
 
+        placedParagraphSourceRect = nil
         let screenFrame = visibleScreenFrame(for: anchor)
         let origin = anchoredOrigin(for: anchor, size: window.frame.size, in: screenFrame)
         let targetFrame = CGRect(origin: origin, size: window.frame.size)
@@ -1398,14 +1460,14 @@ final class OverlayWindowController: NSWindowController {
 
     func beginManualPositioning() {
         guard let window, window.isVisible else { return }
-        cancelParagraphFrameAnimation()
+        stopParagraphMotion()
+        window.alphaValue = 1
         dragStartOrigin = window.frame.origin
         manualOrigin = window.frame.origin
     }
 
     func moveBy(translation: CGSize) {
         guard let window, window.isVisible else { return }
-        cancelParagraphFrameAnimation()
 
         let baseOrigin = dragStartOrigin ?? manualOrigin ?? window.frame.origin
         let proposedOrigin = CGPoint(
@@ -1434,7 +1496,7 @@ final class OverlayWindowController: NSWindowController {
         dragStartOrigin = nil
     }
 
-    func refreshLayoutIfNeeded(at anchor: CGPoint? = nil, animated: Bool = false) {
+    func refreshLayoutIfNeeded(at anchor: CGPoint? = nil) {
         guard let window else { return }
         guard window.isVisible else {
             if let anchor {
@@ -1445,28 +1507,23 @@ final class OverlayWindowController: NSWindowController {
 
         let effectiveAnchor = anchor ?? lastAnchor ?? CGPoint(x: window.frame.midX, y: window.frame.maxY)
         lastAnchor = effectiveAnchor
-        let targetFrame = measuredFrame(for: effectiveAnchor)
-        if animated, isParagraphOverlay, manualOrigin == nil, model.activeParagraphRect != nil,
-           !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            applyFrameAnimated(targetFrame)
-        } else {
-            applyFrameIfNeeded(targetFrame)
-        }
+        let layout = isParagraphOverlay ? paragraphLayout(for: effectiveAnchor) : nil
+        let targetFrame = measuredFrame(for: effectiveAnchor, paragraphLayout: layout)
+        updateVisibleFrame(targetFrame, paragraphLayout: layout)
     }
 
     func hide() {
+        hideWindowOnly()
         lastAnchor = nil
         manualOrigin = nil
         dragStartOrigin = nil
-        cancelParagraphFrameAnimation()
         paragraphOverlayMaxSize = nil
         hostingView.rootView = AnyView(EmptyView().environmentObject(model))
-        window?.orderOut(nil)
     }
 
-    private func measuredFrame(for anchor: CGPoint) -> CGRect {
-        if isParagraphOverlay {
-            return paragraphFrame(for: anchor)
+    private func measuredFrame(for anchor: CGPoint, paragraphLayout: ParagraphOverlayLayout?) -> CGRect {
+        if let paragraphLayout {
+            return paragraphFrame(for: paragraphLayout)
         }
 
         let size = measuredContentSize()
@@ -1474,24 +1531,25 @@ final class OverlayWindowController: NSWindowController {
         return CGRect(origin: origin, size: size)
     }
 
-    private func paragraphFrame(for anchor: CGPoint) -> CGRect {
+    private func paragraphLayout(for anchor: CGPoint) -> ParagraphOverlayLayout {
         let sourceRect = manualOrigin == nil ? model.activeParagraphRect : nil
         let sourceCenter = sourceRect.map { CGPoint(x: $0.midX, y: $0.midY) }
-        let screenFrame = visibleScreenFrame(for: manualOrigin ?? sourceCenter ?? anchor)
-        let layout = ParagraphOverlayLayout(
-            screenFrame: screenFrame,
+        return ParagraphOverlayLayout(
+            screenFrame: visibleScreenFrame(for: manualOrigin ?? sourceCenter ?? anchor),
             anchor: anchor,
             sourceRect: sourceRect
         )
+    }
 
-        let maxSize = screenFrame.isEmpty ? nil : layout.maxPanelSize
+    private func paragraphFrame(for layout: ParagraphOverlayLayout) -> CGRect {
+        let maxSize = layout.screenFrame.isEmpty ? nil : layout.maxPanelSize
         if paragraphOverlayMaxSize != maxSize {
             paragraphOverlayMaxSize = maxSize
             updateOverlayRootView()
         }
 
         let measuredSize = measuredContentSize()
-        guard maxSize != nil else { return CGRect(origin: anchor, size: measuredSize) }
+        guard maxSize != nil else { return CGRect(origin: layout.anchor, size: measuredSize) }
 
         let manualTopLeft = manualOrigin.map {
             CGPoint(x: $0.x, y: $0.y + (window?.frame.height ?? 0))
@@ -1521,109 +1579,89 @@ final class OverlayWindowController: NSWindowController {
         return screen?.visibleFrame ?? .zero
     }
 
-    private func startParagraphEntranceAnimation(
-        from entrance: ParagraphReadingCardEntrance,
-        to targetFrame: CGRect
-    ) {
-        guard self.window != nil else { return }
-
-        let animationID = UUID()
-        paragraphEntranceAnimationID = animationID
-
-        paragraphEntranceAnimationTask = Task { @MainActor [weak self] in
-            guard let self, let window = self.window else { return }
-
-            let startTime = ProcessInfo.processInfo.systemUptime
-            while !Task.isCancelled {
-                let elapsed = ProcessInfo.processInfo.systemUptime - startTime
-                let rawProgress = min(max(elapsed / entrance.duration, 0), 1)
-                let easedProgress = CGFloat(1 - pow(1 - rawProgress, 3))
-                let interpolatedFrame = self.interpolatedFrame(
-                    from: entrance.initialFrame,
-                    to: targetFrame,
-                    progress: easedProgress
-                )
-                window.setFrame(interpolatedFrame, display: true)
-                window.alphaValue = entrance.initialOpacity
-                    + (1 - entrance.initialOpacity) * easedProgress
-
-                if rawProgress >= 1 {
-                    break
-                }
-
-                try? await Task.sleep(nanoseconds: self.paragraphFrameAnimationStepNanoseconds)
-            }
-
-            guard !Task.isCancelled else {
-                if self.paragraphEntranceAnimationID == animationID {
-                    self.paragraphEntranceAnimationTask = nil
-                }
+    private func updateVisibleFrame(_ targetFrame: CGRect, paragraphLayout: ParagraphOverlayLayout?) {
+        guard let window else { return }
+        let previousSourceRect = placedParagraphSourceRect
+        placedParagraphSourceRect = paragraphLayout?.sourceRect
+        if let paragraphLayout, manualOrigin == nil,
+           !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            if previousSourceRect == paragraphLayout.sourceRect, paragraphMotion != nil {
+                paragraphMotion?.targetFrame = targetFrame
                 return
             }
+            if paragraphLayout.sourceRect != nil, previousSourceRect != paragraphLayout.sourceRect,
+               frameNeedsUpdate(from: window.frame, to: targetFrame) {
+                startParagraphMotion(
+                    to: targetFrame,
+                    duration: paragraphRelocationDuration,
+                    keepsTopEdge: paragraphLayout.placesBelow,
+                    isEntrance: false
+                )
+                return
+            }
+        }
 
-            window.setFrame(targetFrame, display: true)
+        stopParagraphMotion()
+        if window.alphaValue != 1 {
             window.alphaValue = 1
-            self.hostingView.layoutSubtreeIfNeeded()
-            if self.paragraphEntranceAnimationID == animationID {
-                self.paragraphEntranceAnimationTask = nil
-            }
+        }
+        applyFrameIfNeeded(targetFrame)
+    }
+
+    private func startParagraphMotion(
+        to targetFrame: CGRect,
+        duration: TimeInterval,
+        keepsTopEdge: Bool,
+        isEntrance: Bool
+    ) {
+        guard let window else { return }
+        guard window.screen != nil else {
+            stopParagraphMotion()
+            window.alphaValue = 1
+            applyFrameIfNeeded(targetFrame)
+            return
+        }
+
+        paragraphMotion = ParagraphOverlayMotion(
+            frame: window.frame,
+            opacity: window.alphaValue,
+            targetFrame: targetFrame,
+            duration: duration,
+            keepsTopEdge: keepsTopEdge,
+            isEntrance: isEntrance
+        )
+        guard paragraphDisplayLink == nil else { return }
+        let displayLink = window.displayLink(target: self, selector: #selector(updateParagraphMotion(_:)))
+        paragraphDisplayLink = displayLink
+        displayLink.add(to: .main, forMode: .common)
+    }
+
+    @objc private func updateParagraphMotion(_ displayLink: CADisplayLink) {
+        guard var motion = paragraphMotion, let window else {
+            stopParagraphMotion()
+            return
+        }
+
+        let isComplete = motion.advance(from: displayLink.timestamp, to: displayLink.targetTimestamp)
+        paragraphMotion = motion
+        applyFrameIfNeeded(motion.frame, display: false)
+        if window.alphaValue != motion.opacity {
+            window.alphaValue = motion.opacity
+        }
+        if isComplete {
+            stopParagraphMotion()
         }
     }
 
-    private func applyFrameAnimated(_ targetFrame: CGRect) {
-        guard let window else { return }
-        let needsUpdate = frameNeedsUpdate(from: window.frame, to: targetFrame)
-        guard needsUpdate || paragraphFrameAnimationTask != nil else { return }
-        cancelParagraphFrameAnimation()
-        guard needsUpdate else { return }
-
-        let startFrame = window.frame
-        let animationID = UUID()
-        paragraphFrameAnimationID = animationID
-
-        paragraphFrameAnimationTask = Task { @MainActor [weak self] in
-            guard let self, let window = self.window else { return }
-
-            let startTime = ProcessInfo.processInfo.systemUptime
-            while !Task.isCancelled {
-                let elapsed = ProcessInfo.processInfo.systemUptime - startTime
-                let rawProgress = min(max(elapsed / self.paragraphFrameAnimationDuration, 0), 1)
-                let easedProgress = self.easeInOutProgress(rawProgress)
-                let interpolatedFrame = self.interpolatedFrame(
-                    from: startFrame,
-                    to: targetFrame,
-                    progress: easedProgress
-                )
-                window.setFrame(interpolatedFrame, display: true)
-
-                if rawProgress >= 1 {
-                    break
-                }
-
-                try? await Task.sleep(nanoseconds: self.paragraphFrameAnimationStepNanoseconds)
-            }
-
-            guard !Task.isCancelled else {
-                if self.paragraphFrameAnimationID == animationID {
-                    self.paragraphFrameAnimationTask = nil
-                }
-                return
-            }
-
-            window.setFrame(targetFrame, display: true)
-            self.hostingView.layoutSubtreeIfNeeded()
-            if self.paragraphFrameAnimationID == animationID {
-                self.paragraphFrameAnimationTask = nil
-            }
-        }
+    private func stopParagraphMotion() {
+        paragraphDisplayLink?.invalidate()
+        paragraphDisplayLink = nil
+        paragraphMotion = nil
     }
 
-    private func applyFrameIfNeeded(_ targetFrame: CGRect) {
+    private func applyFrameIfNeeded(_ targetFrame: CGRect, display: Bool = true) {
         guard let window else { return }
-        let needsUpdate = frameNeedsUpdate(from: window.frame, to: targetFrame)
-        guard needsUpdate || paragraphFrameAnimationTask != nil else { return }
-        cancelParagraphFrameAnimation()
-        guard needsUpdate else { return }
+        guard frameNeedsUpdate(from: window.frame, to: targetFrame) else { return }
 
         let widthDelta = abs(window.frame.size.width - targetFrame.size.width)
         let heightDelta = abs(window.frame.size.height - targetFrame.size.height)
@@ -1632,8 +1670,10 @@ final class OverlayWindowController: NSWindowController {
             return
         }
 
-        window.setFrame(targetFrame, display: true)
-        hostingView.layoutSubtreeIfNeeded()
+        window.setFrame(targetFrame, display: display)
+        if display {
+            hostingView.layoutSubtreeIfNeeded()
+        }
     }
 
     private func applyOriginIfNeeded(_ targetOrigin: CGPoint) {
@@ -1643,7 +1683,6 @@ final class OverlayWindowController: NSWindowController {
         let yNeedsUpdate = abs(window.frame.origin.y - targetOrigin.y) > frameTolerance
         guard xNeedsUpdate || yNeedsUpdate else { return }
 
-        cancelParagraphFrameAnimation()
         window.setFrameOrigin(targetOrigin)
     }
 
@@ -1684,40 +1723,5 @@ final class OverlayWindowController: NSWindowController {
         origin.x = min(max(origin.x, minX), maxX)
         origin.y = min(max(origin.y, minY), maxY)
         return origin
-    }
-
-    private func cancelParagraphFrameAnimation() {
-        paragraphFrameAnimationTask?.cancel()
-        paragraphFrameAnimationTask = nil
-        paragraphFrameAnimationID = UUID()
-        cancelParagraphEntranceAnimation()
-    }
-
-    private func cancelParagraphEntranceAnimation() {
-        paragraphEntranceAnimationTask?.cancel()
-        paragraphEntranceAnimationTask = nil
-        paragraphEntranceAnimationID = UUID()
-        window?.alphaValue = 1
-    }
-
-    private func easeInOutProgress(_ progress: Double) -> CGFloat {
-        let clamped = min(max(progress, 0), 1)
-        let eased = clamped < 0.5
-            ? 4 * clamped * clamped * clamped
-            : 1 - pow(-2 * clamped + 2, 3) / 2
-        return CGFloat(eased)
-    }
-
-    private func interpolatedFrame(from start: CGRect, to end: CGRect, progress: CGFloat) -> CGRect {
-        CGRect(
-            x: interpolatedScalar(from: start.origin.x, to: end.origin.x, progress: progress),
-            y: interpolatedScalar(from: start.origin.y, to: end.origin.y, progress: progress),
-            width: interpolatedScalar(from: start.size.width, to: end.size.width, progress: progress),
-            height: interpolatedScalar(from: start.size.height, to: end.size.height, progress: progress)
-        )
-    }
-
-    private func interpolatedScalar(from start: CGFloat, to end: CGFloat, progress: CGFloat) -> CGFloat {
-        start + (end - start) * progress
     }
 }

@@ -68,6 +68,64 @@ final class SentenceReadingCardTests: XCTestCase {
         }
     }
 
+    func testContentRefreshKeepsCursorToSourceMotionInFlight() async throws {
+        try XCTSkipIf(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        let screen = try XCTUnwrap(NSScreen.main?.visibleFrame)
+        let model = try makeModel()
+        defer { model.dismissOverlay() }
+        model.settings.continuousTranslation = false
+        model.settings.hideOriginalTextInSentenceOverlay = false
+        model.settings.sentenceTranslationPresentationMode = .overlayPanel
+
+        let sourceRect = CGRect(x: screen.minX + 24, y: screen.midY + 60, width: 400, height: 24)
+        let anchor = CGPoint(x: sourceRect.minX + 100, y: sourceRect.midY)
+        let controller = model.overlayWindowController
+        let window = try XCTUnwrap(controller.window)
+        model.updateOverlay(state: .paragraphLoading, anchor: anchor)
+        let presentationDeadline = ContinuousClock.now + .seconds(1)
+        while !controller.isVisible, ContinuousClock.now < presentationDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let startFrame = try XCTUnwrap(controller.visibleFrame)
+        let initialOpacity = window.alphaValue
+        XCTAssertGreaterThan(startFrame.minX, sourceRect.minX)
+
+        model.setParagraphSourceRegion(sourceRect, selectionMode: .cursorParagraph)
+        var content = ParagraphOverlayContent(
+            originalText: "A sentence to translate",
+            translationState: .loading
+        )
+        model.updateOverlay(state: .paragraphResult(content))
+        controller.refreshLayoutIfNeeded(at: anchor)
+        XCTAssertEqual(controller.visibleFrame?.minX, startFrame.minX)
+        XCTAssertEqual(window.alphaValue, initialOpacity)
+
+        let deadline = ContinuousClock.now + .seconds(1)
+        var didRefreshDuringMotion = false
+        while ContinuousClock.now < deadline {
+            let frame = try XCTUnwrap(controller.visibleFrame)
+            if !didRefreshDuringMotion, frame.minX > sourceRect.minX + 1, frame.minX < startFrame.minX {
+                let opacity = window.alphaValue
+                content.translationState = .ready("第一段译文。\n第二段译文。")
+                model.updateOverlay(state: .paragraphResult(content))
+                controller.refreshLayoutIfNeeded(at: anchor)
+                XCTAssertEqual(controller.visibleFrame?.minX, frame.minX)
+                XCTAssertEqual(window.alphaValue, opacity)
+                didRefreshDuringMotion = true
+            }
+            if frame.minX == sourceRect.minX, window.alphaValue == 1 {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let settledFrame = try XCTUnwrap(controller.visibleFrame)
+        XCTAssertTrue(didRefreshDuringMotion)
+        XCTAssertEqual(settledFrame.minX, sourceRect.minX)
+        XCTAssertEqual(settledFrame.maxY, sourceRect.minY - 8, accuracy: 0.5)
+        XCTAssertGreaterThan(settledFrame.height, startFrame.height)
+        XCTAssertEqual(window.alphaValue, 1)
+    }
+
     func testWordLookupClearsPreviousSentenceScanAndKeepsOnlyTheCardAfterTap() throws {
         let model = try makeModel()
         defer { model.dismissOverlay() }

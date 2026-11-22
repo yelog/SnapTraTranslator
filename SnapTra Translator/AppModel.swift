@@ -4334,22 +4334,27 @@ final class AppModel: ObservableObject {
         overlayAnchor = anchor
     }
 
-    private func scheduleOverlayLayoutRefresh() {
+    private func scheduleOverlayLayoutRefresh(immediately: Bool = false) {
         guard overlayWindowController.isVisible else { return }
 
         cancelPendingOverlayLayoutRefresh()
 
         let workItem = DispatchWorkItem { [weak self] in
-            Task { @MainActor in
-                self?.overlayLayoutRefreshWorkItem = nil
+            MainActor.assumeIsolated {
                 guard let self else { return }
-                guard self.overlayWindowController.isVisible else { return }
-                self.refreshParagraphOverlayLayout(animated: false)
+                self.overlayLayoutRefreshWorkItem = nil
+                guard self.overlayWindowController.isVisible,
+                      !self.overlayWindowController.isManualParagraphPositioningActive else { return }
+                self.overlayWindowController.refreshLayoutIfNeeded(at: self.overlayAnchor)
             }
         }
 
         overlayLayoutRefreshWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + overlayLayoutRefreshInterval, execute: workItem)
+        if immediately {
+            DispatchQueue.main.async(execute: workItem)
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + overlayLayoutRefreshInterval, execute: workItem)
+        }
     }
 
     private func cancelPendingOverlayLayoutRefresh() {
@@ -4358,22 +4363,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshParagraphOverlayLayoutImmediately() {
-        guard overlayWindowController.isVisible else { return }
-
-        cancelPendingOverlayLayoutRefresh()
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            guard self.overlayWindowController.isVisible else { return }
-            self.refreshParagraphOverlayLayout(animated: true)
-        }
-    }
-
-    private func refreshParagraphOverlayLayout(animated: Bool) {
-        if overlayWindowController.isManualParagraphPositioningActive {
-            return
-        }
-
-        overlayWindowController.refreshLayoutIfNeeded(at: overlayAnchor, animated: animated)
+        scheduleOverlayLayoutRefresh(immediately: true)
     }
 
     private var isParagraphOverlayPresented: Bool {
