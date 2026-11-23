@@ -177,6 +177,7 @@ struct ParagraphOverlayContent: Equatable {
     var selectedTargetLanguageIdentifier: String?
     var isRetranslating: Bool
     var isManualInputFallback: Bool
+    var isManualTextEntry: Bool
     var imageTranslationUsed: Bool
 
     init(
@@ -191,6 +192,7 @@ struct ParagraphOverlayContent: Equatable {
         selectedTargetLanguageIdentifier: String? = nil,
         isRetranslating: Bool = false,
         isManualInputFallback: Bool = false,
+        isManualTextEntry: Bool = false,
         imageTranslationUsed: Bool = false
     ) {
         self.originalText = originalText
@@ -204,6 +206,7 @@ struct ParagraphOverlayContent: Equatable {
         self.selectedTargetLanguageIdentifier = selectedTargetLanguageIdentifier
         self.isRetranslating = isRetranslating
         self.isManualInputFallback = isManualInputFallback
+        self.isManualTextEntry = isManualTextEntry
         self.imageTranslationUsed = imageTranslationUsed
     }
 }
@@ -1864,25 +1867,14 @@ final class AppModel: ObservableObject {
 
             switch selectionResult {
             case .noText:
-                // No text found near cursor
                 paragraphHighlightWindowController.hide()
-                let content = ParagraphOverlayContent(
-                    originalText: nil,
-                    translationState: .failed("No paragraph detected under cursor"),
-                    isManualInputFallback: true
-                )
-                updateOverlay(state: .paragraphResult(content), anchor: mouseLocation)
+                presentManualTextEntryFallback(anchor: mouseLocation)
                 return
             case .textLine(let line):
                 let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else {
                     paragraphHighlightWindowController.hide()
-                    let content = ParagraphOverlayContent(
-                        originalText: nil,
-                        translationState: .failed("No paragraph detected under cursor"),
-                        isManualInputFallback: true
-                    )
-                    updateOverlay(state: .paragraphResult(content), anchor: mouseLocation)
+                    presentManualTextEntryFallback(anchor: mouseLocation)
                     return
                 }
 
@@ -2139,12 +2131,7 @@ final class AppModel: ObservableObject {
 
             let text = OCRService.recognizedText(from: lines)
             guard !text.isEmpty else {
-                let content = ParagraphOverlayContent(
-                    originalText: nil,
-                    translationState: .failed("No text detected in selected region"),
-                    isManualInputFallback: true
-                )
-                updateOverlay(state: .paragraphResult(content), anchor: anchor)
+                presentManualTextEntryFallback(anchor: anchor)
                 return
             }
 
@@ -2248,6 +2235,18 @@ final class AppModel: ObservableObject {
             },
             sourceLanguageIdentifier: sourceLanguageIdentifier
         )
+    }
+
+    private func presentManualTextEntryFallback(anchor: CGPoint) {
+        clearParagraphSourceRegion()
+        let content = ParagraphOverlayContent(
+            originalText: nil,
+            translationState: .failed(""),
+            showsNativeTranslation: false,
+            isManualInputFallback: true,
+            isManualTextEntry: true
+        )
+        updateOverlay(state: .paragraphResult(content), anchor: anchor)
     }
 
     private func loadPrimaryTranslationState(
@@ -2455,6 +2454,28 @@ final class AppModel: ObservableObject {
             content.originalText = text
             content.isManualInputFallback = true
         }
+    }
+
+    @discardableResult
+    func pasteClipboardIntoParagraphTextEntry() -> Bool {
+        guard !selectedTextReplacementCoordinator.isBusy,
+              case .paragraphResult(let content) = overlayState,
+              content.isManualTextEntry else {
+            return false
+        }
+        guard let clipboardText = NSPasteboard.general.string(forType: .string) else {
+            NSSound.beep()
+            return false
+        }
+
+        let normalizedText = clipboardText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedText.isEmpty else {
+            NSSound.beep()
+            return false
+        }
+
+        updateParagraphOriginalText(normalizedText)
+        return true
     }
 
     func invalidateSelectedTextReplacement() {
@@ -2744,6 +2765,7 @@ final class AppModel: ObservableObject {
                 makeServiceTranslationResult(for: source)
             }
             content.originalText = originalText
+            content.isManualTextEntry = false
             content.sourceLanguageIdentifier = languagePair.sourceIdentifier
             content.selectedTargetLanguageIdentifier = selectedTargetLanguageIdentifier
             content.languageOptions = paragraphLanguageOptions(for: languagePair)

@@ -346,6 +346,15 @@ struct OverlayView: View {
 
     @ViewBuilder
     private func paragraphResultView(content: ParagraphOverlayContent) -> some View {
+        if content.isManualTextEntry {
+            manualTextEntryView(content: content)
+        } else {
+            paragraphTranslationResultView(content: content)
+        }
+    }
+
+    @ViewBuilder
+    private func paragraphTranslationResultView(content: ParagraphOverlayContent) -> some View {
         let originalText = content.originalText ?? ""
         let hasOriginalText = !originalText.isEmpty
         let hasTranslationOutput = content.showsNativeTranslation || !content.serviceResults.isEmpty
@@ -425,6 +434,196 @@ struct OverlayView: View {
         .onChange(of: originalVisibility) { _, _ in
             model.refreshParagraphOverlayLayoutImmediately()
         }
+    }
+
+    private func manualTextEntryView(content: ParagraphOverlayContent) -> some View {
+        let originalText = content.originalText ?? ""
+        let hasOriginalText = !originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        return VStack(alignment: .leading, spacing: 0) {
+            manualTextEntryTopBar(showsDetectionStatus: !hasOriginalText)
+
+            VStack(alignment: .leading, spacing: 12) {
+                manualTextEntryEditor(text: originalText)
+
+                HStack(spacing: 6) {
+                    manualTextEntrySecondaryAction(
+                        systemImage: "doc.on.clipboard",
+                        title: L("Paste"),
+                        action: { model.pasteClipboardIntoParagraphTextEntry() }
+                    )
+
+                    manualTextEntrySecondaryAction(
+                        systemImage: "rectangle.dashed",
+                        title: L("Select Area"),
+                        action: { model.beginManualParagraphRegionSelection() }
+                    )
+
+                    Spacer(minLength: 8)
+
+                    manualTextEntryPrimaryAction(isEnabled: hasOriginalText)
+                }
+
+                HStack(spacing: 6) {
+                    Image(systemName: "return")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .accessibilityHidden(true)
+
+                    Text(L("Return to translate · Shift-Return for line break"))
+                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                }
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 2)
+            }
+            .padding(.horizontal, paragraphTextHorizontalPadding)
+            .padding(.bottom, 16)
+        }
+    }
+
+    private func manualTextEntryTopBar(showsDetectionStatus: Bool) -> some View {
+        ZStack(alignment: .leading) {
+            paragraphHeaderDragArea()
+
+            HStack(spacing: 10) {
+                HStack(spacing: 7) {
+                    Image(systemName: "text.cursor")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+
+                    Text(L("Translate Text"))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .accessibilityAddTraits(.isHeader)
+                }
+                .lineLimit(1)
+                .layoutPriority(1)
+
+                Spacer(minLength: 0)
+
+                if showsDetectionStatus {
+                    Text(L("No text detected"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                paragraphOverlayControlButton(
+                    systemImage: "xmark",
+                    helpText: L("Close"),
+                    action: { model.dismissOverlay() }
+                )
+            }
+        }
+        .frame(height: 24)
+        .padding(.horizontal, paragraphTextHorizontalPadding)
+        .padding(.vertical, 10)
+    }
+
+    private func manualTextEntryEditor(text: String) -> some View {
+        EditableParagraphTextView(
+            text: text,
+            placeholder: L("Type or paste text to translate"),
+            font: paragraphBodyFont,
+            textColor: .labelColor,
+            placeholderColor: .placeholderTextColor,
+            preferredLineHeight: paragraphBodyLineHeight,
+            minimumHeight: 58,
+            onTextChange: { newText in
+                if newText != text {
+                    model.updateParagraphOriginalText(newText)
+                }
+            },
+            onSubmit: { model.submitParagraphOriginalText() }
+        )
+        .disabled(model.selectedTextReplacementOperationID != nil)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(paragraphEditorFillColor)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(paragraphEditorStrokeColor, lineWidth: 1)
+        )
+        .shadow(color: paragraphEditorShadowColor, radius: 1.5, x: 0, y: 1)
+    }
+
+    private func manualTextEntrySecondaryAction(
+        systemImage: String,
+        title: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 10, weight: .semibold))
+
+                Text(title)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 9)
+            .frame(height: 27)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(manualTextEntryActionFillColor)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(manualTextEntryActionStrokeColor, lineWidth: 0.75)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(title))
+    }
+
+    private func manualTextEntryPrimaryAction(isEnabled: Bool) -> some View {
+        Button {
+            model.submitParagraphOriginalText()
+        } label: {
+            HStack(spacing: 6) {
+                Text(L("Translate"))
+                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+
+                Image(systemName: "return")
+                    .font(.system(size: 9.5, weight: .semibold))
+            }
+            .foregroundStyle(isEnabled ? Color.white : Color.secondary)
+            .padding(.horizontal, 11)
+            .frame(height: 27)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isEnabled ? Color.accentColor : Color.secondary.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(
+                        isEnabled
+                            ? Color.white.opacity(0.14)
+                            : manualTextEntryActionStrokeColor,
+                        lineWidth: 0.75
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .accessibilityLabel(Text(L("Translate")))
+    }
+
+    private var manualTextEntryActionFillColor: Color {
+        if colorScheme == .dark {
+            return Color.white.opacity(increasesContrast ? 0.12 : 0.07)
+        }
+        return Color.black.opacity(increasesContrast ? 0.09 : 0.045)
+    }
+
+    private var manualTextEntryActionStrokeColor: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(increasesContrast ? 0.20 : 0.09)
+            : Color.black.opacity(increasesContrast ? 0.14 : 0.06)
     }
 
     @ViewBuilder
@@ -829,6 +1028,7 @@ struct OverlayView: View {
                 textColor: .labelColor,
                 placeholderColor: .placeholderTextColor,
                 preferredLineHeight: paragraphBodyLineHeight,
+                minimumHeight: 0,
                 onTextChange: { newText in
                     if newText != text {
                         model.updateParagraphOriginalText(newText)
@@ -2485,6 +2685,7 @@ private struct EditableParagraphTextView: NSViewRepresentable {
     let textColor: NSColor
     let placeholderColor: NSColor
     let preferredLineHeight: CGFloat
+    let minimumHeight: CGFloat
     let onTextChange: (String) -> Void
     let onSubmit: () -> Void
 
@@ -2501,6 +2702,7 @@ private struct EditableParagraphTextView: NSViewRepresentable {
             textColor: textColor,
             placeholderColor: placeholderColor,
             preferredLineHeight: preferredLineHeight,
+            minimumHeight: minimumHeight,
             coordinator: context.coordinator
         )
         textView.focusIfNeeded()
@@ -2517,6 +2719,7 @@ private struct EditableParagraphTextView: NSViewRepresentable {
             textColor: textColor,
             placeholderColor: placeholderColor,
             preferredLineHeight: preferredLineHeight,
+            minimumHeight: minimumHeight,
             coordinator: context.coordinator
         )
         textView.focusIfNeeded()
@@ -2801,6 +3004,7 @@ private final class EditableParagraphTextContainerView: NSView {
     private let placeholderLabel: NSTextField
     private var cachedMeasurement: (width: CGFloat, height: CGFloat)?
     private var preferredLineHeight: CGFloat = 20
+    private var minimumHeight: CGFloat = 0
     private var didRequestInitialFocus = false
 
     override var isFlipped: Bool { true }
@@ -2827,9 +3031,11 @@ private final class EditableParagraphTextContainerView: NSView {
         textColor: NSColor,
         placeholderColor: NSColor,
         preferredLineHeight: CGFloat,
+        minimumHeight: CGFloat,
         coordinator: EditableParagraphTextView.Coordinator
     ) {
         self.preferredLineHeight = preferredLineHeight
+        self.minimumHeight = minimumHeight
         textView.delegate = coordinator
         textView.font = font
         textView.textColor = textColor
@@ -2941,7 +3147,7 @@ private final class EditableParagraphTextContainerView: NSView {
             maxLineFragmentY = max(maxLineFragmentY, layoutManager.extraLineFragmentRect.maxY)
         }
 
-        let resolvedHeight = max(preferredLineHeight, ceil(maxLineFragmentY))
+        let resolvedHeight = max(minimumHeight, max(preferredLineHeight, ceil(maxLineFragmentY)))
         cachedMeasurement = (width, resolvedHeight)
         return resolvedHeight
     }

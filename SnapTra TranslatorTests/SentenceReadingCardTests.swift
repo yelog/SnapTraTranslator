@@ -32,6 +32,14 @@ final class SentenceReadingCardTests: XCTestCase {
             isManualInputFallback: true,
         ))
         XCTAssertFalse(input.waitsForFirstParagraphOutput(hidesOriginalText: true))
+
+        let emptyTextEntry = OverlayState.paragraphResult(ParagraphOverlayContent(
+            translationState: .failed(""),
+            showsNativeTranslation: false,
+            isManualInputFallback: true,
+            isManualTextEntry: true,
+        ))
+        XCTAssertFalse(emptyTextEntry.waitsForFirstParagraphOutput(hidesOriginalText: true))
     }
 
     private func makeModel() throws -> AppModel {
