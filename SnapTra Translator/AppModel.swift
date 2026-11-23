@@ -13,6 +13,7 @@ struct OverlayContent: Equatable {
     var usesCompactPrimaryTranslationStyle: Bool
     var dictionarySections: [OverlayDictionarySection]
     var sourceLanguageIdentifier: String?
+    var targetLanguageIdentifier: String?
 
     init(
         word: String,
@@ -20,7 +21,8 @@ struct OverlayContent: Equatable {
         primaryTranslationState: OverlayPrimaryTranslationState,
         usesCompactPrimaryTranslationStyle: Bool,
         dictionarySections: [OverlayDictionarySection] = [],
-        sourceLanguageIdentifier: String? = nil
+        sourceLanguageIdentifier: String? = nil,
+        targetLanguageIdentifier: String? = nil
     ) {
         self.word = word
         self.phonetic = phonetic
@@ -28,6 +30,7 @@ struct OverlayContent: Equatable {
         self.usesCompactPrimaryTranslationStyle = usesCompactPrimaryTranslationStyle
         self.dictionarySections = dictionarySections
         self.sourceLanguageIdentifier = sourceLanguageIdentifier
+        self.targetLanguageIdentifier = targetLanguageIdentifier
     }
 
     nonisolated var translation: String {
@@ -165,6 +168,11 @@ struct ParagraphTranslationLanguageOption: Equatable, Identifiable {
     var id: String { identifier }
 }
 
+enum ParagraphWordOrigin {
+    case original
+    case translation
+}
+
 struct ParagraphOverlayContent: Equatable {
     var originalText: String?
     var translationState: ParagraphOverlayTranslationState
@@ -179,6 +187,19 @@ struct ParagraphOverlayContent: Equatable {
     var isManualInputFallback: Bool
     var isManualTextEntry: Bool
     var imageTranslationUsed: Bool
+
+    func wordLanguagePair(for word: String, from origin: ParagraphWordOrigin, bidirectional: Bool) -> LookupLanguagePair? {
+        guard let sourceLanguageIdentifier, let selectedTargetLanguageIdentifier else { return nil }
+        let pair = LookupLanguagePair(
+            sourceIdentifier: sourceLanguageIdentifier,
+            targetIdentifier: selectedTargetLanguageIdentifier
+        )
+        return LookupLanguagePairResolver.resolve(
+            configuredPair: origin == .translation ? pair.reversed() : pair,
+            observedText: word,
+            bidirectionalEnabled: bidirectional
+        )
+    }
 
     init(
         originalText: String? = nil,
@@ -392,12 +413,13 @@ enum TapKeptOverlayPersistencePolicy {
         startLocation: CGPoint?,
         currentLocation: CGPoint,
         overlayFrame: CGRect?,
+        wordPanelFrame: CGRect? = nil,
         movementThreshold: CGFloat
     ) -> Bool {
-        if let overlayFrame,
-           !overlayFrame.isNull,
-           !overlayFrame.isEmpty,
-           overlayFrame.insetBy(dx: -protectedInset, dy: -protectedInset).contains(currentLocation) {
+        if [overlayFrame, wordPanelFrame].contains(where: { frame in
+            guard let frame, !frame.isNull, !frame.isEmpty else { return false }
+            return frame.insetBy(dx: -protectedInset, dy: -protectedInset).contains(currentLocation)
+        }) {
             return false
         }
 
@@ -497,6 +519,7 @@ private enum OcrWordCandidateLoadResult: Sendable {
 @MainActor
 final class AppModel: ObservableObject {
     @Published var overlayState: OverlayState = .idle
+    @Published private(set) var paragraphWordContent: OverlayContent?
     var overlayAnchor: CGPoint = .zero
     @Published private var paragraphSourceRegion: (rect: CGRect, selectionMode: DoubleTapSentenceTranslationMode)?
     var activeParagraphRect: CGRect? { paragraphSourceRegion?.rect }
@@ -536,6 +559,8 @@ final class AppModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var lookupTask: Task<Void, Never>?
     private var activeLookupID: UUID?
+    private var paragraphWordLookupTask: Task<Void, Never>?
+    private var paragraphWordLookupID: UUID?
     private var activeSelectedTextProbeRequest: SelectedTextProbeRequest?
     private var activeLookupTrace: LookupPerformanceTrace?
     private var isHotkeyActive = false
@@ -617,6 +642,7 @@ final class AppModel: ObservableObject {
     private let inPlaceTranslationWindowController = InPlaceTranslationWindowController()
     private let inPlaceImageTranslationWindowController = InPlaceImageTranslationWindowController()
     lazy var overlayWindowController = OverlayWindowController(model: self)
+    lazy var paragraphWordWindowController = OverlayWindowController(model: self, isParagraphWordPanel: true)
     private let startupLanguageAvailabilityRetryDelays: [UInt64] = [
         1_000_000_000,
         2_000_000_000,
@@ -884,52 +910,52 @@ final class AppModel: ObservableObject {
     }
 
     func playOverlayPronunciation(kind: OverlayPronunciationKind) {
-        let request: OverlayPronunciationRequest?
         switch kind {
         case .word:
-            guard case .result(let content) = overlayState else { return }
-            let text = content.word.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return }
-            request = OverlayPronunciationRequest(
-                id: UUID(),
-                kind: kind,
-                text: text,
-                languageIdentifier: content.sourceLanguageIdentifier
-            )
+            let content: OverlayContent?
+            if case .result(let result) = overlayState {
+                content = result
+            } else {
+                content = paragraphWordContent
+            }
+            guard let content else { return }
+            speakOverlayText(content.word, kind: kind, languageIdentifier: content.sourceLanguageIdentifier)
         case .sentence:
             guard case .paragraphResult(let content) = overlayState,
                   let originalText = content.originalText else { return }
-            let text = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return }
-            request = OverlayPronunciationRequest(
-                id: UUID(),
-                kind: kind,
-                text: text,
-                languageIdentifier: content.sourceLanguageIdentifier
-            )
+            speakOverlayText(originalText, kind: kind, languageIdentifier: content.sourceLanguageIdentifier)
         }
+    }
 
-        guard let request else { return }
-        activePronunciationRequest = request
-        let provider = kind == .word ? settings.wordTTSProvider : settings.sentenceTTSProvider
+    private func speakOverlayText(
+        _ text: String,
+        kind: OverlayPronunciationKind,
+        languageIdentifier: String?,
+        performance: LookupPerformanceContext? = nil
+    ) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let request = OverlayPronunciationRequest(
+            id: UUID(),
+            kind: kind,
+            text: text,
+            languageIdentifier: languageIdentifier
+        )
         speechService.speak(
             request.text,
-            language: request.languageIdentifier.flatMap { Locale.Language(identifier: $0).languageCode?.identifier },
-            provider: provider,
+            language: languageIdentifier.flatMap { Locale.Language(identifier: $0).languageCode?.identifier },
+            provider: kind == .word ? settings.wordTTSProvider : settings.sentenceTTSProvider,
             useAmericanAccent: settings.englishAccent.isAmerican,
+            performance: performance,
             requestID: request.id
         )
+        // Starting Apple speech publishes an interim idle state synchronously.
+        activePronunciationRequest = request
     }
 
     func isPronunciationPlaying(kind: OverlayPronunciationKind) -> Bool {
-        let requestMatches = activePronunciationRequest?.kind == kind
-        let automaticKindMatches: Bool = switch (kind, activeLookupMode) {
-        case (.word, .word), (.sentence, .selectedTextSentence), (.sentence, .ocrSentence):
-            true
-        default:
-            false
-        }
-        guard requestMatches || (activePronunciationRequest == nil && automaticKindMatches) else { return false }
+        guard let request = activePronunciationRequest,
+              request.kind == kind, request.id == speechPlaybackState.requestID else { return false }
         switch speechPlaybackState {
         case .loading, .playing:
             return true
@@ -1152,6 +1178,7 @@ final class AppModel: ObservableObject {
             startLocation: tapKeptOverlayReleaseLocation,
             currentLocation: NSEvent.mouseLocation,
             overlayFrame: overlayWindowController.visibleFrame,
+            wordPanelFrame: visibleParagraphWordFrame,
             movementThreshold: tapKeptOverlayMovementThreshold
         )
 
@@ -1516,8 +1543,13 @@ final class AppModel: ObservableObject {
             } else {
                 debugOverlayWindowController.hide()
             }
+            guard shouldPerformLookup(for: candidate.text) else {
+                hideOverlay()
+                return
+            }
             await performWordLookup(
                 word: candidate.text,
+                languagePair: resolveLookupLanguagePair(for: candidate.text),
                 lookupID: request.lookupID,
                 anchor: request.mouseLocation
             )
@@ -1533,32 +1565,62 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func lookupParagraphWord(_ word: String, from origin: ParagraphWordOrigin, at anchor: CGPoint) {
+        let word = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !word.isEmpty,
+              !selectedTextReplacementCoordinator.isBusy,
+              case .paragraphResult(let paragraph) = overlayState,
+              let languagePair = paragraph.wordLanguagePair(
+                  for: word, from: origin, bidirectional: settings.bidirectionalTranslationEnabled
+              ) else { return }
+
+        cancelParagraphWordLookup()
+        let lookupID = UUID()
+        paragraphWordLookupID = lookupID
+        paragraphWordLookupTask = Task { [weak self] in
+            await self?.performWordLookup(
+                word: word,
+                languagePair: languagePair,
+                lookupID: lookupID,
+                anchor: anchor
+            )
+        }
+    }
+
+    func dismissParagraphWord() {
+        guard paragraphWordLookupID != nil else { return }
+        cancelParagraphWordLookup()
+        paragraphWordContent = nil
+        paragraphWordWindowController.hide()
+    }
+
+    private func cancelParagraphWordLookup() {
+        guard paragraphWordLookupID != nil else { return }
+        paragraphWordLookupID = nil
+        paragraphWordLookupTask?.cancel()
+        paragraphWordLookupTask = nil
+        if activePronunciationRequest?.kind == .word {
+            speechService.stopSpeaking()
+        }
+    }
+
     private func performWordLookup(
         word: String,
+        languagePair: LookupLanguagePair,
         lookupID: UUID,
         anchor: CGPoint
     ) async {
+        guard !Task.isCancelled, activeLookupID == lookupID || paragraphWordLookupID == lookupID else { return }
         let performance = lookupPerformanceContext(for: lookupID)
-
-        guard !Task.isCancelled, activeLookupID == lookupID else { return }
-
-        guard shouldPerformLookup(for: word) else {
-            hideOverlay()
-            return
-        }
-
-        let languagePair = resolveLookupLanguagePair(for: word)
         let sourceLanguage = languagePair.sourceLanguage
         let targetLanguage = languagePair.targetLanguage
         let supportedDictionarySources = dictionarySources(for: languagePair)
 
         if settings.playWordPronunciation {
-            let languageCode = sourceLanguage.languageCode?.identifier
-            speechService.speak(
+            speakOverlayText(
                 word,
-                language: languageCode,
-                provider: settings.wordTTSProvider,
-                useAmericanAccent: settings.englishAccent.isAmerican,
+                kind: .word,
+                languageIdentifier: languagePair.sourceIdentifier,
                 performance: performance
             )
         }
@@ -1568,17 +1630,21 @@ final class AppModel: ObservableObject {
             pasteboard.clearContents()
             pasteboard.setString(word, forType: .string)
         }
-        guard !Task.isCancelled, activeLookupID == lookupID else { return }
-
         let initialContent = makeInitialOverlayContent(
             word: word,
             sources: supportedDictionarySources,
             primaryTranslationState: languagePair.isSameLanguage
                 ? .ready(word, isFallback: false)
                 : .loading,
-            sourceLanguageIdentifier: languagePair.sourceIdentifier
+            languagePair: languagePair
         )
-        updateOverlay(state: .result(initialContent), anchor: anchor)
+        if paragraphWordLookupID == lookupID {
+            paragraphWordContent = initialContent
+            paragraphWordWindowController.show(at: anchor)
+            paragraphWordWindowController.setInteractive(true, requestsKeyboardFocus: false)
+        } else {
+            updateOverlay(state: .result(initialContent), anchor: anchor)
+        }
 
         await LearningLookupPersistenceCoordinator.run(
             recordLookup: { [learningService] in
@@ -1593,24 +1659,22 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 await withTaskGroup(of: Void.self) { group in
                     if !languagePair.isSameLanguage {
-                        if #available(macOS 15.0, *) {
-                            group.addTask { [weak self, translationBridge] in
-                                guard let self else { return }
-                                let translationState = await self.loadPrimaryTranslationState(
-                                    word: word,
-                                    languagePair: languagePair,
-                                    sourceLanguage: sourceLanguage,
-                                    targetLanguage: targetLanguage,
-                                    translationBridge: translationBridge
-                                )
-                                await self.applyPrimaryTranslationState(
-                                    translationState,
-                                    lookupID: lookupID,
-                                    anchor: anchor
-                                )
-                            }
-                            await Task.yield()
+                        group.addTask { [weak self, translationBridge] in
+                            guard let self else { return }
+                            let translationState = await self.loadPrimaryTranslationState(
+                                word: word,
+                                languagePair: languagePair,
+                                sourceLanguage: sourceLanguage,
+                                targetLanguage: targetLanguage,
+                                translationBridge: translationBridge
+                            )
+                            await self.applyPrimaryTranslationState(
+                                translationState,
+                                lookupID: lookupID,
+                                anchor: anchor
+                            )
                         }
+                        await Task.yield()
                     }
 
                     for source in supportedDictionarySources {
@@ -1638,11 +1702,11 @@ final class AppModel: ObservableObject {
             },
             isCurrent: { [weak self] in
                 guard let self else { return false }
-                return self.activeLookupID == lookupID
+                return self.wordContent(for: lookupID) != nil
             },
             makeFinalCommit: { [weak self] in
                 guard let self,
-                      case .result(let finalContent) = self.overlayState,
+                      let finalContent = self.wordContent(for: lookupID),
                       let definitionText = Self.learningDefinitionText(from: finalContent) else {
                     return nil
                 }
@@ -1739,12 +1803,7 @@ final class AppModel: ObservableObject {
 
     private func handleRecognizedSentence(_ text: String, sourceLanguage: Locale.Language) {
         if settings.playSentencePronunciation {
-            speechService.speak(
-                text,
-                language: sourceLanguage.languageCode?.identifier,
-                provider: settings.sentenceTTSProvider,
-                useAmericanAccent: settings.englishAccent.isAmerican
-            )
+            speakOverlayText(text, kind: .sentence, languageIdentifier: sourceLanguage.minimalIdentifier)
         }
         if settings.copySentence {
             let pasteboard = NSPasteboard.general
@@ -2221,7 +2280,7 @@ final class AppModel: ObservableObject {
         word: String,
         sources: [DictionarySource],
         primaryTranslationState: OverlayPrimaryTranslationState,
-        sourceLanguageIdentifier: String
+        languagePair: LookupLanguagePair
     ) -> OverlayContent {
         let enabledSources = sources.filter(\.isEnabled)
 
@@ -2233,7 +2292,8 @@ final class AppModel: ObservableObject {
             dictionarySections: enabledSources.map {
                 OverlayDictionarySection(sourceType: $0.type, state: .loading)
             },
-            sourceLanguageIdentifier: sourceLanguageIdentifier
+            sourceLanguageIdentifier: languagePair.sourceIdentifier,
+            targetLanguageIdentifier: languagePair.targetIdentifier
         )
     }
 
@@ -2745,6 +2805,7 @@ final class AppModel: ObservableObject {
         let originalText = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !originalText.isEmpty else { return }
 
+        dismissParagraphWord()
         paragraphTranslationTask?.cancel()
         selectedTextReplacementCoordinator.cancel()
         selectedTextReplacementFeedback = nil
@@ -3134,15 +3195,24 @@ final class AppModel: ObservableObject {
         anchor: CGPoint,
         mutate: (inout OverlayContent) -> Void
     ) {
-        guard activeLookupID == lookupID,
-              case .result(var content) = overlayState else {
-            return
-        }
-
+        guard var content = wordContent(for: lookupID) else { return }
         let previousContent = content
         mutate(&content)
         guard content != previousContent else { return }
-        updateOverlay(state: .result(content), anchor: anchor)
+        if paragraphWordLookupID == lookupID {
+            paragraphWordContent = content
+            paragraphWordWindowController.refreshLayoutIfNeeded()
+        } else {
+            updateOverlay(state: .result(content), anchor: anchor)
+        }
+    }
+
+    private func wordContent(for lookupID: UUID) -> OverlayContent? {
+        if paragraphWordLookupID == lookupID {
+            return paragraphWordContent
+        }
+        guard activeLookupID == lookupID, case .result(let content) = overlayState else { return nil }
+        return content
     }
 
     nonisolated static func primaryTranslationStateAfterDictionaryUpdate(
@@ -3563,6 +3633,7 @@ final class AppModel: ObservableObject {
     }
 
     private func handleScreenConfigurationChange() {
+        dismissParagraphWord()
         SelectedTextScreenConfiguration.invalidate()
         captureService.invalidateCache()
         cancelPendingOverlayLayoutRefresh()
@@ -4088,7 +4159,7 @@ final class AppModel: ObservableObject {
             processedEntry = processSameLanguageEntry(entry, isEnglish: sourceLanguage.minimalIdentifier == "en")
         } else if entry.isPretranslated {
             processedEntry = entry
-        } else {
+        } else if #available(macOS 15.0, *) {
             let translatedDefinitions = await translateDefinitionsInParallel(
                 definitions: entry.definitions,
                 sourceLanguage: sourceLanguage,
@@ -4108,6 +4179,8 @@ final class AppModel: ObservableObject {
                     isPretranslated: entry.isPretranslated
                 )
             }
+        } else {
+            processedEntry = entry.hasDefinitions ? entry : nil
         }
 
         guard let processedEntry else {
@@ -4263,6 +4336,7 @@ final class AppModel: ObservableObject {
     private func cancelActiveLookupWork(
         outcome: LookupPerformanceOutcome = .cancelled
     ) {
+        dismissParagraphWord()
         cancelPendingParagraphPresentation()
         paragraphTranslationTask?.cancel()
         paragraphTranslationTask = nil
@@ -4465,7 +4539,7 @@ final class AppModel: ObservableObject {
     }
 
     @discardableResult
-    private func handleOverlayEscapeKey(_ event: NSEvent) -> Bool {
+    func handleOverlayEscapeKey(_ event: NSEvent) -> Bool {
         guard OverlayEscapeDismissalPolicy.shouldDismiss(
             keyCode: event.keyCode,
             isParagraphOverlayPresented: isSentenceTranslationPresented,
@@ -4475,7 +4549,11 @@ final class AppModel: ObservableObject {
         if selectedTextReplacementCoordinator.operation?.phase == .pasteDispatched {
             return false
         }
-        dismissOverlay()
+        if paragraphWordContent != nil {
+            dismissParagraphWord()
+        } else {
+            dismissOverlay()
+        }
         return true
     }
 
@@ -4515,6 +4593,7 @@ final class AppModel: ObservableObject {
         if isWaitingForSelectedTextReplacementModifiers {
             let isInsideProtectedFrame: Bool = [
                 overlayWindowController.visibleFrame,
+                visibleParagraphWordFrame,
                 visibleSourceHighlightFrame,
                 activeParagraphRect,
             ].contains { frame in
@@ -4533,6 +4612,7 @@ final class AppModel: ObservableObject {
             isRegionInteractionActive: isParagraphRegionInteractionActive,
             protectedFrames: [
                 overlayWindowController.visibleFrame,
+                visibleParagraphWordFrame,
                 visibleSourceHighlightFrame,
                 activeParagraphRect,
                 inPlaceTranslationWindowController.visibleFrame,
@@ -4543,6 +4623,10 @@ final class AppModel: ObservableObject {
         guard shouldDismiss else { return false }
         dismissOverlay()
         return true
+    }
+
+    private var visibleParagraphWordFrame: CGRect? {
+        paragraphWordContent == nil ? nil : paragraphWordWindowController.visibleFrame
     }
 
     private func debugSelectedTextRoute(_ message: @autoclosure () -> String) {

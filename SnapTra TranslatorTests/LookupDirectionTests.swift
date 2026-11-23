@@ -696,3 +696,101 @@ final class OverlayDictionarySectionDisplayTests: XCTestCase {
         )
     }
 }
+
+@MainActor
+final class TranslationBridgeCancellationTests: XCTestCase {
+    private let target = Locale.Language(identifier: "en")
+
+    func testCancellingQueuedBatchKeepsActiveSentenceAndNextWord() async throws {
+        let bridge = TranslationBridge()
+        defer { bridge.cancelAllPendingRequests() }
+        let sentence = Task { try await bridge.translate(text: "句子", source: nil, target: target) }
+        try await waitUntil { bridge.activeRequest != nil }
+        let sentenceID = try XCTUnwrap(bridge.activeRequest?.id)
+
+        let batchCancelled = expectation(description: "Queued batch returned its cancellation")
+        let oldWord = Task {
+            defer { batchCancelled.fulfill() }
+            do {
+                _ = try await bridge.translateBatch(texts: ["释义"], source: nil, target: target)
+                XCTFail("Expected the queued batch to be cancelled")
+            } catch {
+                XCTAssertTrue(error is CancellationError)
+            }
+        }
+        try await waitUntil { bridge.queuedRequests.count == 1 }
+        let nextWord = Task { try await bridge.translate(text: "下一个", source: nil, target: target) }
+        try await waitUntil { bridge.queuedRequests.count == 2 }
+
+        oldWord.cancel()
+        await fulfillment(of: [batchCancelled], timeout: 2)
+        XCTAssertEqual(bridge.activeRequest?.id, sentenceID)
+        XCTAssertEqual(bridge.queuedRequests.count, 1)
+        bridge.finishActiveRequest(id: sentenceID, result: .success(.single("sentence")))
+        let nextID = try XCTUnwrap(bridge.activeRequest?.id)
+        bridge.finishActiveRequest(id: nextID, result: .success(.single("next")))
+        let sentenceResult = try await sentence.value
+        let nextResult = try await nextWord.value
+        XCTAssertEqual(sentenceResult, "sentence")
+        XCTAssertEqual(nextResult, "next")
+    }
+
+    func testCancellingActiveWordPromotesBatchAndIgnoresLateWordCompletion() async throws {
+        let bridge = TranslationBridge()
+        defer { bridge.cancelAllPendingRequests() }
+        let oldWordCancelled = expectation(description: "Active word returned its cancellation")
+        let oldWord = Task {
+            defer { oldWordCancelled.fulfill() }
+            do {
+                _ = try await bridge.translate(text: "旧词", source: nil, target: target)
+                XCTFail("Expected the active word to be cancelled")
+            } catch {
+                XCTAssertTrue(error is CancellationError)
+            }
+        }
+        try await waitUntil { bridge.activeRequest != nil }
+        let oldID = try XCTUnwrap(bridge.activeRequest?.id)
+        let batch = Task { try await bridge.translateBatch(texts: ["一", "二"], source: nil, target: target) }
+        try await waitUntil { bridge.queuedRequests.count == 1 }
+        let queuedID = try XCTUnwrap(bridge.queuedRequests.first?.id)
+
+        oldWord.cancel()
+        await fulfillment(of: [oldWordCancelled], timeout: 2)
+        bridge.finishActiveRequest(id: oldID, result: .success(.single("obsolete")))
+        XCTAssertEqual(bridge.activeRequest?.id, queuedID)
+        bridge.finishActiveRequest(id: queuedID, result: .success(.batch(["one", "two"])))
+        let translations = try await batch.value
+        XCTAssertEqual(translations, ["one", "two"])
+        XCTAssertNil(bridge.activeRequest)
+    }
+
+    func testTimeoutReleasesRequestWithoutTranslationSession() async {
+        let bridge = TranslationBridge()
+        defer { bridge.cancelAllPendingRequests() }
+        let timedOut = expectation(description: "Request timed out without a session")
+        Task {
+            defer { timedOut.fulfill() }
+            do {
+                _ = try await bridge.translate(text: "测试", source: nil, target: target, timeout: 0)
+                XCTFail("Expected translation to time out")
+            } catch {
+                XCTAssertEqual(error as? TranslationError, .timeout)
+            }
+        }
+
+        await fulfillment(of: [timedOut], timeout: 2)
+        XCTAssertNil(bridge.activeRequest)
+        XCTAssertTrue(bridge.queuedRequests.isEmpty)
+    }
+
+    private func waitUntil(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while !condition() {
+            guard ContinuousClock.now < deadline else {
+                XCTFail("Translation request did not reach the expected queue state", file: file, line: line)
+                throw CancellationError()
+            }
+            await Task.yield()
+        }
+    }
+}

@@ -3,6 +3,66 @@ import XCTest
 @testable import SnapTra_Translator
 
 final class ParagraphOverlayLayoutTests: XCTestCase {
+    func testParagraphWordPanelOpensBesideTheClickedEdgeAndStaysOnItsDisplay() {
+        let screen = CGRect(x: -1440, y: 320, width: 1440, height: 900)
+        let paragraph = CGRect(x: -900, y: 610, width: 420, height: 300)
+        for x in [paragraph.minX, paragraph.maxX] {
+            let layout = ParagraphWordPanelLayout(
+                screenFrame: screen, paragraphFrame: paragraph, anchor: CGPoint(x: x, y: paragraph.maxY)
+            )
+            let frame = layout.frame(for: CGSize(width: 380, height: 1700))
+            XCTAssertEqual(frame.width, 380)
+            XCTAssertFalse(frame.intersects(paragraph))
+            XCTAssertTrue(screen.insetBy(dx: 8, dy: 8).contains(frame))
+            if x == paragraph.minX {
+                XCTAssertEqual(frame.maxX, paragraph.minX - 8)
+            } else {
+                XCTAssertEqual(frame.minX, paragraph.maxX + 8)
+            }
+        }
+    }
+
+    func testParagraphWordPanelLimitsLongResultsToSpaceAboveOrBelowTheSentence() {
+        let screen = CGRect(x: 0, y: 0, width: 800, height: 600)
+        for y: CGFloat in [8, 390] {
+            let paragraph = CGRect(x: 180, y: y, width: 420, height: 200)
+            let layout = ParagraphWordPanelLayout(
+                screenFrame: screen, paragraphFrame: paragraph, anchor: CGPoint(x: 540, y: paragraph.midY)
+            )
+            let frame = layout.frame(for: CGSize(width: 380, height: 1500))
+            XCTAssertTrue(screen.insetBy(dx: 8, dy: 8).contains(frame))
+            XCTAssertFalse(frame.intersects(paragraph))
+            XCTAssertEqual(frame.height, layout.maxPanelSize.height)
+            XCTAssertEqual(y == 8 ? frame.minY : frame.maxY, y == 8 ? paragraph.maxY + 8 : paragraph.minY - 8)
+        }
+    }
+
+    func testParagraphWordPanelFitsNarrowSideBesideTallSentence() {
+        let paragraph = CGRect(x: 8, y: 8, width: 420, height: 584)
+        let layout = ParagraphWordPanelLayout(
+            screenFrame: CGRect(x: 0, y: 0, width: 750, height: 600),
+            paragraphFrame: paragraph,
+            anchor: CGPoint(x: 200, y: 380)
+        )
+        let frame = layout.frame(for: CGSize(width: 380, height: 1500))
+        XCTAssertEqual(frame.minX, paragraph.maxX + 8)
+        XCTAssertEqual(frame.maxX, 742)
+        XCTAssertEqual(frame.height, 584)
+    }
+
+    func testParagraphWordPanelKeepsClickedWordVisibleWhenOverlapIsUnavoidable() {
+        let screen = CGRect(x: 0, y: 0, width: 460, height: 450)
+        let paragraph = CGRect(x: 20, y: 12, width: 420, height: 426)
+        for y: CGFloat in [30, 425] {
+            let anchor = CGPoint(x: paragraph.midX, y: y)
+            let layout = ParagraphWordPanelLayout(screenFrame: screen, paragraphFrame: paragraph, anchor: anchor)
+            let frame = layout.frame(for: CGSize(width: 380, height: 390))
+            XCTAssertTrue(screen.insetBy(dx: 8, dy: 8).contains(frame))
+            XCTAssertFalse(frame.contains(anchor))
+            XCTAssertGreaterThanOrEqual(frame.height, 160)
+        }
+    }
+
     @MainActor
     func testAutomaticSentenceScanRemainsVisibleAndResizableUntilDismissed() throws {
         let controller = ParagraphHighlightWindowController()

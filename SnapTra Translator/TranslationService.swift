@@ -3,7 +3,6 @@ import Foundation
 import SwiftUI
 import Translation
 
-
 enum TranslationError: Error {
     case unsupportedSystem
     case emptyText
@@ -15,15 +14,11 @@ struct TranslationRequest {
     let id: UUID
     let source: Locale.Language?
     let target: Locale.Language
-    let payload: TranslationRequestPayload
+    let payload: TranslationPayload
+    fileprivate let continuation: CheckedContinuation<TranslationPayload, Error>
 }
 
-enum TranslationRequestPayload {
-    case single(text: String, continuation: CheckedContinuation<String, Error>)
-    case batch(texts: [String], continuation: CheckedContinuation<[String], Error>)
-}
-
-enum TranslationResponsePayload {
+enum TranslationPayload {
     case single(String)
     case batch([String])
 }
@@ -31,40 +26,14 @@ enum TranslationResponsePayload {
 @MainActor
 final class TranslationBridge: ObservableObject {
     @Published private(set) var activeRequest: TranslationRequest?
-    private var queuedRequests: [TranslationRequest] = []
+    private(set) var queuedRequests: [TranslationRequest] = []
 
     func translate(text: String, source: Locale.Language?, target: Locale.Language, timeout: TimeInterval = 10.0) async throws -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            throw TranslationError.emptyText
-        }
-        try Task.checkCancellation()
-
-        return try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask {
-                try Task.checkCancellation()
-                return try await withCheckedThrowingContinuation { continuation in
-                    let request = TranslationRequest(
-                        id: UUID(),
-                        source: source,
-                        target: target,
-                        payload: .single(text: trimmed, continuation: continuation)
-                    )
-                    Task { @MainActor in
-                        self.enqueue(request)
-                    }
-                }
-            }
-
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                throw TranslationError.timeout
-            }
-
-            let result = try await group.next()!
-            group.cancelAll()
-            return result
-        }
+        guard !trimmed.isEmpty else { throw TranslationError.emptyText }
+        let response = try await submit(.single(trimmed), source: source, target: target, timeout: timeout)
+        guard case .single(let translation) = response else { throw TranslationError.invalidResponse }
+        return translation
     }
 
     func translateBatch(
@@ -76,88 +45,75 @@ final class TranslationBridge: ObservableObject {
         let trimmedTexts = texts
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+        guard !trimmedTexts.isEmpty else { throw TranslationError.emptyText }
+        let response = try await submit(.batch(trimmedTexts), source: source, target: target, timeout: timeout)
+        guard case .batch(let translations) = response else { throw TranslationError.invalidResponse }
+        return translations
+    }
 
-        guard !trimmedTexts.isEmpty else {
-            throw TranslationError.emptyText
-        }
-        try Task.checkCancellation()
+    private func submit(
+        _ payload: TranslationPayload,
+        source: Locale.Language?,
+        target: Locale.Language,
+        timeout: TimeInterval
+    ) async throws -> TranslationPayload {
+        let id = UUID()
+        var timeoutTask: Task<Void, Never>?
+        defer { timeoutTask?.cancel() }
 
-        return try await withThrowingTaskGroup(of: [String].self) { group in
-            group.addTask {
-                try Task.checkCancellation()
-                return try await withCheckedThrowingContinuation { continuation in
-                    let request = TranslationRequest(
-                        id: UUID(),
-                        source: source,
-                        target: target,
-                        payload: .batch(texts: trimmedTexts, continuation: continuation)
-                    )
-                    Task { @MainActor in
-                        self.enqueue(request)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                // Check and register on the same actor so cancellation cannot miss a new request.
+                guard !Task.isCancelled else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                queuedRequests.append(TranslationRequest(
+                    id: id,
+                    source: source,
+                    target: target,
+                    payload: payload,
+                    continuation: continuation
+                ))
+                promoteNextRequestIfNeeded()
+                timeoutTask = Task {
+                    do {
+                        try await Task.sleep(for: .seconds(timeout))
+                    } catch {
+                        return
                     }
+                    cancelRequest(id: id, with: TranslationError.timeout)
                 }
             }
-
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                throw TranslationError.timeout
+        } onCancel: {
+            Task { @MainActor in
+                self.cancelRequest(id: id, with: CancellationError())
             }
-
-            let result = try await group.next()!
-            group.cancelAll()
-            return result
         }
     }
 
-    func finishActiveRequest(id: UUID, result: Result<TranslationResponsePayload, Error>) {
-        guard activeRequest?.id == id else { return }
-
-        if let activeRequest {
-            switch (activeRequest.payload, result) {
-            case (.single(_, let continuation), .success(.single(let translatedText))):
-                continuation.resume(returning: translatedText)
-            case (.batch(_, let continuation), .success(.batch(let translatedTexts))):
-                continuation.resume(returning: translatedTexts)
-            case (.single(_, let continuation), .failure(let error)):
-                continuation.resume(throwing: error)
-            case (.batch(_, let continuation), .failure(let error)):
-                continuation.resume(throwing: error)
-            case (.single(_, let continuation), .success(.batch)):
-                continuation.resume(throwing: TranslationError.invalidResponse)
-            case (.batch(_, let continuation), .success(.single)):
-                continuation.resume(throwing: TranslationError.invalidResponse)
-            }
-        }
-
+    func finishActiveRequest(id: UUID, result: Result<TranslationPayload, Error>) {
+        guard let request = activeRequest, request.id == id else { return }
         activeRequest = nil
+        request.continuation.resume(with: result)
         promoteNextRequestIfNeeded()
+    }
+
+    private func cancelRequest(id: UUID, with error: Error) {
+        if activeRequest?.id == id {
+            finishActiveRequest(id: id, result: .failure(error))
+        } else if let index = queuedRequests.firstIndex(where: { $0.id == id }) {
+            queuedRequests.remove(at: index).continuation.resume(throwing: error)
+        }
     }
 
     func cancelAllPendingRequests(with error: Error = CancellationError()) {
-        if let activeRequest {
-            switch activeRequest.payload {
-            case .single(_, let continuation):
-                continuation.resume(throwing: error)
-            case .batch(_, let continuation):
-                continuation.resume(throwing: error)
-            }
-            self.activeRequest = nil
-        }
-
+        activeRequest?.continuation.resume(throwing: error)
+        activeRequest = nil
         for request in queuedRequests {
-            switch request.payload {
-            case .single(_, let continuation):
-                continuation.resume(throwing: error)
-            case .batch(_, let continuation):
-                continuation.resume(throwing: error)
-            }
+            request.continuation.resume(throwing: error)
         }
         queuedRequests.removeAll()
-    }
-
-    private func enqueue(_ request: TranslationRequest) {
-        queuedRequests.append(request)
-        promoteNextRequestIfNeeded()
     }
 
     private func promoteNextRequestIfNeeded() {
@@ -185,17 +141,17 @@ struct TranslationBridgeView: View {
             .onChange(of: bridge.activeRequest?.id) { _, _ in
                 syncConfiguration(for: bridge.activeRequest)
             }
-            .translationTask(configuration) { session in
-                guard let request = bridge.activeRequest else {
+            .translationTask(configuration) { [configurationID] session in
+                guard let request = bridge.activeRequest, request.id == configurationID else {
                     return
                 }
 
                 do {
                     switch request.payload {
-                    case .single(let text, _):
+                    case .single(let text):
                         let response = try await session.translate(text)
                         bridge.finishActiveRequest(id: request.id, result: .success(.single(response.targetText)))
-                    case .batch(let texts, _):
+                    case .batch(let texts):
                         let batch = texts.enumerated().map { index, text in
                             TranslationSession.Request(
                                 sourceText: text,

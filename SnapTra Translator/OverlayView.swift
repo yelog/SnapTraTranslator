@@ -4,6 +4,7 @@ import SwiftData
 
 struct OverlayView: View {
     private let paragraphOverlayMaxSize: CGSize?
+    private let isParagraphWordPanel: Bool
 
     @EnvironmentObject var model: AppModel
     @Environment(\.colorScheme) private var colorScheme
@@ -24,11 +25,19 @@ struct OverlayView: View {
     private let wordHeaderControlGroupWidth: CGFloat = 132
     private let wordHeaderControlGap: CGFloat = 12
 
-    init(paragraphOverlayMaxSize: CGSize? = nil) {
+    init(paragraphOverlayMaxSize: CGSize? = nil, isParagraphWordPanel: Bool = false) {
         self.paragraphOverlayMaxSize = paragraphOverlayMaxSize
+        self.isParagraphWordPanel = isParagraphWordPanel
+    }
+
+    private var displayedState: OverlayState {
+        isParagraphWordPanel ? model.paragraphWordContent.map(OverlayState.result) ?? .idle : model.overlayState
     }
 
     private var overlayWidth: CGFloat {
+        if isParagraphWordPanel {
+            return min(wordOverlayWidth, paragraphOverlayMaxSize?.width ?? wordOverlayWidth)
+        }
         if isParagraphOverlayMode {
             let targetWidth = paragraphOverlayTargetWidth
             guard let availableWidth = paragraphOverlayMaxSize?.width,
@@ -40,8 +49,8 @@ struct OverlayView: View {
         return model.overlayPreferredWidth ?? wordOverlayWidth
     }
 
-    private var paragraphHeightLimit: CGFloat? {
-        isParagraphOverlayMode ? paragraphOverlayMaxSize?.height : nil
+    private var heightLimit: CGFloat? {
+        isParagraphOverlayMode || isParagraphWordPanel ? paragraphOverlayMaxSize?.height : nil
     }
 
     private var paragraphOverlayTargetWidth: CGFloat {
@@ -69,7 +78,7 @@ struct OverlayView: View {
     }
 
     private var showsWordOverlayControls: Bool {
-        !model.settings.continuousTranslation
+        isParagraphWordPanel || !model.settings.continuousTranslation
             || model.isTapKeptOverlayPresented
     }
 
@@ -85,7 +94,7 @@ struct OverlayView: View {
     }
 
     private var isParagraphOverlayMode: Bool {
-        switch model.overlayState {
+        switch displayedState {
         case .paragraphLoading, .paragraphResult:
             return true
         default:
@@ -106,12 +115,17 @@ struct OverlayView: View {
     }
 
     private var isVisible: Bool {
-        if case .idle = model.overlayState { return false }
+        if case .idle = displayedState { return false }
         return true
     }
 
+    private var wordTargetLanguage: String {
+        guard case .result(let content) = displayedState else { return model.settings.targetLanguage }
+        return content.targetLanguageIdentifier ?? model.settings.targetLanguage
+    }
+
     private var showsExtendedDictionaryDetails: Bool {
-        !model.settings.targetLanguage.hasPrefix("zh")
+        !wordTargetLanguage.hasPrefix("zh")
     }
 
     var body: some View {
@@ -125,7 +139,7 @@ struct OverlayView: View {
     @ViewBuilder
     private var overlayContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            switch model.overlayState {
+            switch displayedState {
             case .idle:
                 EmptyView()
 
@@ -149,9 +163,9 @@ struct OverlayView: View {
             }
         }
         .frame(width: overlayWidth, alignment: .leading)
-        .frame(maxHeight: paragraphHeightLimit)
-        .fixedSize(horizontal: false, vertical: paragraphHeightLimit != nil)
-        .frame(maxHeight: paragraphHeightLimit, alignment: .topLeading)
+        .frame(maxHeight: heightLimit)
+        .fixedSize(horizontal: false, vertical: heightLimit != nil)
+        .frame(maxHeight: heightLimit, alignment: .topLeading)
         .background {
             if isParagraphOverlayMode {
                 paragraphOverlayBackground
@@ -315,16 +329,24 @@ struct OverlayView: View {
     @ViewBuilder
     private func resultView(content: OverlayContent) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header: Word + Phonetic
             headerSection(content: content)
 
-            // Primary Translation
-            primaryTranslationSection(content: content)
-
-            // Dictionary sections (one per dictionary source)
-            if !content.visibleDictionarySections.isEmpty {
-                dictionarySectionsView(sections: content.visibleDictionarySections)
+            if isParagraphWordPanel {
+                ParagraphReadingViewport {
+                    wordDefinitions(content: content)
+                }
+                .id(content.word)
+            } else {
+                wordDefinitions(content: content)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func wordDefinitions(content: OverlayContent) -> some View {
+        primaryTranslationSection(content: content)
+        if !content.visibleDictionarySections.isEmpty {
+            dictionarySectionsView(sections: content.visibleDictionarySections)
         }
     }
 
@@ -665,9 +687,8 @@ struct OverlayView: View {
             if !text.isEmpty {
                 paragraphTextContent(
                     text: text,
-                    font: paragraphBodyFont,
                     textColor: .secondaryLabelColor,
-                    preferredLineHeight: paragraphBodyLineHeight
+                    onWordDoubleClick: paragraphWordLookup(from: .original)
                 )
             }
         }
@@ -790,9 +811,8 @@ struct OverlayView: View {
                 if !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     paragraphTextContent(
                         text: translatedText,
-                        font: paragraphBodyFont,
                         textColor: content.isRetranslating ? .secondaryLabelColor : .labelColor,
-                        preferredLineHeight: paragraphBodyLineHeight
+                        onWordDoubleClick: content.isRetranslating ? nil : paragraphWordLookup(from: .translation)
                     )
                     .padding(.horizontal, paragraphTextHorizontalPadding)
                     .padding(.top, originalVisibility.showsOriginalTextRegion ? 0 : 2)
@@ -892,9 +912,8 @@ struct OverlayView: View {
 
             paragraphTextContent(
                 text: translatedText,
-                font: paragraphBodyFont,
                 textColor: usesStaleText ? .secondaryLabelColor : .labelColor,
-                preferredLineHeight: paragraphBodyLineHeight
+                onWordDoubleClick: usesStaleText ? nil : paragraphWordLookup(from: .translation)
             )
         }
     }
@@ -1029,6 +1048,7 @@ struct OverlayView: View {
                 placeholderColor: .placeholderTextColor,
                 preferredLineHeight: paragraphBodyLineHeight,
                 minimumHeight: 0,
+                onWordDoubleClick: paragraphWordLookup(from: .original),
                 onTextChange: { newText in
                     if newText != text {
                         model.updateParagraphOriginalText(newText)
@@ -1396,18 +1416,21 @@ struct OverlayView: View {
         return String(format: "%.1fs", duration)
     }
 
-    @ViewBuilder
+    private func paragraphWordLookup(from origin: ParagraphWordOrigin) -> (String, CGPoint) -> Void {
+        { word, point in model.lookupParagraphWord(word, from: origin, at: point) }
+    }
+
     private func paragraphTextContent(
         text: String,
-        font: NSFont,
         textColor: NSColor,
-        preferredLineHeight: CGFloat
+        onWordDoubleClick: ((String, CGPoint) -> Void)?
     ) -> some View {
         SelectableTextView(
             text: text,
-            font: font,
+            font: paragraphBodyFont,
             textColor: textColor,
-            preferredLineHeight: preferredLineHeight
+            preferredLineHeight: paragraphBodyLineHeight,
+            onWordDoubleClick: onWordDoubleClick
         )
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1805,7 +1828,11 @@ struct OverlayView: View {
             CopyButton(text: content.word)
 
             Button {
-                model.dismissOverlay()
+                if isParagraphWordPanel {
+                    model.dismissParagraphWord()
+                } else {
+                    model.dismissOverlay()
+                }
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))
@@ -1817,13 +1844,15 @@ struct OverlayView: View {
                     )
             }
             .buttonStyle(.plain)
+            .help(L("Close"))
+            .accessibilityLabel(Text(L("Close")))
         }
     }
 
     @ViewBuilder
     private func primaryTranslationSection(content: OverlayContent) -> some View {
         if #available(macOS 15.0, *) {
-            let targetIsEnglish = model.settings.targetLanguage.hasPrefix("en")
+            let targetIsEnglish = wordTargetLanguage.hasPrefix("en")
             let shouldHideReadyTranslation = targetIsEnglish && !content.definitions.isEmpty
             let usesCompactStyle = content.usesCompactPrimaryTranslationStyle
 
@@ -1923,6 +1952,11 @@ struct OverlayView: View {
                 }
             }
             .frame(maxWidth: .infinity, minHeight: shouldHideReadyTranslation ? 8 : compactSectionMinHeight, alignment: .topLeading)
+        } else if isParagraphWordPanel, content.visibleDictionarySections.isEmpty,
+                  case .failed(let message) = content.primaryTranslationState {
+            paragraphErrorContent(message: L(message))
+                .padding(.horizontal, wordHeaderHorizontalPadding)
+                .padding(.bottom, 16)
         }
     }
 
@@ -2136,7 +2170,7 @@ struct OverlayView: View {
             let meaning = normalizedDictionaryText(definition.meaning)
             if let meaning,
                meaning.caseInsensitiveCompare(translation ?? "") != .orderedSame {
-                let targetIsChinese = model.settings.targetLanguage.hasPrefix("zh")
+                let targetIsChinese = wordTargetLanguage.hasPrefix("zh")
                 let translationHasChinese = translation?.range(of: "\\p{Han}", options: .regularExpression) != nil
                 if !(targetIsChinese && translationHasChinese) {
                     grouped[key]?.meanings.appendIfMissing(meaning)
@@ -2648,19 +2682,16 @@ private struct SelectableTextView: NSViewRepresentable {
     let font: NSFont
     let textColor: NSColor
     let preferredLineHeight: CGFloat
+    var onWordDoubleClick: ((String, CGPoint) -> Void)? = nil
 
     func makeNSView(context: Context) -> SelectableTextContainerView {
         let textView = SelectableTextContainerView(frame: .zero)
-        textView.update(
-            text: text,
-            font: font,
-            textColor: textColor,
-            preferredLineHeight: preferredLineHeight
-        )
+        updateNSView(textView, context: context)
         return textView
     }
 
     func updateNSView(_ textView: SelectableTextContainerView, context: Context) {
+        textView.textView.onWordDoubleClick = onWordDoubleClick
         textView.update(
             text: text,
             font: font,
@@ -2670,7 +2701,7 @@ private struct SelectableTextView: NSViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: SelectableTextContainerView, context: Context) -> CGSize? {
-        guard let width = proposal.width, width > 0 else {
+        guard let width = proposal.width, width.isFinite, width > 0 else {
             return CGSize(width: 0, height: font.pointSize)
         }
 
@@ -2686,6 +2717,7 @@ private struct EditableParagraphTextView: NSViewRepresentable {
     let placeholderColor: NSColor
     let preferredLineHeight: CGFloat
     let minimumHeight: CGFloat
+    var onWordDoubleClick: ((String, CGPoint) -> Void)? = nil
     let onTextChange: (String) -> Void
     let onSubmit: () -> Void
 
@@ -2695,21 +2727,12 @@ private struct EditableParagraphTextView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> EditableParagraphTextContainerView {
         let textView = EditableParagraphTextContainerView(frame: .zero)
-        textView.update(
-            text: text,
-            placeholder: placeholder,
-            font: font,
-            textColor: textColor,
-            placeholderColor: placeholderColor,
-            preferredLineHeight: preferredLineHeight,
-            minimumHeight: minimumHeight,
-            coordinator: context.coordinator
-        )
-        textView.focusIfNeeded()
+        updateNSView(textView, context: context)
         return textView
     }
 
     func updateNSView(_ textView: EditableParagraphTextContainerView, context: Context) {
+        textView.textView.onWordDoubleClick = onWordDoubleClick
         context.coordinator.onTextChange = onTextChange
         context.coordinator.onSubmit = onSubmit
         textView.update(
@@ -2726,7 +2749,7 @@ private struct EditableParagraphTextView: NSViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: EditableParagraphTextContainerView, context: Context) -> CGSize? {
-        guard let width = proposal.width, width > 0 else {
+        guard let width = proposal.width, width.isFinite, width > 0 else {
             return CGSize(width: 0, height: preferredLineHeight)
         }
 
@@ -2857,13 +2880,12 @@ private final class ParagraphOverlayDragHandleView: NSView {
 }
 
 private final class SelectableTextContainerView: NSView {
-    private let textView: NSTextView
+    let textView = WordLookupTextView(frame: .zero)
     private var cachedMeasurement: (width: CGFloat, height: CGFloat)?
 
     override var isFlipped: Bool { true }
 
     override init(frame frameRect: NSRect) {
-        textView = NSTextView(frame: .zero)
         super.init(frame: frameRect)
         configureTextView()
         addSubview(textView)
@@ -2880,16 +2902,14 @@ private final class SelectableTextContainerView: NSView {
         textColor: NSColor,
         preferredLineHeight: CGFloat
     ) {
-        textView.font = font
-        textView.textColor = textColor
-        textView.textStorage?.setAttributedString(
-            makeAttributedString(
-                text: text,
-                font: font,
-                textColor: textColor,
-                preferredLineHeight: preferredLineHeight
-            )
+        let attributedText = makeAttributedString(
+            text: text,
+            font: font,
+            textColor: textColor,
+            preferredLineHeight: preferredLineHeight
         )
+        guard let storage = textView.textStorage, !storage.isEqual(to: attributedText) else { return }
+        storage.setAttributedString(attributedText)
         cachedMeasurement = nil
         invalidateIntrinsicContentSize()
         needsLayout = true
@@ -3000,7 +3020,7 @@ private final class SelectableTextContainerView: NSView {
 }
 
 private final class EditableParagraphTextContainerView: NSView {
-    private let textView: NSTextView
+    let textView = WordLookupTextView(frame: .zero)
     private let placeholderLabel: NSTextField
     private var cachedMeasurement: (width: CGFloat, height: CGFloat)?
     private var preferredLineHeight: CGFloat = 20
@@ -3010,7 +3030,6 @@ private final class EditableParagraphTextContainerView: NSView {
     override var isFlipped: Bool { true }
 
     override init(frame frameRect: NSRect) {
-        textView = NSTextView(frame: .zero)
         placeholderLabel = NSTextField(labelWithString: "")
         super.init(frame: frameRect)
         configureTextView()

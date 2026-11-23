@@ -1128,6 +1128,80 @@ enum WordOverlayLayout {
     }
 }
 
+struct ParagraphWordPanelLayout {
+    let screenFrame: CGRect
+    let paragraphFrame: CGRect
+    let anchor: CGPoint
+
+    private let gap: CGFloat = 8
+    private let preferredWidth: CGFloat = 380
+    private let minimumReadingHeight: CGFloat = 160
+
+    private var bounds: CGRect {
+        let inset = min(ParagraphOverlayLayout.edgeInset, screenFrame.width / 4, screenFrame.height / 4)
+        return screenFrame.insetBy(dx: inset, dy: inset)
+    }
+
+    private var leftSpace: CGFloat { paragraphFrame.minX - bounds.minX - gap }
+    private var rightSpace: CGFloat { bounds.maxX - paragraphFrame.maxX - gap }
+    private var bottomSpace: CGFloat { paragraphFrame.minY - bounds.minY - gap }
+    private var topSpace: CGFloat { bounds.maxY - paragraphFrame.maxY - gap }
+
+    private var edge: CGRectEdge {
+        if leftSpace >= preferredWidth, rightSpace >= preferredWidth {
+            return anchor.x < paragraphFrame.midX ? .minXEdge : .maxXEdge
+        }
+        if max(leftSpace, rightSpace) >= preferredWidth
+            || (max(bottomSpace, topSpace) < minimumReadingHeight && max(leftSpace, rightSpace) >= 280) {
+            return rightSpace >= leftSpace ? .maxXEdge : .minXEdge
+        }
+        if max(bottomSpace, topSpace) < minimumReadingHeight {
+            let clearsWordBelow = bounds.minY + minimumReadingHeight < anchor.y
+            let clearsWordAbove = bounds.maxY - minimumReadingHeight > anchor.y
+            if clearsWordBelow != clearsWordAbove {
+                return clearsWordBelow ? .minYEdge : .maxYEdge
+            }
+        }
+        return bottomSpace >= topSpace ? .minYEdge : .maxYEdge
+    }
+
+    var maxPanelSize: CGSize {
+        switch edge {
+        case .minXEdge:
+            return CGSize(width: min(preferredWidth, leftSpace), height: bounds.height)
+        case .maxXEdge:
+            return CGSize(width: min(preferredWidth, rightSpace), height: bounds.height)
+        case .minYEdge, .maxYEdge:
+            let space = edge == .minYEdge ? bottomSpace : topSpace
+            return CGSize(
+                width: min(preferredWidth, bounds.width),
+                height: min(bounds.height, max(minimumReadingHeight, space))
+            )
+        }
+    }
+
+    func frame(for measuredSize: CGSize) -> CGRect {
+        let limit = maxPanelSize
+        let size = CGSize(
+            width: min(ceil(measuredSize.width), limit.width),
+            height: min(ceil(measuredSize.height), limit.height)
+        )
+        var x = anchor.x - size.width / 2
+        var y = anchor.y + 16 - size.height
+        switch edge {
+        case .minXEdge: x = paragraphFrame.minX - gap - size.width
+        case .maxXEdge: x = paragraphFrame.maxX + gap
+        case .minYEdge: y = paragraphFrame.minY - gap - size.height
+        case .maxYEdge: y = paragraphFrame.maxY + gap
+        }
+        let origin = CGPoint(
+            x: min(max(x, bounds.minX), bounds.maxX - size.width),
+            y: min(max(y, bounds.minY), bounds.maxY - size.height)
+        )
+        return CGRect(origin: origin, size: size)
+    }
+}
+
 struct ParagraphOverlayLayout {
     static let edgeInset: CGFloat = 8
     private static let gap: CGFloat = 8
@@ -1291,6 +1365,7 @@ final class OverlayWindowController: NSWindowController {
     ]
 
     private let model: AppModel
+    private let isParagraphWordPanel: Bool
     private let hostingView: NSHostingView<AnyView>
     private var lastAnchor: CGPoint?
     private var manualOrigin: CGPoint?
@@ -1307,6 +1382,7 @@ final class OverlayWindowController: NSWindowController {
     }
 
     private var isParagraphOverlay: Bool {
+        guard !isParagraphWordPanel else { return false }
         switch model.overlayState {
         case .paragraphLoading, .paragraphResult:
             return true
@@ -1315,9 +1391,12 @@ final class OverlayWindowController: NSWindowController {
         }
     }
 
-    init(model: AppModel) {
+    init(model: AppModel, isParagraphWordPanel: Bool = false) {
         self.model = model
-        let initialRootView = AnyView(OverlayView().environmentObject(model))
+        self.isParagraphWordPanel = isParagraphWordPanel
+        let initialRootView = AnyView(
+            OverlayView(isParagraphWordPanel: isParagraphWordPanel).environmentObject(model)
+        )
         hostingView = NSHostingView(rootView: initialRootView)
         let panel = OverlayPanel(
             contentRect: CGRect(x: 0, y: 0, width: 380, height: 200),
@@ -1376,6 +1455,8 @@ final class OverlayWindowController: NSWindowController {
         onOrderedFront: (() -> Void)? = nil
     ) {
         guard let window else { return }
+        let parent = isParagraphWordPanel ? model.overlayWindowController.window : nil
+        guard !isParagraphWordPanel || parent?.isVisible == true else { return }
         lastAnchor = anchor
         let wasVisible = window.isVisible
 
@@ -1413,6 +1494,9 @@ final class OverlayWindowController: NSWindowController {
         // Reorder even when AppKit reports the window as visible. During a
         // Space switch that state can refer to the previous Space, which used
         // to make the overlay silently remain there.
+        if let parent, window.parent !== parent {
+            parent.addChildWindow(window, ordered: .above)
+        }
         window.orderFrontRegardless()
         if let pendingEntrance, let layout {
             startParagraphMotion(
@@ -1429,6 +1513,11 @@ final class OverlayWindowController: NSWindowController {
     }
 
     func hideWindowOnly() {
+        if isParagraphWordPanel {
+            if let window { window.parent?.removeChildWindow(window) }
+        } else {
+            model.dismissParagraphWord()
+        }
         stopParagraphMotion()
         placedParagraphSourceRect = nil
         window?.orderOut(nil)
@@ -1522,6 +1611,15 @@ final class OverlayWindowController: NSWindowController {
     }
 
     private func measuredFrame(for anchor: CGPoint, paragraphLayout: ParagraphOverlayLayout?) -> CGRect {
+        if isParagraphWordPanel, let paragraphFrame = model.overlayWindowController.visibleFrame {
+            let layout = ParagraphWordPanelLayout(
+                screenFrame: visibleScreenFrame(for: anchor),
+                paragraphFrame: paragraphFrame,
+                anchor: anchor
+            )
+            updateSizeLimit(layout.maxPanelSize)
+            return layout.frame(for: measuredContentSize())
+        }
         if let paragraphLayout {
             return paragraphFrame(for: paragraphLayout)
         }
@@ -1543,10 +1641,7 @@ final class OverlayWindowController: NSWindowController {
 
     private func paragraphFrame(for layout: ParagraphOverlayLayout) -> CGRect {
         let maxSize = layout.screenFrame.isEmpty ? nil : layout.maxPanelSize
-        if paragraphOverlayMaxSize != maxSize {
-            paragraphOverlayMaxSize = maxSize
-            updateOverlayRootView()
-        }
+        updateSizeLimit(maxSize)
 
         let measuredSize = measuredContentSize()
         guard maxSize != nil else { return CGRect(origin: layout.anchor, size: measuredSize) }
@@ -1567,9 +1662,15 @@ final class OverlayWindowController: NSWindowController {
         return hostingView.fittingSize
     }
 
+    private func updateSizeLimit(_ maxSize: CGSize?) {
+        guard paragraphOverlayMaxSize != maxSize else { return }
+        paragraphOverlayMaxSize = maxSize
+        updateOverlayRootView()
+    }
+
     private func updateOverlayRootView() {
         hostingView.rootView = AnyView(
-            OverlayView(paragraphOverlayMaxSize: paragraphOverlayMaxSize)
+            OverlayView(paragraphOverlayMaxSize: paragraphOverlayMaxSize, isParagraphWordPanel: isParagraphWordPanel)
                 .environmentObject(model)
         )
     }
@@ -1670,10 +1771,12 @@ final class OverlayWindowController: NSWindowController {
             return
         }
 
+        let previousFrame = window.frame
         window.setFrame(targetFrame, display: display)
         if display {
             hostingView.layoutSubtreeIfNeeded()
         }
+        refreshChildPanel(afterMovingFrom: previousFrame)
     }
 
     private func applyOriginIfNeeded(_ targetOrigin: CGPoint) {
@@ -1683,7 +1786,21 @@ final class OverlayWindowController: NSWindowController {
         let yNeedsUpdate = abs(window.frame.origin.y - targetOrigin.y) > frameTolerance
         guard xNeedsUpdate || yNeedsUpdate else { return }
 
+        let previousFrame = window.frame
         window.setFrameOrigin(targetOrigin)
+        refreshChildPanel(afterMovingFrom: previousFrame)
+    }
+
+    private func refreshChildPanel(afterMovingFrom previousFrame: CGRect) {
+        guard let window,
+              let child = window.childWindows?.lazy.compactMap({ $0.windowController as? OverlayWindowController })
+                .first(where: { $0.isParagraphWordPanel }),
+              let anchor = child.lastAnchor else { return }
+        let updatedAnchor = CGPoint(
+            x: anchor.x + window.frame.minX - previousFrame.minX,
+            y: anchor.y + window.frame.maxY - previousFrame.maxY
+        )
+        child.refreshLayoutIfNeeded(at: updatedAnchor)
     }
 
     private func frameNeedsUpdate(from current: CGRect, to target: CGRect) -> Bool {

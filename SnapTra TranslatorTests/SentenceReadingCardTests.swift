@@ -47,8 +47,116 @@ final class SentenceReadingCardTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
         let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+        settings.learningEnabled = false
         let container = try ModelContainer(for: WordRecord.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         return AppModel(settings: settings, modelContext: container.mainContext)
+    }
+
+    func testWordDirectionUsesTheClickedTextAndHonorsBidirectionalLookupForMixedScripts() {
+        let paragraph = ParagraphOverlayContent(
+            translationState: .ready("I use Antigravity."),
+            sourceLanguageIdentifier: "zh-Hans", selectedTargetLanguageIdentifier: "en"
+        )
+        let pair = LookupLanguagePair(sourceIdentifier: "zh-Hans", targetIdentifier: "en")
+        XCTAssertEqual(paragraph.wordLanguagePair(for: "use", from: .translation, bidirectional: false), pair.reversed())
+        XCTAssertEqual(paragraph.wordLanguagePair(for: "使用", from: .original, bidirectional: false), pair)
+        XCTAssertEqual(paragraph.wordLanguagePair(for: "Antigravity", from: .original, bidirectional: true), pair.reversed())
+    }
+
+    func testLookingUpWordsInAReadingCardKeepsItsTranslationAndDismissesInOrder() async throws {
+        let model = try makeModel()
+        defer { model.dismissOverlay() }
+        model.settings.continuousTranslation = false
+        model.settings.playWordPronunciation = false
+        model.settings.copyWord = false
+        model.settings.dictionarySources = []
+        model.settings.hideOriginalTextInSentenceOverlay = false
+        model.settings.sentenceTranslationPresentationMode = .overlayPanel
+
+        var paragraph = ParagraphOverlayContent(
+            originalText: "朋友们在讨论黑色星期五。",
+            translationState: .ready("Friends are discussing Black Friday."),
+            serviceResults: [.init(sourceType: .omlx, modelName: nil, state: .loading)],
+            sourceLanguageIdentifier: "zh-Hans",
+            selectedTargetLanguageIdentifier: "en"
+        )
+        let screen = try XCTUnwrap(NSScreen.main?.visibleFrame)
+        let anchor = CGPoint(x: screen.midX, y: screen.midY)
+        model.updateOverlay(state: .paragraphResult(paragraph), anchor: anchor)
+        let parent = try XCTUnwrap(model.overlayWindowController.window)
+        let root = try XCTUnwrap(parent.contentView)
+
+        func textView(containing word: String, in view: NSView) -> WordLookupTextView? {
+            if let text = view as? WordLookupTextView, text.string.contains(word) { return text }
+            return view.subviews.lazy.compactMap { textView(containing: word, in: $0) }.first
+        }
+        func lookup(_ word: String) async throws -> OverlayContent {
+            model.overlayWindowController.refreshLayoutIfNeeded()
+            parent.layoutIfNeeded()
+            let text = try XCTUnwrap(textView(containing: word, in: root))
+            let container = try XCTUnwrap(text.textContainer)
+            let layout = try XCTUnwrap(text.layoutManager)
+            layout.ensureLayout(for: container)
+            let range = (text.string as NSString).range(of: word)
+            let glyph = layout.glyphIndexForCharacter(at: range.location)
+            let rect = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+            let glyphCenter = CGPoint(x: text.textContainerOrigin.x + rect.midX, y: text.textContainerOrigin.y + rect.midY)
+            let layoutDeadline = ContinuousClock.now + .seconds(1)
+            while root.hitTest(text.convert(glyphCenter, to: nil)) !== text, ContinuousClock.now < layoutDeadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let point = text.convert(glyphCenter, to: nil)
+            XCTAssertTrue(root.hitTest(point) === text, "Expected the visible glyph of \(word) to receive the click")
+            for count in 1...2 {
+                func event(_ type: NSEvent.EventType) throws -> NSEvent {
+                    try XCTUnwrap(NSEvent.mouseEvent(
+                        with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: parent.windowNumber, context: nil, eventNumber: count, clickCount: count, pressure: 1
+                    ))
+                }
+                NSApp.postEvent(try event(.leftMouseUp), atStart: true)
+                parent.sendEvent(try event(.leftMouseDown))
+            }
+            let deadline = ContinuousClock.now + .seconds(1)
+            while model.paragraphWordContent?.word != word, ContinuousClock.now < deadline {
+                await Task.yield()
+            }
+            let content = try XCTUnwrap(model.paragraphWordContent)
+            XCTAssertEqual(content.word, word)
+            XCTAssertEqual(text.selectedRange(), range)
+            return content
+        }
+
+        let translatedWord = try await lookup("Friday")
+        XCTAssertEqual(translatedWord.sourceLanguageIdentifier, "en")
+        XCTAssertEqual(translatedWord.targetLanguageIdentifier, "zh-Hans")
+        let child = try XCTUnwrap(model.paragraphWordWindowController.window)
+        XCTAssertTrue(child.isVisible)
+        XCTAssertTrue(child.parent === parent)
+
+        paragraph.serviceResults[0].state = .ready("They are talking about Black Friday.")
+        model.updateOverlay(state: .paragraphResult(paragraph))
+        XCTAssertEqual(model.paragraphWordContent?.word, "Friday")
+        let alternative = try await lookup("talking")
+        XCTAssertEqual(alternative.targetLanguageIdentifier, "zh-Hans")
+        let originalWord = try await lookup("朋友")
+        XCTAssertEqual(originalWord.sourceLanguageIdentifier, "zh-Hans")
+        XCTAssertEqual(originalWord.targetLanguageIdentifier, "en")
+        XCTAssertTrue(model.paragraphWordWindowController.window === child)
+        XCTAssertEqual(model.overlayState, .paragraphResult(paragraph))
+
+        let escape = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: parent.windowNumber, context: nil, characters: "\u{1b}",
+            charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53
+        ))
+        XCTAssertTrue(model.handleOverlayEscapeKey(escape))
+        XCTAssertNil(model.paragraphWordContent)
+        XCTAssertFalse(child.isVisible)
+        XCTAssertTrue(parent.isVisible)
+        XCTAssertEqual(model.overlayState, .paragraphResult(paragraph))
+        XCTAssertTrue(model.handleOverlayEscapeKey(escape))
+        XCTAssertFalse(parent.isVisible)
     }
 
     func testCursorLineScanSurvivesPersistentReleaseBeforeOrAfterRecognition() throws {
@@ -298,5 +406,140 @@ final class SentenceReadingCardTests: XCTestCase {
 
     private func firstScrollView(in view: NSView) -> NSScrollView? {
         (view as? NSScrollView) ?? view.subviews.lazy.compactMap { self.firstScrollView(in: $0) }.first
+    }
+}
+
+extension SentenceReadingCardTests {
+    func testParagraphWordPanelFitsShortTextAndScrollsLongTextToTheEnd() async throws {
+        guard #available(macOS 15.0, *) else { throw XCTSkip("Word translation requires macOS 15") }
+        let model = try makeModel()
+        defer { model.dismissOverlay() }
+        model.settings.dictionarySources = []
+        model.settings.playWordPronunciation = false
+        model.settings.copyWord = false
+        let screen = try XCTUnwrap(NSScreen.main?.visibleFrame)
+        model.overlayState = .paragraphResult(ParagraphOverlayContent(
+            originalText: "Read a word here.", translationState: .ready("Read a word here."),
+            sourceLanguageIdentifier: "en", selectedTargetLanguageIdentifier: "en"
+        ))
+        let parent = model.overlayWindowController
+        parent.show(at: CGPoint(x: screen.midX, y: screen.midY))
+        let paragraph = try XCTUnwrap(parent.visibleFrame)
+        let anchor = CGPoint(x: paragraph.midX, y: paragraph.midY)
+        let limit = ParagraphWordPanelLayout(screenFrame: screen, paragraphFrame: paragraph, anchor: anchor).maxPanelSize
+
+        // The same-language result displays the supplied text without contacting a service.
+        let longText = Array(repeating: "A long definition with an example.", count: 180).joined(separator: "\n")
+        for text in ["word", longText] {
+            model.lookupParagraphWord(text, from: .original, at: anchor)
+            let deadline = ContinuousClock.now + .seconds(2)
+            while model.paragraphWordContent?.word != text, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertEqual(model.paragraphWordContent?.word, text)
+            let controller = model.paragraphWordWindowController
+            controller.refreshLayoutIfNeeded()
+            let window = try XCTUnwrap(controller.window)
+            let view = try XCTUnwrap(window.contentView)
+            window.layoutIfNeeded()
+            view.layoutSubtreeIfNeeded()
+            XCTAssertTrue(window.parent === parent.window)
+            XCTAssertTrue(screen.insetBy(dx: 7, dy: 7).contains(window.frame))
+            XCTAssertEqual(window.frame.width, limit.width, accuracy: 1)
+
+            if text == "word" {
+                XCTAssertLessThan(window.frame.height, limit.height)
+                XCTAssertNil(firstScrollView(in: view))
+            } else {
+                XCTAssertEqual(window.frame.height, limit.height, accuracy: 1)
+                let scroll = try XCTUnwrap(firstScrollView(in: view))
+                let document = try XCTUnwrap(scroll.documentView)
+                XCTAssertGreaterThan(document.bounds.height, scroll.documentVisibleRect.height)
+                let bottom = document.bounds.maxY - scroll.documentVisibleRect.height
+                scroll.contentView.scroll(to: CGPoint(x: 0, y: document.isFlipped ? bottom : 0))
+                scroll.reflectScrolledClipView(scroll.contentView)
+                let visibleEnd = document.isFlipped ? scroll.documentVisibleRect.maxY : scroll.documentVisibleRect.minY
+                XCTAssertEqual(visibleEnd, document.isFlipped ? document.bounds.maxY : document.bounds.minY, accuracy: 1)
+            }
+        }
+    }
+}
+
+@MainActor
+final class WordLookupTextViewTests: XCTestCase {
+    func testDigitInsideAWordUsesTheWholeWord() throws {
+        let view = makeTextView("H2O 123")
+        XCTAssertEqual(view.wordRange(at: try point(over: "2", in: view)), (view.string as NSString).range(of: "H2O"))
+        XCTAssertNil(view.wordRange(at: try point(over: "3", in: view)))
+    }
+
+    func testWrappedTextUsesTheClickedGlyphAndNativeWordBoundaries() throws {
+        let view = makeTextView("✈️ first word e\u{301}cole, 北京欢迎你")
+        let first = try point(over: "f", in: view)
+        let accentedLetter = try point(over: "e\u{301}", in: view)
+        XCTAssertGreaterThan(accentedLetter.y, first.y)
+
+        let text = view.string as NSString
+        XCTAssertEqual(view.wordRange(at: accentedLetter), text.range(of: "e\u{301}cole"))
+        XCTAssertEqual(view.wordRange(at: try point(over: "京", in: view)), text.range(of: "北京"))
+        XCTAssertNil(view.wordRange(at: try point(over: " ", in: view)))
+        XCTAssertNil(view.wordRange(at: try point(over: ",", in: view)))
+        XCTAssertNil(view.wordRange(at: try point(over: "✈️", in: view)))
+        let lastGlyph = try point(over: "你", in: view)
+        XCTAssertNil(view.wordRange(at: NSPoint(x: view.bounds.maxX - 1, y: lastGlyph.y)))
+        XCTAssertNil(view.wordRange(at: NSPoint(x: lastGlyph.x, y: view.bounds.maxY - 1)))
+    }
+
+    func testNativeDoubleClickReportsTheSelectedWordAndScreenPoint() throws {
+        let view = makeTextView("one two")
+        let panel = NSPanel(
+            contentRect: view.frame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.contentView = view
+        let pointInWindow = view.convert(try point(over: "w", in: view), to: nil)
+        var lookedUpWords: [String] = []
+        view.onWordDoubleClick = { word, screenPoint in
+            lookedUpWords.append(word)
+            XCTAssertEqual(screenPoint, panel.convertPoint(toScreen: pointInWindow))
+        }
+        defer { view.onWordDoubleClick = nil }
+
+        for count in 1...2 {
+            func event(_ type: NSEvent.EventType) throws -> NSEvent {
+                try XCTUnwrap(NSEvent.mouseEvent(
+                    with: type, location: pointInWindow, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber,
+                    context: nil, eventNumber: count, clickCount: count, pressure: 1
+                ))
+            }
+            // NSTextView tracks mouse-up synchronously inside mouseDown.
+            NSApp.postEvent(try event(.leftMouseUp), atStart: true)
+            view.mouseDown(with: try event(.leftMouseDown))
+            XCTAssertEqual(lookedUpWords, count == 1 ? [] : ["two"])
+        }
+        XCTAssertEqual(view.selectedRange(), (view.string as NSString).range(of: "two"))
+    }
+
+    private func makeTextView(_ text: String) -> WordLookupTextView {
+        let view = WordLookupTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 260))
+        view.isEditable = false
+        view.isSelectable = true
+        view.font = .systemFont(ofSize: 16)
+        view.textContainerInset = NSSize(width: 8, height: 5)
+        view.string = text
+        return view
+    }
+
+    private func point(over character: String, in view: NSTextView) throws -> NSPoint {
+        let container = try XCTUnwrap(view.textContainer)
+        let layout = try XCTUnwrap(view.layoutManager)
+        layout.ensureLayout(for: container)
+        let range = (view.string as NSString).range(of: character)
+        let glyphRange = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        let rect = layout.boundingRect(forGlyphRange: glyphRange, in: container)
+        return NSPoint(x: rect.midX + view.textContainerOrigin.x, y: rect.midY + view.textContainerOrigin.y)
     }
 }
