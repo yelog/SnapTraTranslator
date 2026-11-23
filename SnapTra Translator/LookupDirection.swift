@@ -105,9 +105,9 @@ enum OCRTokenClassifier {
 }
 
 enum LookupLanguagePairResolver {
-    private static let englishWordPattern = unsafeRegex(#"[A-Za-z]+(?:'[A-Za-z]+)?"#)
     private static let dominantScriptThreshold = 0.55
-    private static let maxEnglishWordWeight = 3
+    private static let maxLatinRunWeight = 3
+    private static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
     private static let ignoredObservedTextPatterns: [NSRegularExpression] = [
         unsafeRegex(#"https?://\S+|www\.\S+"#),
         unsafeRegex(#"@[A-Za-z0-9_]+"#),
@@ -205,21 +205,33 @@ enum LookupLanguagePairResolver {
 
     /// Returns the dominant Unicode script family for a piece of observed text.
     ///
-    /// Counts characters by their Unicode script property and returns the
-    /// script with the highest count, applying a dominance threshold for
-    /// mixed-script text.
+    /// Caps each consecutive run of Latin letters when Han is also present,
+    /// then applies a dominance threshold to the resulting script scores.
     static func observedScriptFamily(for text: String) -> String? {
         let filteredText = filteredObservedText(from: text)
 
-        var scriptCounts: [String: Int] = [:]
+        var scriptScores: [String: Int] = [:]
+        var latinRunWeight = 0
+        var cappedLatinScore = 0
         for scalar in filteredText.unicodeScalars {
-            guard let script = scriptName(for: scalar) else { continue }
-            scriptCounts[script, default: 0] += 1
+            let script = scriptName(for: scalar)
+            if let script {
+                scriptScores[script, default: 0] += 1
+            }
+
+            if script != "Latn" {
+                latinRunWeight = 0
+            } else if latinRunWeight < maxLatinRunWeight {
+                latinRunWeight += 1
+                cappedLatinScore += 1
+            }
         }
 
-        guard !scriptCounts.isEmpty else { return nil }
+        if scriptScores["Hans"] != nil, scriptScores["Latn"] != nil {
+            scriptScores["Latn"] = cappedLatinScore
+        }
 
-        let sorted = scriptCounts.sorted { $0.value > $1.value }
+        let sorted = scriptScores.sorted { $0.value > $1.value }
         guard let dominant = sorted.first else { return nil }
 
         let totalCount = sorted.reduce(0) { $0 + $1.value }
@@ -243,6 +255,8 @@ enum LookupLanguagePairResolver {
         if scalar.properties.isIdeographic {
             return "Hans"
         }
+
+        guard scalar.properties.isAlphabetic else { return nil }
 
         let cp = scalar.value
 
@@ -289,34 +303,16 @@ enum LookupLanguagePairResolver {
 
     // MARK: - Mixed Text Helpers
 
-    private static func observedScriptCounts(in text: String) -> (chinese: Int, english: Int) {
-        var chineseCount = 0
-        for scalar in text.unicodeScalars {
-            if scalar.properties.isIdeographic {
-                chineseCount += 1
-            }
-        }
-
-        let fullRange = NSRange(text.startIndex..<text.endIndex, in: text)
-        var englishCount = 0
-        englishWordPattern.enumerateMatches(in: text, options: [], range: fullRange) { match, _, _ in
-            guard
-                let match,
-                let range = Range(match.range, in: text)
-            else {
-                return
-            }
-
-            let word = text[range]
-            let weight = min(word.count, maxEnglishWordWeight)
-            englishCount += weight
-        }
-
-        return (chinese: chineseCount, english: englishCount)
-    }
-
     private static func filteredObservedText(from observedText: String) -> String {
-        ignoredObservedTextPatterns.reduce(observedText) { partialResult, regex in
+        let textWithoutLinks: String
+        if observedText.contains("."), let linkDetector {
+            let range = NSRange(observedText.startIndex..<observedText.endIndex, in: observedText)
+            textWithoutLinks = linkDetector.stringByReplacingMatches(in: observedText, range: range, withTemplate: " ")
+        } else {
+            textWithoutLinks = observedText
+        }
+
+        return ignoredObservedTextPatterns.reduce(textWithoutLinks) { partialResult, regex in
             let range = NSRange(partialResult.startIndex..<partialResult.endIndex, in: partialResult)
             return regex.stringByReplacingMatches(
                 in: partialResult,

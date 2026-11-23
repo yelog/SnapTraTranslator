@@ -143,8 +143,8 @@ final class OCRTokenClassifierTests: XCTestCase {
         )
     }
 
-    func testBidirectionalResolverKeepsForwardDirectionForEnglishDominantMixedText() {
-        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
+    func testBidirectionalResolverReversesDirectionForEnglishDominantMixedText() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "zh-Hans", targetIdentifier: "en")
 
         let result = LookupLanguagePairResolver.resolve(
             configuredPair: pair,
@@ -152,7 +152,7 @@ final class OCRTokenClassifierTests: XCTestCase {
             bidirectionalEnabled: true
         )
 
-        XCTAssertEqual(result, pair)
+        XCTAssertEqual(result, pair.reversed())
     }
 
     func testBidirectionalResolverIgnoresMentionAndURLNoise() {
@@ -183,6 +183,22 @@ final class OCRTokenClassifierTests: XCTestCase {
             result,
             LookupLanguagePair.fixed(sourceIdentifier: "zh-Hans", targetIdentifier: "en")
         )
+    }
+
+    func testBidirectionalResolverReversesDirectionForChinesePostWithEnglishTermsAndBareDomain() {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: "en", targetIdentifier: "zh-Hans")
+        let text = """
+        #新人报道# 我用AI，给Java AgentScope 写了个指标 Starter，一行代码接入，带客户端，欢迎给给意见
+        gitee.com
+        """
+
+        let result = LookupLanguagePairResolver.resolve(
+            configuredPair: pair,
+            observedText: text,
+            bidirectionalEnabled: true
+        )
+
+        XCTAssertEqual(result, pair.reversed())
     }
 
     func testBidirectionalResolverFallsBackForUnsupportedPair() {
@@ -319,6 +335,14 @@ final class OCRTokenClassifierTests: XCTestCase {
 
     func testObservedScriptFamilyForLatin() {
         XCTAssertEqual(LookupLanguagePairResolver.observedScriptFamily(for: "hello"), "Latn")
+    }
+
+    func testObservedScriptFamilyIgnoresBareDomainAdjacentToChineseText() {
+        XCTAssertEqual(LookupLanguagePairResolver.observedScriptFamily(for: "访问gitee.com/path"), "Hans")
+    }
+
+    func testObservedScriptFamilyIgnoresPunctuationAndNumbers() {
+        XCTAssertNil(LookupLanguagePairResolver.observedScriptFamily(for: "[_] ^ ~ 123/456 ١٢٣。"))
     }
 
     // MARK: - Japanese ↔ Chinese Bidirectional Tests
