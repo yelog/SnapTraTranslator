@@ -14,13 +14,12 @@ struct OverlayView: View {
     @State private var isParagraphHeaderDragging = false
     @State private var isParagraphLanguageDirectionHovered = false
     @State private var isParagraphOriginalEditorExpanded = false
+    @State private var comparisonUsesCustomHeight = false
+    private var showsAllParagraphTranslations: Bool { model.settings.showsAllSentenceTranslations }
     private let wordOverlayWidth: CGFloat = 380
-    private let paragraphOverlayStandardWidth: CGFloat = 420
-    private let paragraphOverlayExpandedWidth: CGFloat = 500
-    private let paragraphExpandedOriginalTextThreshold = 128
     private let compactSectionMinHeight: CGFloat = 28
     private let paragraphTextHorizontalPadding: CGFloat = 16
-    private let paragraphBodyFontSize: CGFloat = 15.5
+    private var paragraphBodyFontSize: CGFloat { model.settings.sentencePopupFontSize }
     private let wordHeaderHorizontalPadding: CGFloat = 18
     private let wordHeaderControlGroupWidth: CGFloat = 132
     private let wordHeaderControlGap: CGFloat = 12
@@ -50,19 +49,54 @@ struct OverlayView: View {
     }
 
     private var heightLimit: CGFloat? {
-        isParagraphOverlayMode || isParagraphWordPanel ? paragraphOverlayMaxSize?.height : nil
+        guard isParagraphOverlayMode else { return isParagraphWordPanel ? paragraphOverlayMaxSize?.height : nil }
+        if showsAllParagraphTranslations, !comparisonUsesCustomHeight, case .paragraphResult(let content) = displayedState,
+           !content.isManualTextEntry, content.hasMultipleTranslationSources {
+            return paragraphOverlayMaxSize?.height
+        }
+        guard let preferredHeight = model.settings.sentencePopupSize?.maxHeight else { return paragraphOverlayMaxSize?.height }
+        let height = CGFloat(preferredHeight)
+        return min(height, paragraphOverlayMaxSize?.height ?? height)
     }
 
     private var paragraphOverlayTargetWidth: CGFloat {
-        guard case .paragraphResult(let content) = model.overlayState,
-              let originalText = content.originalText else {
-            return paragraphOverlayStandardWidth
+        let preferredWidth = model.settings.sentencePopupSize?.width
+        guard case .paragraphResult(let content) = displayedState else { return preferredWidth ?? 260 }
+        if content.isManualTextEntry { return max(300, preferredWidth ?? 380) }
+
+        let priority = model.settings.sentenceTranslationSources.map(\.type)
+        let sources = ParagraphReadingSources(content: content, priority: priority)
+        let headerFont = NSFont.systemFont(ofSize: 11, weight: .medium)
+        var toolbarWidth: CGFloat = 120
+        if hasParagraphLanguageDirection(content),
+           let source = content.sourceLanguageIdentifier, let target = content.selectedTargetLanguageIdentifier {
+            for language in [source, target] {
+                let label = paragraphLanguageName(for: language, content: content) as NSString
+                toolbarWidth += label.size(withAttributes: [.font: headerFont]).width
+            }
+            toolbarWidth += 30
+        }
+        if content.hasMultipleTranslationSources {
+            let longestName = sources.results.map {
+                (paragraphSourceShortName($0.sourceType) as NSString).size(withAttributes: [.font: headerFont]).width
+            }.max() ?? 0
+            toolbarWidth += longestName + 22
         }
 
-        let trimmedText = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let usesExpandedWidth = trimmedText.count >= paragraphExpandedOriginalTextThreshold
-            || trimmedText.contains(where: { $0.isNewline })
-        return usesExpandedWidth ? paragraphOverlayExpandedWidth : paragraphOverlayStandardWidth
+        if let preferredWidth { return max(ceil(toolbarWidth), preferredWidth) }
+
+        // Providers that stream can publish on every token. Use the original
+        // for the entire lookup so only the height changes while reading.
+        let original = content.originalText ?? ""
+        var texts = [original]
+        if !sources.results.contains(where: { $0.sourceType.isLLMProvider }),
+           let translation = sources.primary.readableText {
+            texts = paragraphOriginalVisibility(for: content).showsOriginalTextRegion ? [original, translation] : [translation]
+        }
+        let textWidth = texts.map { text in
+            ParagraphFontSizing.maximumLineWidth(for: String(text.prefix(512)), font: paragraphBodyFont)
+        }.max() ?? 0
+        return ceil(min(500, max(200, toolbarWidth, textWidth + 2 * paragraphTextHorizontalPadding + 2)))
     }
 
     private var paragraphBodyFont: NSFont {
@@ -181,6 +215,16 @@ struct OverlayView: View {
                 wordOverlayBorder
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if case .paragraphResult(let content) = displayedState, model.selectedTextReplacementOperationID == nil {
+                SentencePopupResizeHandle {
+                    if content.hasMultipleTranslationSources && showsAllParagraphTranslations {
+                        comparisonUsesCustomHeight = true
+                    }
+                }
+                .padding(3)
+            }
+        }
         .shadow(
             color: .black.opacity(colorScheme == .dark ? 0.22 : 0.08),
             radius: isParagraphOverlayMode ? 3 : 2,
@@ -195,9 +239,13 @@ struct OverlayView: View {
         )
         .onChange(of: isParagraphOverlayMode) { _, isParagraphMode in
             if !isParagraphMode {
+                comparisonUsesCustomHeight = false
                 resetParagraphHeaderInteractionState()
                 resetParagraphOriginalEditorState()
             }
+        }
+        .onChange(of: model.activeLookupID) { _, lookupID in
+            if lookupID != nil { comparisonUsesCustomHeight = false }
         }
         .onChange(of: model.isParagraphOverlayPinned) { _, isPinned in
             if !isPinned {
@@ -210,6 +258,7 @@ struct OverlayView: View {
             }
         }
         .onDisappear {
+            comparisonUsesCustomHeight = false
             resetParagraphHeaderInteractionState()
             resetParagraphOriginalEditorState()
         }
@@ -375,35 +424,34 @@ struct OverlayView: View {
         }
     }
 
-    @ViewBuilder
-    private func paragraphTranslationResultView(content: ParagraphOverlayContent) -> some View {
-        let originalText = content.originalText ?? ""
-        let hasOriginalText = !originalText.isEmpty
-        let hasTranslationOutput = content.showsNativeTranslation || !content.serviceResults.isEmpty
-        let originalVisibility = ParagraphOriginalVisibilityPolicy.resolve(
-            hasOriginalText: hasOriginalText,
+    private func paragraphOriginalVisibility(for content: ParagraphOverlayContent) -> ParagraphOriginalVisibilityPolicy.Decision {
+        ParagraphOriginalVisibilityPolicy.resolve(
+            hasOriginalText: !(content.originalText ?? "").isEmpty,
             isParagraphOverlayPinned: model.isParagraphOverlayPinned,
             hidesOriginalTextSetting: model.settings.hideOriginalTextInSentenceOverlay,
             isOriginalEditorExpanded: isParagraphOriginalEditorExpanded,
             isManualInputFallback: content.isManualInputFallback,
-            hasTranslationOutput: hasTranslationOutput
+            hasTranslationOutput: content.showsNativeTranslation || !content.serviceResults.isEmpty
         )
-        let showsAutoDismissFailure = !hasOriginalText && content.serviceResults.isEmpty && !originalVisibility.showsOriginalTextRegion
-        let sourceCount = paragraphConfiguredSourceCount(content)
-        let singleSourceReadyText = paragraphSingleSourceReadyText(content, sourceCount: sourceCount)
-        let singleSourceResult = paragraphSingleSourceResult(content, sourceCount: sourceCount)
-        let singleSourceType = paragraphSingleSourceType(content, sourceCount: sourceCount)
+    }
+
+    @ViewBuilder
+    private func paragraphTranslationResultView(content: ParagraphOverlayContent) -> some View {
+        let originalText = content.originalText ?? ""
+        let originalVisibility = paragraphOriginalVisibility(for: content)
+        let showsAutoDismissFailure = originalText.isEmpty && content.serviceResults.isEmpty && !originalVisibility.showsOriginalTextRegion
+        let sources = ParagraphReadingSources(content: content, priority: model.settings.sentenceTranslationSources.map(\.type))
+        let comparesSources = content.hasMultipleTranslationSources && showsAllParagraphTranslations
         let showsPendingTranslations = paragraphHasPendingTranslations(content)
-        let hasTranslationOutputOrFailure = paragraphHasTranslationOutputOrFailure(content)
+        let hasTranslationOutputOrFailure = Self.paragraphStateHasDisplayableContent(sources.primary.state)
 
         VStack(alignment: .leading, spacing: 0) {
             paragraphResultTopBar(
                 content: content,
                 originalText: originalText,
                 originalVisibility: originalVisibility,
-                copyText: singleSourceReadyText,
-                singleSourceResult: singleSourceResult,
-                replacementSourceType: singleSourceType
+                primary: comparesSources ? nil : sources.primary,
+                comparisonSource: content.hasMultipleTranslationSources ? sources.primary.sourceType : nil
             )
 
             ParagraphReadingViewport(isEditing: originalVisibility.usesEditableOriginalText) {
@@ -422,13 +470,19 @@ struct OverlayView: View {
                             )
                         }
 
-                        paragraphTranslationContent(
-                            content: content,
-                            originalVisibility: originalVisibility,
-                            sourceCount: sourceCount
-                        )
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(sources.visibleResults(expanded: comparesSources)) { result in
+                                paragraphReadingResult(
+                                    result,
+                                    showsSourceHeader: comparesSources,
+                                    isStale: result.sourceType == .native && content.isRetranslating
+                                )
+                            }
+                        }
+                        .padding(.horizontal, paragraphTextHorizontalPadding)
+                        .padding(.top, originalVisibility.showsOriginalTextRegion ? 0 : 2)
 
-                        if showsPendingTranslations {
+                        if showsPendingTranslations && (comparesSources || sources.primary.readableText == nil || content.isRetranslating) {
                             paragraphWaitingIndicator
                         } else if !hasTranslationOutputOrFailure {
                             paragraphNoTranslationResultView
@@ -453,6 +507,12 @@ struct OverlayView: View {
                 }
             }
         }
+        .onChange(of: comparesSources) { _, _ in
+            model.refreshParagraphOverlayLayoutImmediately()
+        }
+        .onChange(of: comparisonUsesCustomHeight) { _, _ in
+            model.refreshParagraphOverlayLayoutImmediately()
+        }
         .onChange(of: originalVisibility) { _, _ in
             model.refreshParagraphOverlayLayoutImmediately()
         }
@@ -465,41 +525,46 @@ struct OverlayView: View {
         return VStack(alignment: .leading, spacing: 0) {
             manualTextEntryTopBar(showsDetectionStatus: !hasOriginalText)
 
-            VStack(alignment: .leading, spacing: 12) {
-                manualTextEntryEditor(text: originalText)
-
-                HStack(spacing: 6) {
-                    manualTextEntrySecondaryAction(
-                        systemImage: "doc.on.clipboard",
-                        title: L("Paste"),
-                        action: { model.pasteClipboardIntoParagraphTextEntry() }
-                    )
-
-                    manualTextEntrySecondaryAction(
-                        systemImage: "rectangle.dashed",
-                        title: L("Select Area"),
-                        action: { model.beginManualParagraphRegionSelection() }
-                    )
-
-                    Spacer(minLength: 8)
-
-                    manualTextEntryPrimaryAction(isEnabled: hasOriginalText)
-                }
-
-                HStack(spacing: 6) {
-                    Image(systemName: "return")
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .accessibilityHidden(true)
-
-                    Text(L("Return to translate · Shift-Return for line break"))
-                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                }
-                .foregroundStyle(.tertiary)
-                .padding(.leading, 2)
+            ParagraphReadingViewport {
+                manualTextEntryBody(originalText: originalText, hasOriginalText: hasOriginalText)
             }
-            .padding(.horizontal, paragraphTextHorizontalPadding)
-            .padding(.bottom, 16)
         }
+    }
+
+    private func manualTextEntryBody(originalText: String, hasOriginalText: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            manualTextEntryEditor(text: originalText)
+
+            HStack(spacing: 6) {
+                manualTextEntrySecondaryAction(
+                    systemImage: "doc.on.clipboard",
+                    title: L("Paste"),
+                    action: { model.pasteClipboardIntoParagraphTextEntry() }
+                )
+
+                manualTextEntrySecondaryAction(
+                    systemImage: "rectangle.dashed",
+                    title: L("Select Area"),
+                    action: { model.beginManualParagraphRegionSelection() }
+                )
+
+                Spacer(minLength: 8)
+
+                manualTextEntryPrimaryAction(isEnabled: hasOriginalText)
+            }
+
+            HStack(spacing: 6) {
+                Image(systemName: "return")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .accessibilityHidden(true)
+
+                Text(L("Return to translate · Shift-Return for line break"))
+                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
+            }
+            .foregroundStyle(.tertiary)
+            .padding(.leading, 2)
+        }
+        .padding(.horizontal, paragraphTextHorizontalPadding)
     }
 
     private func manualTextEntryTopBar(showsDetectionStatus: Bool) -> some View {
@@ -694,43 +759,6 @@ struct OverlayView: View {
         }
     }
 
-    private func paragraphConfiguredSourceCount(_ content: ParagraphOverlayContent) -> Int {
-        (content.showsNativeTranslation ? 1 : 0) + content.serviceResults.count
-    }
-
-    private func paragraphSingleSourceReadyText(
-        _ content: ParagraphOverlayContent,
-        sourceCount: Int
-    ) -> String? {
-        guard sourceCount == 1 else { return nil }
-
-        guard let state = paragraphSingleSourceDisplayState(content),
-              case .ready(let text) = state,
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
-        }
-        return text
-    }
-
-    private func paragraphSingleSourceResult(
-        _ content: ParagraphOverlayContent,
-        sourceCount: Int
-    ) -> ServiceTranslationResult? {
-        guard sourceCount == 1, !content.showsNativeTranslation else { return nil }
-        return content.serviceResults.first
-    }
-
-    private func paragraphSingleSourceType(
-        _ content: ParagraphOverlayContent,
-        sourceCount: Int
-    ) -> SentenceTranslationSource.SourceType? {
-        guard sourceCount == 1 else { return nil }
-        if content.showsNativeTranslation {
-            return .native
-        }
-        return content.serviceResults.first?.sourceType
-    }
-
     private func paragraphHasPendingTranslations(_ content: ParagraphOverlayContent) -> Bool {
         if content.isRetranslating {
             return true
@@ -740,27 +768,6 @@ struct OverlayView: View {
             return true
         }
         return content.serviceResults.contains { $0.state.isLoading }
-    }
-
-    private func paragraphHasTranslationOutputOrFailure(_ content: ParagraphOverlayContent) -> Bool {
-        if content.showsNativeTranslation,
-           Self.paragraphStateHasDisplayableContent(content.translationState) {
-            return true
-        }
-
-        if content.serviceResults.contains(where: {
-            Self.paragraphStateHasDisplayableContent($0.state)
-        }) {
-            return true
-        }
-
-        if !content.showsNativeTranslation,
-           content.serviceResults.isEmpty,
-           Self.paragraphStateHasDisplayableContent(content.translationState) {
-            return true
-        }
-
-        return false
     }
 
     private static func paragraphStateHasDisplayableContent(
@@ -779,158 +786,33 @@ struct OverlayView: View {
     }
 
     @ViewBuilder
-    private func paragraphTranslationContent(
-        content: ParagraphOverlayContent,
-        originalVisibility: ParagraphOriginalVisibilityPolicy.Decision,
-        sourceCount: Int
+    private func paragraphReadingResult(
+        _ result: ServiceTranslationResult,
+        showsSourceHeader: Bool,
+        isStale: Bool
     ) -> some View {
-        if sourceCount <= 1 {
-            paragraphSingleSourceTranslationContent(
-                content: content,
-                originalVisibility: originalVisibility
-            )
-        } else {
-            paragraphMultiSourceTranslationContent(
-                content: content,
-                originalVisibility: originalVisibility
-            )
-        }
-    }
-
-    @ViewBuilder
-    private func paragraphSingleSourceTranslationContent(
-        content: ParagraphOverlayContent,
-        originalVisibility: ParagraphOriginalVisibilityPolicy.Decision
-    ) -> some View {
-        if let state = paragraphSingleSourceDisplayState(content) {
-            switch state {
-            case .loading:
-                EmptyView()
-
-            case .ready(let translatedText):
-                if !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    paragraphTextContent(
-                        text: translatedText,
-                        textColor: content.isRetranslating ? .secondaryLabelColor : .labelColor,
-                        onWordDoubleClick: content.isRetranslating ? nil : paragraphWordLookup(from: .translation)
-                    )
-                    .padding(.horizontal, paragraphTextHorizontalPadding)
-                    .padding(.top, originalVisibility.showsOriginalTextRegion ? 0 : 2)
-                }
-
-            case .failed(let message):
-                paragraphErrorContent(message: L(message))
-                    .padding(.horizontal, paragraphTextHorizontalPadding)
-                    .padding(.top, originalVisibility.showsOriginalTextRegion ? 0 : 2)
-                    .padding(.bottom, 2)
-            }
-        }
-    }
-
-    private func paragraphSingleSourceDisplayState(
-        _ content: ParagraphOverlayContent
-    ) -> TranslationResultState? {
-        if content.showsNativeTranslation {
-            return content.translationState
-        }
-        if let result = content.serviceResults.first {
-            return result.state
-        }
-        return content.translationState
-    }
-
-    @ViewBuilder
-    private func paragraphMultiSourceTranslationContent(
-        content: ParagraphOverlayContent,
-        originalVisibility: ParagraphOriginalVisibilityPolicy.Decision
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if content.showsNativeTranslation {
-                switch content.translationState {
-                case .loading:
-                    EmptyView()
-
-                case .ready(let translatedText):
-                    if !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        paragraphMultiSourceResultRow(
-                            sourceType: .native,
-                            translatedText: translatedText,
-                            detailsResult: nil,
-                            usesStaleText: content.isRetranslating
-                        )
-                    }
-
-                case .failed(let message):
-                    paragraphMultiSourceErrorRow(
-                        sourceType: .native,
-                        message: L(message),
-                        detailsResult: nil
-                    )
-                }
-            }
-
-            ForEach(content.serviceResults) { result in
-                switch result.state {
-                case .loading:
-                    EmptyView()
-
-                case .ready(let translatedText):
-                    if !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        paragraphMultiSourceResultRow(
-                            sourceType: result.sourceType,
-                            translatedText: translatedText,
-                            detailsResult: result,
-                            usesStaleText: false
-                        )
-                    }
-
-                case .failed(let message):
-                    paragraphMultiSourceErrorRow(
+        if Self.paragraphStateHasDisplayableContent(result.state) {
+            VStack(alignment: .leading, spacing: 5) {
+                if showsSourceHeader {
+                    paragraphMultiSourceHeader(
                         sourceType: result.sourceType,
-                        message: L(message),
+                        copyText: result.readableText,
                         detailsResult: result
                     )
                 }
+                switch result.state {
+                case .ready(let text):
+                    paragraphTextContent(
+                        text: text,
+                        textColor: isStale ? .secondaryLabelColor : .labelColor,
+                        onWordDoubleClick: isStale ? nil : paragraphWordLookup(from: .translation)
+                    )
+                case .failed(let message):
+                    paragraphErrorContent(message: L(message))
+                case .loading:
+                    EmptyView()
+                }
             }
-        }
-        .padding(.horizontal, paragraphTextHorizontalPadding)
-        .padding(.top, originalVisibility.showsOriginalTextRegion ? 0 : 2)
-    }
-
-    private func paragraphMultiSourceResultRow(
-        sourceType: SentenceTranslationSource.SourceType,
-        translatedText: String,
-        detailsResult: ServiceTranslationResult?,
-        usesStaleText: Bool
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            paragraphMultiSourceHeader(
-                sourceType: sourceType,
-                copyText: translatedText,
-                detailsResult: detailsResult
-            )
-
-            paragraphTextContent(
-                text: translatedText,
-                textColor: usesStaleText ? .secondaryLabelColor : .labelColor,
-                onWordDoubleClick: usesStaleText ? nil : paragraphWordLookup(from: .translation)
-            )
-        }
-    }
-
-    private func paragraphMultiSourceErrorRow(
-        sourceType: SentenceTranslationSource.SourceType,
-        message: String,
-        detailsResult: ServiceTranslationResult?
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            paragraphMultiSourceHeader(
-                sourceType: sourceType,
-                copyText: nil,
-                detailsResult: detailsResult
-            )
-
-            paragraphErrorContent(message: message)
         }
     }
 
@@ -1126,9 +1008,8 @@ struct OverlayView: View {
         content: ParagraphOverlayContent,
         originalText: String,
         originalVisibility: ParagraphOriginalVisibilityPolicy.Decision,
-        copyText: String?,
-        singleSourceResult: ServiceTranslationResult?,
-        replacementSourceType: SentenceTranslationSource.SourceType?
+        primary: ServiceTranslationResult?,
+        comparisonSource: SentenceTranslationSource.SourceType?
     ) -> some View {
         ZStack(alignment: .leading) {
             paragraphHeaderDragArea()
@@ -1140,15 +1021,40 @@ struct OverlayView: View {
 
                 Spacer(minLength: 8)
 
-                if let copyText, !copyText.isEmpty {
+                if let comparisonSource {
+                    let action = showsAllParagraphTranslations ? L("Show primary translation") : L("Show all translations")
+                    Button {
+                        comparisonUsesCustomHeight = false
+                        model.settings.showsAllSentenceTranslations.toggle()
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(paragraphSourceShortName(comparisonSource))
+                                .font(.system(size: 11, weight: .medium))
+                                .lineLimit(1)
+                            Image(systemName: showsAllParagraphTranslations ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 9, weight: .semibold))
+                        }
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 3)
+                        .frame(minHeight: 22)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(action)
+                    .accessibilityLabel(Text(action))
+                    .accessibilityValue(Text(paragraphSourceShortName(comparisonSource)))
+                    .accessibilityIdentifier("sentenceTranslationComparison")
+                }
+
+                if let copyText = primary?.readableText {
                     CopyButton(text: copyText, usesSubtleHeaderStyle: true)
                 }
 
                 paragraphMoreMenu(
                     originalVisibility: originalVisibility,
                     originalText: originalText,
-                    singleSourceResult: singleSourceResult,
-                    replacementSourceType: replacementSourceType
+                    singleSourceResult: primary,
+                    replacementSourceType: primary?.sourceType
                 )
 
                 paragraphPinnedCloseButton
@@ -2398,6 +2304,46 @@ private extension Array where Element == String {
     }
 }
 
+private extension ServiceTranslationResult {
+    var hasFailed: Bool {
+        if case .failed = state { return true }
+        return false
+    }
+
+    var readableText: String? {
+        guard case .ready(let text) = state,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return text
+    }
+}
+
+struct ParagraphReadingSources {
+    let results: [ServiceTranslationResult]
+    let primary: ServiceTranslationResult
+
+    func visibleResults(expanded: Bool) -> [ServiceTranslationResult] {
+        expanded && !results.isEmpty ? results : [primary]
+    }
+
+    init(content: ParagraphOverlayContent, priority: [SentenceTranslationSource.SourceType]) {
+        let native = ServiceTranslationResult(
+            sourceType: .native,
+            modelName: nil,
+            state: content.translationState,
+            isComplete: !content.isRetranslating && !content.translationState.isLoading
+        )
+        var results = content.serviceResults
+        if content.showsNativeTranslation { results.insert(native, at: 0) }
+        self.results = results.sorted {
+            (priority.firstIndex(of: $0.sourceType) ?? .max) < (priority.firstIndex(of: $1.sourceType) ?? .max)
+        }
+        primary = self.results.first { $0.readableText != nil }
+            ?? self.results.first(where: \.hasFailed)
+            ?? self.results.first
+            ?? native
+    }
+}
+
 enum ParagraphOriginalVisibilityPolicy {
     struct Decision: Equatable {
         let showsOriginalTextRegion: Bool
@@ -2582,7 +2528,12 @@ enum ParagraphFontSizing {
 
 // MARK: - Copy Button
 
+extension EnvironmentValues {
+    @Entry var translationPasteboard: NSPasteboard = .general
+}
+
 struct CopyButton: View {
+    @Environment(\.translationPasteboard) private var pasteboard
     let text: String
     var usesSubtleHeaderStyle = false
     @State private var copied = false
@@ -2627,7 +2578,6 @@ struct CopyButton: View {
     }
 
     private func copyToClipboard(_ text: String) {
-        let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
     }

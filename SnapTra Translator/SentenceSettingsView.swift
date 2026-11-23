@@ -21,7 +21,7 @@ struct SentenceSettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L("Sentence Translation Services"))
                         .font(.headline)
-                    Text(L("Drag to reorder service priority. Enabled services will be shown in the paragraph translation panel."))
+                    Text(L("Drag to reorder sources. Click the source name in the popup to expand or collapse the other translations. The popup remembers your choice."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -203,6 +203,26 @@ struct SentenceServiceRow: View {
                         .foregroundStyle(.secondary)
                 }
                 .padding(.top, 4)
+            }
+
+            if #available(macOS 26.4, *), source.isNative && source.isEnabled {
+                VStack(alignment: .leading, spacing: 4) {
+                    Picker(L("Translation Strategy"), selection: $settings.appleTranslationStrategy) {
+                        Text(L("Fast")).tag(AppleTranslationStrategy.fast)
+                        Text(L("Prefer Quality")).tag(AppleTranslationStrategy.qualityPreferred)
+                    }
+                    .pickerStyle(.menu)
+                    .controlSize(.small)
+
+                    if settings.appleTranslationStrategy == .qualityPreferred {
+                        Text(L("Uses Apple Intelligence when available. Falls back to fast translation when needed."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.leading, 64)
+                .padding(.bottom, 4)
             }
 
             if source.type.isLLMProvider && source.isEnabled {

@@ -174,7 +174,12 @@ enum ParagraphWordOrigin {
 }
 
 struct ParagraphOverlayContent: Equatable {
-    var originalText: String?
+    var originalText: String? {
+        didSet {
+            if oldValue != originalText { ocrStructure = nil }
+        }
+    }
+    var ocrStructure: ParagraphTextStructure?
     var translationState: ParagraphOverlayTranslationState
     var showsNativeTranslation: Bool
     var serviceResults: [ServiceTranslationResult]
@@ -187,6 +192,10 @@ struct ParagraphOverlayContent: Equatable {
     var isManualInputFallback: Bool
     var isManualTextEntry: Bool
     var imageTranslationUsed: Bool
+
+    var hasMultipleTranslationSources: Bool {
+        serviceResults.count + (showsNativeTranslation ? 1 : 0) > 1
+    }
 
     func wordLanguagePair(for word: String, from origin: ParagraphWordOrigin, bidirectional: Bool) -> LookupLanguagePair? {
         guard let sourceLanguageIdentifier, let selectedTargetLanguageIdentifier else { return nil }
@@ -203,6 +212,7 @@ struct ParagraphOverlayContent: Equatable {
 
     init(
         originalText: String? = nil,
+        ocrStructure: ParagraphTextStructure? = nil,
         translationState: ParagraphOverlayTranslationState,
         showsNativeTranslation: Bool = true,
         serviceResults: [ServiceTranslationResult] = [],
@@ -217,6 +227,7 @@ struct ParagraphOverlayContent: Equatable {
         imageTranslationUsed: Bool = false
     ) {
         self.originalText = originalText
+        self.ocrStructure = ocrStructure
         self.translationState = translationState
         self.showsNativeTranslation = showsNativeTranslation
         self.serviceResults = serviceResults
@@ -558,7 +569,7 @@ final class AppModel: ObservableObject {
     let dictionaryDownload: DictionaryDownloadManager
     private var cancellables = Set<AnyCancellable>()
     private var lookupTask: Task<Void, Never>?
-    private var activeLookupID: UUID?
+    private(set) var activeLookupID: UUID?
     private var paragraphWordLookupTask: Task<Void, Never>?
     private var paragraphWordLookupID: UUID?
     private var activeSelectedTextProbeRequest: SelectedTextProbeRequest?
@@ -566,7 +577,6 @@ final class AppModel: ObservableObject {
     private var isHotkeyActive = false
     private var activeLookupMode: ActiveLookupMode = .word
     private var lastAvailabilityKey: String?
-    private var cachedLanguageStatuses: [String: CachedLanguageAvailabilityStatus] = [:]
     private var paragraphTranslationTask: Task<Void, Never>?
     private var paragraphPresentationTask: Task<Void, Never>?
     @Published private(set) var selectedTextReplacementSession: SelectedTextReplacementSession?
@@ -712,12 +722,6 @@ final class AppModel: ObservableObject {
             manager.objectWillChange
                 .sink { [weak self] _ in
                     self?.objectWillChange.send()
-                }
-                .store(in: &cancellables)
-
-            manager.$languageStatuses
-                .sink { [weak self] statuses in
-                    self?.syncCachedLanguageStatuses(statuses)
                 }
                 .store(in: &cancellables)
         }
@@ -2068,8 +2072,11 @@ final class AppModel: ObservableObject {
                     makeServiceTranslationResult(for: source)
                 }
 
+                let structure = ParagraphTextStructure.fromRecognizedLines(paragraph.lines)
+                let translationText = structure.renderedText
                 let initialContent = ParagraphOverlayContent(
                     originalText: paragraph.text,
+                    ocrStructure: structure,
                     translationState: .loading,
                     showsNativeTranslation: isNativeTranslationEnabled,
                     serviceResults: initialServiceResults,
@@ -2099,7 +2106,7 @@ final class AppModel: ObservableObject {
                 let targetLanguage = languagePair.targetLanguage
 
                 async let thirdPartyTranslations: Void = performThirdPartySentenceTranslations(
-                    text: paragraph.text,
+                    text: translationText,
                     sourceLanguage: languagePair.sourceIdentifier,
                     targetLanguage: languagePair.targetIdentifier,
                     enabledServices: enabledServices,
@@ -2108,8 +2115,9 @@ final class AppModel: ObservableObject {
                 )
 
                 if isNativeTranslationEnabled {
-                    let translationState = await loadParagraphTranslationState(
-                        paragraph: paragraph,
+                    let translationState = await loadSentenceTranslationState(
+                        text: translationText,
+                        ocrStructure: structure,
                         languagePair: languagePair,
                         sourceLanguage: sourceLanguage,
                         targetLanguage: targetLanguage,
@@ -2208,8 +2216,12 @@ final class AppModel: ObservableObject {
             )
             let languageOptions = paragraphLanguageOptions(for: languagePair)
 
+            let readingLines = OCRService.mergeHorizontallyAdjacentLineFragments(in: lines)
+            let structure = ParagraphTextStructure.fromRecognizedLines(readingLines)
+            let translationText = structure.renderedText
             let initialContent = ParagraphOverlayContent(
                 originalText: text,
+                ocrStructure: structure,
                 translationState: .loading,
                 showsNativeTranslation: isNativeTranslationEnabled,
                 serviceResults: enabledServices.map { source in
@@ -2240,7 +2252,7 @@ final class AppModel: ObservableObject {
 
             Task {
                 await performThirdPartySentenceTranslations(
-                    text: text,
+                    text: translationText,
                     sourceLanguage: languagePair.sourceIdentifier,
                     targetLanguage: languagePair.targetIdentifier,
                     enabledServices: enabledServices,
@@ -2251,7 +2263,8 @@ final class AppModel: ObservableObject {
 
             if isNativeTranslationEnabled {
                 let translationState = await loadSentenceTranslationState(
-                    text: text,
+                    text: translationText,
+                    ocrStructure: structure,
                     languagePair: languagePair,
                     sourceLanguage: sourceLanguage,
                     targetLanguage: languagePair.targetLanguage,
@@ -2317,7 +2330,7 @@ final class AppModel: ObservableObject {
         translationBridge: TranslationBridge
     ) async -> OverlayPrimaryTranslationState {
         if #available(macOS 15.0, *) {
-            let status = await languageAvailabilityStatus(for: languagePair)
+            let status = await refreshLanguageAvailabilityStatus(for: languagePair)
             guard status == .installed else {
                 return .failed(message(for: status))
             }
@@ -2330,69 +2343,6 @@ final class AppModel: ObservableObject {
                 ).trimmingCharacters(in: .whitespacesAndNewlines)
 
                 return translated.isEmpty ? .empty : .ready(translated, isFallback: false)
-            } catch TranslationError.timeout {
-                return .failed("Translation timeout. Please try again.")
-            } catch {
-                return .failed("Translation failed: \(error.localizedDescription)")
-            }
-        } else {
-            return .failed("Translation requires macOS 15")
-        }
-    }
-
-    private func loadParagraphTranslationState(
-        paragraph: RecognizedParagraph,
-        languagePair: LookupLanguagePair,
-        sourceLanguage: Locale.Language,
-        targetLanguage: Locale.Language,
-        translationBridge: TranslationBridge
-    ) async -> ParagraphOverlayTranslationState {
-        let structure = ParagraphTextStructure.fromRecognizedLines(paragraph.lines)
-        let sourceText = {
-            let renderedText = structure.renderedText.trimmingCharacters(in: .whitespacesAndNewlines)
-            return renderedText.isEmpty ? paragraph.text : renderedText
-        }()
-
-        if languagePair.isSameLanguage {
-            return .ready(sourceText)
-        }
-
-        if #available(macOS 15.0, *) {
-            let status = await languageAvailabilityStatus(for: languagePair)
-            guard status == .installed else {
-                return .failed(message(for: status))
-            }
-
-            do {
-                let translatedText: String
-
-                if !structure.translatableTexts.isEmpty {
-                    let translatedBlocks = try await translationBridge.translateBatch(
-                        texts: structure.translatableTexts,
-                        source: sourceLanguage,
-                        target: targetLanguage
-                    )
-
-                    if let rebuiltText = structure.applyingTranslations(translatedBlocks)?
-                        .trimmingCharacters(in: .whitespacesAndNewlines),
-                       !rebuiltText.isEmpty {
-                        translatedText = rebuiltText
-                    } else {
-                        translatedText = try await translationBridge.translate(
-                            text: sourceText,
-                            source: sourceLanguage,
-                            target: targetLanguage
-                        ).trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
-                } else {
-                    translatedText = try await translationBridge.translate(
-                        text: sourceText,
-                        source: sourceLanguage,
-                        target: targetLanguage
-                    ).trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-
-                return translatedText.isEmpty ? .failed("No translation result") : .ready(translatedText)
             } catch TranslationError.timeout {
                 return .failed("Translation timeout. Please try again.")
             } catch {
@@ -2502,6 +2452,7 @@ final class AppModel: ObservableObject {
 
         translateCurrentParagraphOriginal(
             originalText: originalText,
+            ocrStructure: content.ocrStructure,
             languagePair: languagePair,
             selectedTargetLanguageIdentifier: targetIdentifier
         )
@@ -2791,6 +2742,7 @@ final class AppModel: ObservableObject {
 
         translateCurrentParagraphOriginal(
             originalText: originalText,
+            ocrStructure: content.ocrStructure,
             languagePair: languagePair,
             selectedTargetLanguageIdentifier: languagePair.targetIdentifier
         )
@@ -2798,6 +2750,7 @@ final class AppModel: ObservableObject {
 
     private func translateCurrentParagraphOriginal(
         originalText: String,
+        ocrStructure: ParagraphTextStructure?,
         languagePair: LookupLanguagePair,
         selectedTargetLanguageIdentifier: String
     ) {
@@ -2832,11 +2785,12 @@ final class AppModel: ObservableObject {
             content.languageOptions = paragraphLanguageOptions(for: languagePair)
         }
 
+        let translationText = ocrStructure?.renderedText ?? originalText
         paragraphTranslationTask = Task { [weak self] in
             guard let self else { return }
 
             async let thirdPartyTranslations: Void = self.performThirdPartySentenceTranslations(
-                text: originalText,
+                text: translationText,
                 sourceLanguage: languagePair.sourceIdentifier,
                 targetLanguage: languagePair.targetIdentifier,
                 enabledServices: enabledServices,
@@ -2846,7 +2800,8 @@ final class AppModel: ObservableObject {
 
             if isNativeTranslationEnabled {
                 let translationState = await self.loadSentenceTranslationState(
-                    text: originalText,
+                    text: translationText,
+                    ocrStructure: ocrStructure,
                     languagePair: languagePair,
                     sourceLanguage: languagePair.sourceLanguage,
                     targetLanguage: languagePair.targetLanguage,
@@ -3090,6 +3045,7 @@ final class AppModel: ObservableObject {
 
     private func loadSentenceTranslationState(
         text: String,
+        ocrStructure: ParagraphTextStructure? = nil,
         languagePair: LookupLanguagePair,
         sourceLanguage: Locale.Language,
         targetLanguage: Locale.Language,
@@ -3105,16 +3061,32 @@ final class AppModel: ObservableObject {
         }
 
         if #available(macOS 15.0, *) {
-            let status = await languageAvailabilityStatus(for: languagePair)
+            let strategy = settings.appleTranslationStrategy
+            let status = await refreshLanguageAvailabilityStatus(for: languagePair, strategy: strategy)
             guard status == .installed else {
                 return .failed(message(for: status))
             }
 
             do {
+                // Keep real structural boundaries and restore list markers around translated bodies.
+                if let structure = ocrStructure,
+                   structure.blocks.count > 1 || structure.blocks.first?.marker != nil {
+                    let translatedBlocks = try await translationBridge.translateBatch(
+                        texts: structure.translatableTexts,
+                        source: sourceLanguage,
+                        target: targetLanguage,
+                        strategy: strategy
+                    )
+                    if let rebuilt = structure.applyingTranslations(translatedBlocks),
+                       !rebuilt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        return .ready(rebuilt)
+                    }
+                }
                 let translatedText = try await translationBridge.translate(
                     text: sourceText,
                     source: sourceLanguage,
-                    target: targetLanguage
+                    target: targetLanguage,
+                    strategy: strategy
                 ).trimmingCharacters(in: .whitespacesAndNewlines)
 
                 return translatedText.isEmpty ? .failed("No translation result") : .ready(translatedText)
@@ -3429,6 +3401,14 @@ final class AppModel: ObservableObject {
     }
 
     private func bindSettings() {
+        Publishers.CombineLatest(settings.$sentencePopupFontSize, settings.$sentencePopupSize)
+            .dropFirst()
+            .sink { [weak self] _, _ in
+                guard let self, self.isParagraphOverlayPresented else { return }
+                self.refreshParagraphOverlayLayoutImmediately()
+            }
+            .store(in: &cancellables)
+
         settings.$singleKey
             .sink { [weak self] singleKey in
                 guard let self else { return }
@@ -3469,6 +3449,20 @@ final class AppModel: ObservableObject {
             self?.handleTranslationSettingsChanged()
         }
         .store(in: &cancellables)
+
+        settings.$appleTranslationStrategy
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] strategy in
+                guard #available(macOS 26.4, *) else { return }
+                Task { @MainActor in
+                    guard let self else { return }
+                    for pair in self.requiredLanguagePairsForCurrentSettings() {
+                        _ = await self.refreshLanguageAvailabilityStatus(for: pair, strategy: strategy)
+                    }
+                }
+            }
+            .store(in: &cancellables)
 
         permissions.$status
             .sink { [weak self] status in
@@ -3692,7 +3686,6 @@ final class AppModel: ObservableObject {
         clearSelectedTextReplacementSession()
         cancelActiveLookupWork()
         lastAvailabilityKey = nil
-        cachedLanguageStatuses.removeAll()
 
         if overlayState != .idle {
             hideOverlay()
@@ -3807,30 +3800,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func languageAvailabilityStatus(
-        for pair: LookupLanguagePair,
-        useCache: Bool = true
-    ) async -> CachedLanguageAvailabilityStatus {
-        if pair.isSameLanguage {
-            cachedLanguageStatuses[pair.key] = .installed
-            return .installed
-        }
-
-        if useCache, let cached = cachedLanguageStatuses[pair.key] {
-            return cached
-        }
-
-        let status: CachedLanguageAvailabilityStatus
-        if #available(macOS 15.0, *) {
-            status = await refreshLanguageAvailabilityStatus(for: pair)
-        } else {
-            status = .unsupported
-        }
-
-        cachedLanguageStatuses[pair.key] = status
-        return status
-    }
-
     @available(macOS 15.0, *)
     func refreshLanguageAvailabilityStatus(
         from sourceIdentifier: String,
@@ -3918,43 +3887,31 @@ final class AppModel: ObservableObject {
     @available(macOS 15.0, *)
     private func refreshLanguageAvailabilityStatus(
         for pair: LookupLanguagePair,
+        strategy: AppleTranslationStrategy = .fast,
         showLoading: Bool = false
     ) async -> CachedLanguageAvailabilityStatus {
-        if pair.isSameLanguage {
-            cachedLanguageStatuses[pair.key] = .installed
-            return .installed
-        }
+        if pair.isSameLanguage { return .installed }
 
-        let status: CachedLanguageAvailabilityStatus
+        let systemStatus: LanguageAvailability.Status
         if let manager = languagePackManager {
-            let systemStatus: LanguageAvailability.Status
             if showLoading {
                 systemStatus = await manager.checkLanguagePair(
                     from: pair.sourceIdentifier,
-                    to: pair.targetIdentifier
+                    to: pair.targetIdentifier,
+                    strategy: strategy
                 )
             } else {
                 systemStatus = await manager.checkLanguagePairQuiet(
                     from: pair.sourceIdentifier,
-                    to: pair.targetIdentifier
+                    to: pair.targetIdentifier,
+                    strategy: strategy
                 )
             }
-            status = CachedLanguageAvailabilityStatus(systemStatus)
         } else {
-            let availability = LanguageAvailability()
-            let systemStatus = await availability.status(from: pair.sourceLanguage, to: pair.targetLanguage)
-            status = CachedLanguageAvailabilityStatus(systemStatus)
+            let availability = strategy.makeLanguageAvailability()
+            systemStatus = await availability.status(from: pair.sourceLanguage, to: pair.targetLanguage)
         }
-
-        cachedLanguageStatuses[pair.key] = status
-        return status
-    }
-
-    @available(macOS 15.0, *)
-    private func syncCachedLanguageStatuses(_ statuses: [String: LanguageAvailability.Status]) {
-        for (key, status) in statuses {
-            cachedLanguageStatuses[key] = CachedLanguageAvailabilityStatus(status)
-        }
+        return CachedLanguageAvailabilityStatus(systemStatus)
     }
 
     private func message(for status: CachedLanguageAvailabilityStatus) -> String {
@@ -4366,7 +4323,6 @@ final class AppModel: ObservableObject {
         cancelPendingParagraphPresentation()
         cancelPendingOverlayLayoutRefresh()
         speechService.stopSpeaking()
-        cachedLanguageStatuses.removeAll(keepingCapacity: false)
         hideInPlaceTranslation()
         if overlayState != .idle {
             overlayState = .idle
@@ -4413,13 +4369,13 @@ final class AppModel: ObservableObject {
     @available(macOS 15.0, *)
     private func warmupTranslationService() {
         Task { @MainActor in
-            let sourceLanguage = Locale.Language(identifier: settings.sourceLanguage)
-            let targetLanguage = Locale.Language(identifier: settings.targetLanguage)
+            let pair = configuredLanguagePair()
+            guard !pair.isSameLanguage, await refreshLanguageAvailabilityStatus(for: pair) == .installed else { return }
 
             _ = try? await translationBridge.translate(
                 text: "hello",
-                source: sourceLanguage,
-                target: targetLanguage,
+                source: pair.sourceLanguage,
+                target: pair.targetLanguage,
                 timeout: 10.0
             )
         }

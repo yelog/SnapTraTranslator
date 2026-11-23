@@ -422,6 +422,25 @@ final class SettingsStore: ObservableObject {
     @Published var hideOriginalTextInSentenceOverlay: Bool {
         didSet { defaults.set(hideOriginalTextInSentenceOverlay, forKey: AppSettingKey.hideOriginalTextInSentenceOverlay) }
     }
+    @Published var showsAllSentenceTranslations: Bool {
+        didSet { defaults.set(showsAllSentenceTranslations, forKey: AppSettingKey.showsAllSentenceTranslations) }
+    }
+    static let sentencePopupFontRange = 11.0...28.0
+    @Published var sentencePopupFontSize: Double {
+        didSet { defaults.set(sentencePopupFontSize, forKey: AppSettingKey.sentencePopupFontSize) }
+    }
+    @Published var sentencePopupSize: SentencePopupSize? {
+        didSet {
+            if let size = sentencePopupSize {
+                defaults.set(["width": size.width, "maxHeight": size.maxHeight], forKey: AppSettingKey.sentencePopupSize)
+            } else {
+                defaults.removeObject(forKey: AppSettingKey.sentencePopupSize)
+            }
+        }
+    }
+    @Published var appleTranslationStrategy: AppleTranslationStrategy {
+        didSet { defaults.set(appleTranslationStrategy.rawValue, forKey: AppSettingKey.appleTranslationStrategy) }
+    }
     @Published var sentenceTranslationPresentationMode: SentenceTranslationPresentationMode {
         didSet {
             defaults.set(
@@ -568,6 +587,16 @@ final class SettingsStore: ObservableObject {
         selectedTextClipboardFallback = clipboardFallbackValue ?? true
         let hideOriginalTextValue = defaults.object(forKey: AppSettingKey.hideOriginalTextInSentenceOverlay) as? Bool
         hideOriginalTextInSentenceOverlay = hideOriginalTextValue ?? true
+        showsAllSentenceTranslations = defaults.object(forKey: AppSettingKey.showsAllSentenceTranslations) as? Bool ?? true
+        let fontSize = defaults.double(forKey: AppSettingKey.sentencePopupFontSize)
+        sentencePopupFontSize = Self.sentencePopupFontRange.contains(fontSize) ? fontSize : 15.5
+        appleTranslationStrategy = defaults.string(forKey: AppSettingKey.appleTranslationStrategy)
+            .flatMap(AppleTranslationStrategy.init(rawValue:)) ?? .fast
+        if let size = defaults.dictionary(forKey: AppSettingKey.sentencePopupSize),
+           let width = size["width"] as? Double, width.isFinite,
+           let height = size["maxHeight"] as? Double, height.isFinite {
+            sentencePopupSize = SentencePopupSize(width: width, maxHeight: height)
+        }
         let sentencePresentationModeValue = defaults.string(forKey: AppSettingKey.sentenceTranslationPresentationMode)
         sentenceTranslationPresentationMode = SentenceTranslationPresentationMode(
             rawValue: sentencePresentationModeValue ?? ""

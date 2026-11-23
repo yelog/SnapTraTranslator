@@ -597,6 +597,13 @@ struct GeneralSettingsView: View {
                         mode: $model.settings.sentenceTranslationPresentationMode
                     )
 
+                    if model.settings.sentenceTranslationPresentationMode == .overlayPanel {
+                        Divider()
+                            .padding(.horizontal, 14)
+                            .opacity(0.5)
+                        SentencePopupSettingsRow(settings: model.settings)
+                    }
+
                     Divider()
                         .padding(.horizontal, 14)
                         .opacity(0.5)
@@ -796,6 +803,58 @@ struct DoubleTapSentenceTranslationModePickerRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+}
+
+private struct SentencePopupSettingsRow: View {
+    @ObservedObject var settings: SettingsStore
+
+    var body: some View {
+        VStack(spacing: 10) {
+            pointStepper(L("Popup Text Size"), value: $settings.sentencePopupFontSize,
+                         range: SettingsStore.sentencePopupFontRange, step: 0.5)
+            HStack {
+                Text(L("Popup Size"))
+                Spacer()
+                Picker(L("Popup Size"), selection: Binding(
+                    get: { settings.sentencePopupSize != nil },
+                    set: { settings.sentencePopupSize = $0 ? .standard : nil }
+                )) {
+                    Text(L("Automatic")).tag(false)
+                    Text(L("Custom Size")).tag(true)
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+            if let size = settings.sentencePopupSize {
+                pointStepper(L("Width"), value: Binding(
+                    get: { size.width },
+                    set: { settings.sentencePopupSize = SentencePopupSize(width: $0, maxHeight: size.maxHeight) }
+                ), range: SentencePopupSize.widthRange, step: 10)
+                pointStepper(L("Maximum Height"), value: Binding(
+                    get: { size.maxHeight },
+                    set: { settings.sentencePopupSize = SentencePopupSize(width: size.width, maxHeight: $0) }
+                ), range: SentencePopupSize.heightRange, step: 10)
+                .help(L("When comparing translations, the popup can grow beyond this limit to fit the results. Drag the lower-right corner to adjust its height."))
+            }
+        }
+        .font(.system(size: 13))
+        .controlSize(.small)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private func pointStepper(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(verbatim: "\(value.wrappedValue.formatted()) pt")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            Stepper(title, value: value, in: range, step: step)
+                .labelsHidden()
+                .accessibilityValue(value.wrappedValue.formatted())
+        }
     }
 }
 
@@ -1029,7 +1088,7 @@ struct GeneralTranslationLanguageRow: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.green)
-                .help(L("Language pack installed"))
+                .help(L("Fast translation language pack installed"))
         } else if let status {
             Button {
                 Task { @MainActor in
@@ -1105,13 +1164,13 @@ struct GeneralTranslationLanguageRow: View {
     private func languagePackHelpText(for status: LanguageAvailability.Status) -> String {
         switch status {
         case .installed:
-            return L("Language pack installed")
+            return L("Fast translation language pack installed")
         case .supported:
-            return L("Language pack required - click to download")
+            return L("Fast translation language pack required — click to download")
         case .unsupported:
-            return L("Translation not supported for this language pair.")
+            return L("Fast translation is unavailable for this language pair.")
         @unknown default:
-            return L("Translation not supported for this language pair.")
+            return L("Fast translation is unavailable for this language pair.")
         }
     }
 
@@ -1126,7 +1185,7 @@ struct GeneralTranslationLanguageRow: View {
     private func presentLanguageAvailabilityAlert(for pair: LookupLanguagePair) {
         guard let status = getLanguagePackStatus(for: pair) else { return }
 
-        unavailableAlertTitle = L("Language Pack Required")
+        unavailableAlertTitle = L("Fast Translation Language Pack Required")
         if status != .installed {
             unavailablePair = pair
             let sourceName = languageName(for: pair.sourceIdentifier)
@@ -1138,9 +1197,9 @@ struct GeneralTranslationLanguageRow: View {
             case .supported:
                 missingLanguagesMessage = L("The language pack for \(sourceName) → \(targetName) translation is not installed. Please download the required language packs in System Settings > General > Language & Region > Translation Languages.")
             case .unsupported:
-                missingLanguagesMessage = L("Translation not supported for this language pair.")
+                missingLanguagesMessage = L("Fast translation is unavailable for this language pair.")
             @unknown default:
-                missingLanguagesMessage = L("Translation not supported for this language pair.")
+                missingLanguagesMessage = L("Fast translation is unavailable for this language pair.")
             }
             showingUnavailableAlert = true
         }

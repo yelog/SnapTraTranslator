@@ -304,6 +304,83 @@ final class OCRParagraphGroupingTests: XCTestCase {
         )
     }
 
+    func testWrappedGameSentenceUsesOneTranslationInputAndKeepsOriginalOCRLines() throws {
+        let lines = [
+            line("Enemies have elemental weaknesses, and attacks", at: 0.72),
+            line("with these elements will deal increased damage.", at: 0.66),
+        ]
+        let paragraph = try XCTUnwrap(OCRService.groupParagraphs(from: lines).first)
+        let input = ParagraphTextStructure.fromRecognizedLines(paragraph.lines)
+        let sentence = "Enemies have elemental weaknesses, and attacks with these elements will deal increased damage."
+
+        XCTAssertEqual(paragraph.lines, lines)
+        XCTAssertEqual(paragraph.text, lines.map(\.text).joined(separator: "\n"))
+        XCTAssertEqual(input.translatableTexts, [sentence])
+        XCTAssertEqual(input.renderedText, sentence)
+
+        let manualLines = OCRService.mergeHorizontallyAdjacentLineFragments(in: lines.reversed())
+        XCTAssertEqual(ParagraphTextStructure.fromRecognizedLines(manualLines), input)
+    }
+
+    func testOCRHeadingParagraphBreaksAndWrappedListsKeepTheirBoundaries() {
+        let lines = [
+            line("Combat tips", at: 0.90, width: 0.20),
+            line("Enemies can be defeated", at: 0.84),
+            line("with elemental attacks.", at: 0.78),
+            line("Another paragraph begins here.", at: 0.65),
+            line("1. Aim at a weak point", at: 0.59),
+            line("when possible.", at: 0.53, x: 0.15),
+            line("2. Recover stamina.", at: 0.47),
+            line("", at: 0.41),
+            line("End of tips.", at: 0.35),
+        ]
+        let input = ParagraphTextStructure.fromRecognizedLines(lines)
+
+        XCTAssertEqual(input.translatableTexts, [
+            "Combat tips", "Enemies can be defeated with elemental attacks.", "Another paragraph begins here.",
+            "Aim at a weak point when possible.", "Recover stamina.", "End of tips.",
+        ])
+        XCTAssertTrue(input.renderedText.contains("1. Aim at a weak point when possible.\n2. Recover stamina.\n\n"))
+        XCTAssertEqual(input.applyingTranslations(["A", "B", "C", "D", "E", "F"]), "A\nB\nC\n1. D\n2. E\n\nF")
+    }
+
+    func testOCRJoinsWrappedChineseAndJapaneseWithoutSpacesAndPreservesKoreanWordSpacing() {
+        for (first, second, expected) in [
+            ("敌人具有元素弱点，", "使用对应元素可以造成更多伤害。", "敌人具有元素弱点，使用对应元素可以造成更多伤害。"),
+            ("この攻撃は", "とても強い。", "この攻撃はとても強い。"),
+            ("이 공격은", "매우 강하다.", "이 공격은 매우 강하다."),
+            ("A state-of-", "the-art tool.", "A state-of-the-art tool."),
+        ] {
+            let input = ParagraphTextStructure.fromRecognizedLines([line(first, at: 0.72), line(second, at: 0.66)])
+            XCTAssertEqual(input.translatableTexts, [expected])
+        }
+    }
+
+    func testOCRDoesNotJoinParagraphIndentsOrSideBySideText() {
+        let lines = [
+            line("Previous sentence.", at: 0.8),
+            line("New indented paragraph.", at: 0.74, x: 0.18),
+            line("Sidebar", at: 0.74, x: 0.75, width: 0.16),
+        ]
+        XCTAssertEqual(ParagraphTextStructure.fromRecognizedLines(lines).translatableTexts, lines.map(\.text))
+    }
+
+    func testEditingOCRTextDiscardsOCRWrappingAndRespectsUserLineBreaks() {
+        let lines = [line("A wrapped", at: 0.72), line("sentence.", at: 0.66)]
+        let structure = ParagraphTextStructure.fromRecognizedLines(lines)
+        var content = ParagraphOverlayContent(originalText: "A wrapped\nsentence.", ocrStructure: structure, translationState: .loading)
+
+        content.originalText = "A wrapped\nsentence."
+        XCTAssertEqual(content.ocrStructure?.renderedText, "A wrapped sentence.")
+        content.originalText = "First line\nMy second line"
+        XCTAssertNil(content.ocrStructure)
+        XCTAssertEqual(ParagraphTextStructure.fromText(content.originalText ?? "").translatableTexts, ["First line", "My second line"])
+    }
+
+    private func line(_ text: String, at y: CGFloat, x: CGFloat = 0.10, width: CGFloat = 0.48) -> RecognizedTextLine {
+        RecognizedTextLine(text: text, boundingBox: CGRect(x: x, y: y, width: width, height: 0.04))
+    }
+
     func testSelectsParagraphContainingPointerBeforeNearbyParagraph() {
         let paragraphs = [
             RecognizedParagraph(

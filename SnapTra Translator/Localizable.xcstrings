@@ -703,6 +703,41 @@
         }
       }
     },
+    "Automatic" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動"
+          }
+        }
+      }
+    },
     "Automatically reverse direction when text matches the target language" : {
       "localizations" : {
         "en" : {
@@ -2198,6 +2233,41 @@
         }
       }
     },
+    "Custom Size" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom Size"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カスタムサイズ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "사용자 지정 크기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自定义尺寸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自訂尺寸"
+          }
+        }
+      }
+    },
     "Debug OCR Region" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2773,37 +2843,37 @@
         }
       }
     },
-    "Drag to reorder service priority. Enabled services will be shown in the paragraph translation panel." : {
-      "extractionState" : "stale",
+    "Drag to reorder sources. Click the source name in the popup to expand or collapse the other translations. The popup remembers your choice." : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Drag to reorder service priority. Enabled services will be shown in the paragraph translation panel."
+            "value" : "Drag to reorder sources. Click the source name in the popup to expand or collapse the other translations. The popup remembers your choice."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ドラッグしてサービスの優先順位を変更します。有効なサービスは段落翻訳パネルに表示されます。"
+            "value" : "ドラッグして翻訳サービスの表示順を変更できます。ポップアップ上部のサービス名をクリックすると、ほかの訳文を展開したり折りたたんだりできます。次回も同じ表示になります。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "드래그하여 서비스 우선순위를 변경하세요. 활성화된 서비스는 문단 번역 패널에 표시됩니다."
+            "value" : "번역 서비스를 드래그해 표시 순서를 바꾸세요. 팝업 상단의 서비스 이름을 클릭하면 다른 번역을 펼치거나 접을 수 있습니다. 다음 번역에도 같은 표시 방식이 적용됩니다."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拖拽以重新排序服务优先级。启用的服务将显示在段落翻译面板中。"
+            "value" : "拖动服务可调整译文顺序。点按弹窗顶部的服务名称可展开或收起其他译文，下次翻译时会沿用你的选择。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拖曳以重新排序服務優先級。啟用的服務將顯示在段落翻譯面板中。"
+            "value" : "拖移服務可調整譯文順序。按一下浮動視窗頂端的服務名稱，可展開或收合其他譯文。下次翻譯時會保留這項選擇。"
           }
         }
       }
@@ -3514,6 +3584,181 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清除學習數據失敗"
+          }
+        }
+      }
+    },
+    "Fast" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fast"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "速度優先"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "속도 우선"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速"
+          }
+        }
+      }
+    },
+    "Fast translation is unavailable for this language pair." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fast translation is unavailable for this language pair."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この言語の組み合わせでは速度優先の翻訳を利用できません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 언어 쌍에서는 빠른 번역을 사용할 수 없습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此语言对不支持快速翻译。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此語言組合不支援快速翻譯。"
+          }
+        }
+      }
+    },
+    "Fast translation language pack installed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fast translation language pack installed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "速度優先の翻訳用言語パックはインストール済みです"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "빠른 번역 언어 팩이 설치됨"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已安装快速翻译语言包"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已安裝快速翻譯語言套件"
+          }
+        }
+      }
+    },
+    "Fast Translation Language Pack Required" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fast Translation Language Pack Required"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "速度優先の翻訳用言語パックが必要です"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "빠른 번역 언어 팩 필요"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要快速翻译语言包"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要快速翻譯語言套件"
+          }
+        }
+      }
+    },
+    "Fast translation language pack required — click to download" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fast translation language pack required — click to download"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "速度優先の翻訳用言語パックが必要です。クリックしてダウンロードしてください"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "빠른 번역 언어 팩이 필요합니다. 클릭하여 다운로드하세요"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速翻译需要语言包，点按下载"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速翻譯需要語言套件，按一下以下載"
           }
         }
       }
@@ -5272,6 +5517,41 @@
         }
       }
     },
+    "Maximum Height" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maximum Height"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最大の高さ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "최대 높이"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最大高度"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最大高度"
+          }
+        }
+      }
+    },
     "Menu Bar Icon Style" : {
       "localizations" : {
         "en" : {
@@ -6243,6 +6523,76 @@
         }
       }
     },
+    "Popup Size" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Popup Size"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポップアップのサイズ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "팝업 크기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "弹窗尺寸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浮動視窗大小"
+          }
+        }
+      }
+    },
+    "Popup Text Size" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Popup Text Size"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポップアップの文字サイズ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "팝업 글자 크기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "弹窗字号"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浮動視窗字級"
+          }
+        }
+      }
+    },
     "Portuguese" : {
       "comment" : "Language name - use native name",
       "extractionState" : "stale",
@@ -6310,6 +6660,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Powered by ECDICT"
+          }
+        }
+      }
+    },
+    "Prefer Quality" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prefer Quality"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "品質優先"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "품질 우선"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "质量优先"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "品質優先"
           }
         }
       }
@@ -7176,6 +7561,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重置複習進度"
+          }
+        }
+      }
+    },
+    "Resize translation panel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resize translation panel"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻訳パネルのサイズを変更"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "번역 패널 크기 조절"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调整翻译弹窗大小"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "調整翻譯視窗大小"
           }
         }
       }
@@ -8083,6 +8503,41 @@
         }
       }
     },
+    "Show all translations" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show all translations"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべての翻訳を表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "모든 번역 보기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看所有译文"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示所有譯文"
+          }
+        }
+      }
+    },
     "Show capture area when shortcut is pressed" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8183,6 +8638,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示選單列圖示"
+          }
+        }
+      }
+    },
+    "Show primary translation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show primary translation"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "優先する翻訳を表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "우선 번역 보기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅显示首选译文"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅顯示首選譯文"
           }
         }
       }
@@ -9583,6 +10073,41 @@
         }
       }
     },
+    "Translation Strategy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translation Strategy"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻訳方式"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "번역 방식"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译策略"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻譯策略"
+          }
+        }
+      }
+    },
     "Translation time" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10216,6 +10741,41 @@
         }
       }
     },
+    "Uses Apple Intelligence when available. Falls back to fast translation when needed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uses Apple Intelligence when available. Falls back to fast translation when needed."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "利用できる場合はApple Intelligenceを使用します。必要に応じて速度優先の翻訳に切り替えます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "사용할 수 있으면 Apple Intelligence를 사용하고, 필요한 경우 빠른 번역으로 전환합니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "优先使用 Apple Intelligence，不可用时使用快速翻译。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "優先使用 Apple Intelligence，無法使用時改用快速翻譯。"
+          }
+        }
+      }
+    },
     "V2 Access Token" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10304,6 +10864,41 @@
         }
       }
     },
+    "When comparing translations, the popup can grow beyond this limit to fit the results. Drag the lower-right corner to adjust its height." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When comparing translations, the popup can grow beyond this limit to fit the results. Drag the lower-right corner to adjust its height."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "複数の訳文を比較するときは、内容に合わせてポップアップがこの上限を超えて広がることがあります。右下の角を上下にドラッグして高さを調整できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "여러 번역을 비교할 때는 내용에 맞춰 팝업이 이 높이 제한보다 커질 수 있습니다. 오른쪽 아래 모서리를 위아래로 드래그해 높이를 조절하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对照多份译文时，弹窗可随内容增高，超过此上限。上下拖动右下角可调整高度。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "比較多份譯文時，浮動視窗可隨內容增高，超過此上限。上下拖移右下角即可調整高度。"
+          }
+        }
+      }
+    },
     "White" : {
       "localizations" : {
         "en" : {
@@ -10334,6 +10929,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "白色"
+          }
+        }
+      }
+    },
+    "Width" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Width"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "幅"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "너비"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "宽度"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "寬度"
           }
         }
       }

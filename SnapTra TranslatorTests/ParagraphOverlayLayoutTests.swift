@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import XCTest
 @testable import SnapTra_Translator
 
@@ -358,6 +359,17 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         XCTAssertTrue(screen.insetBy(dx: inset, dy: inset).contains(frame))
     }
 
+    func testPlacesCardBesideTallSourceWhenNeitherVerticalSideFits() {
+        let source = CGRect(x: 120, y: 44, width: 360, height: 610)
+        let layout = ParagraphOverlayLayout(
+            screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 700),
+            anchor: CGPoint(x: source.midX, y: source.midY), sourceRect: source
+        )
+        let frame = layout.frame(for: CGSize(width: 310, height: 180))
+        XCTAssertEqual(frame.minX, source.maxX + 8)
+        XCTAssertFalse(frame.intersects(source))
+    }
+
     func testKeepsReadableHeightWhenSourceUsesAlmostEntireScreen() {
         let screen = CGRect(x: 0, y: 0, width: 1040, height: 800)
         let sourceRect = CGRect(x: 200, y: 20, width: 760, height: 760)
@@ -386,6 +398,91 @@ final class ParagraphOverlayLayoutTests: XCTestCase {
         XCTAssertEqual(largeFrame.size, CGSize(width: 464, height: 288))
         XCTAssertEqual(largeFrame.maxY, topLeft.y)
         XCTAssertTrue(screen.insetBy(dx: inset, dy: inset).contains(largeFrame))
+    }
+
+    @MainActor
+    func testPopupDragPersistsThroughStreamingAndResetsToContentSize() async throws {
+        let suite = "ParagraphOverlayLayoutTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+        settings.learningEnabled = false
+        settings.continuousTranslation = false
+        settings.hideOriginalTextInSentenceOverlay = true
+        settings.sentenceTranslationPresentationMode = .overlayPanel
+        let container = try ModelContainer(for: WordRecord.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let model = AppModel(settings: settings, modelContext: container.mainContext)
+        defer { model.dismissOverlay() }
+        let controller = model.overlayWindowController
+        let panel = try XCTUnwrap(controller.window)
+        // Keep the real panel ordered for resize handling while rendering no visible content.
+        let host = try XCTUnwrap(panel.contentView)
+        host.alphaValue = 0
+        let screen = try XCTUnwrap(NSScreen.main?.visibleFrame)
+        let anchor = CGPoint(x: screen.midX, y: screen.midY)
+        var content = ParagraphOverlayContent(
+            originalText: "Go!",
+            translationState: .loading,
+            showsNativeTranslation: false,
+            serviceResults: [.init(sourceType: .omlx, modelName: nil, state: .ready("前进！"))],
+        )
+        model.overlayState = .paragraphResult(content)
+        panel.orderBack(nil)
+        model.updateOverlay(state: .paragraphResult(content), anchor: anchor)
+        controller.refreshLayoutIfNeeded(at: anchor)
+        let automaticSize = panel.frame.size
+        XCTAssertNil(settings.sentencePopupSize)
+
+        func waitForSize(_ matches: (CGSize) -> Bool, line: UInt = #line) async throws {
+            let deadline = ContinuousClock.now + .seconds(2)
+            while !matches(panel.frame.size), ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertTrue(matches(panel.frame.size), "Unexpected panel size \(panel.frame.size)", line: line)
+        }
+
+        let corner = CGPoint(x: panel.frame.maxX, y: panel.frame.minY)
+        controller.beginPopupResize(at: corner)
+        controller.resizePopup(to: CGPoint(x: corner.x, y: corner.y - 80))
+        controller.endPopupResize()
+        XCTAssertEqual(settings.sentencePopupSize?.width, automaticSize.width)
+        try await waitForSize { $0.width == automaticSize.width }
+
+        let width: CGFloat = 376
+        let limit: CGFloat = 210
+        let grip = CGPoint(x: panel.frame.maxX, y: panel.frame.minY)
+        controller.beginPopupResize(at: grip)
+        controller.resizePopup(to: CGPoint(x: panel.frame.minX + width, y: panel.frame.maxY - limit))
+        controller.endPopupResize()
+        let preferred = SentencePopupSize(width: width, maxHeight: limit)
+        XCTAssertEqual(settings.sentencePopupSize, preferred)
+        XCTAssertEqual(SettingsStore(defaults: defaults, loginItemStatus: false).sentencePopupSize, preferred)
+        try await waitForSize { $0.width == width && $0.height < limit }
+
+        content.serviceResults[0].state = .ready(String(repeating: "更多的流式译文。", count: 100))
+        model.updateOverlay(state: .paragraphResult(content))
+        try await waitForSize { $0.width == width && $0.height == limit }
+        XCTAssertEqual(settings.sentencePopupSize, preferred)
+
+        content.serviceResults[0].state = .ready("前进！")
+        content.serviceResults[0].isComplete = true
+        model.updateOverlay(state: .paragraphResult(content))
+        try await waitForSize { $0.width == width && $0.height < limit }
+
+        let shortCorner = CGPoint(x: panel.frame.maxX, y: panel.frame.minY)
+        controller.beginPopupResize(at: shortCorner)
+        var changedHeight = false
+        controller.resizePopup(to: CGPoint(x: shortCorner.x + 60, y: shortCorner.y - 6)) {
+            changedHeight = true
+        }
+        controller.endPopupResize()
+        XCTAssertFalse(changedHeight)
+        XCTAssertEqual(settings.sentencePopupSize, SentencePopupSize(width: width + 60, maxHeight: limit))
+        try await waitForSize { $0.width == width + 60 && $0.height < limit }
+
+        settings.sentencePopupSize = nil
+        try await waitForSize { $0.width == automaticSize.width && $0.height < limit }
+        XCTAssertLessThan(automaticSize.width, width)
     }
 
     @MainActor

@@ -14,8 +14,35 @@ struct TranslationRequest {
     let id: UUID
     let source: Locale.Language?
     let target: Locale.Language
+    let strategy: AppleTranslationStrategy
     let payload: TranslationPayload
     fileprivate let continuation: CheckedContinuation<TranslationPayload, Error>
+
+    @available(macOS 15.0, *)
+    var configuration: TranslationSession.Configuration {
+        if #available(macOS 26.4, *) {
+            return .init(source: source, target: target, preferredStrategy: strategy.systemStrategy)
+        }
+        return .init(source: source, target: target)
+    }
+}
+
+extension AppleTranslationStrategy {
+    @available(macOS 26.4, *)
+    var systemStrategy: TranslationSession.Strategy {
+        switch self {
+        case .fast: .lowLatency
+        case .qualityPreferred: .highFidelity
+        }
+    }
+
+    @available(macOS 15.0, *)
+    func makeLanguageAvailability() -> LanguageAvailability {
+        if #available(macOS 26.4, *) {
+            return LanguageAvailability(preferredStrategy: systemStrategy)
+        }
+        return LanguageAvailability()
+    }
 }
 
 enum TranslationPayload {
@@ -28,10 +55,16 @@ final class TranslationBridge: ObservableObject {
     @Published private(set) var activeRequest: TranslationRequest?
     private(set) var queuedRequests: [TranslationRequest] = []
 
-    func translate(text: String, source: Locale.Language?, target: Locale.Language, timeout: TimeInterval = 10.0) async throws -> String {
+    func translate(
+        text: String,
+        source: Locale.Language?,
+        target: Locale.Language,
+        strategy: AppleTranslationStrategy = .fast,
+        timeout: TimeInterval = 10.0
+    ) async throws -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw TranslationError.emptyText }
-        let response = try await submit(.single(trimmed), source: source, target: target, timeout: timeout)
+        let response = try await submit(.single(trimmed), source: source, target: target, strategy: strategy, timeout: timeout)
         guard case .single(let translation) = response else { throw TranslationError.invalidResponse }
         return translation
     }
@@ -40,13 +73,14 @@ final class TranslationBridge: ObservableObject {
         texts: [String],
         source: Locale.Language?,
         target: Locale.Language,
+        strategy: AppleTranslationStrategy = .fast,
         timeout: TimeInterval = 10.0
     ) async throws -> [String] {
         let trimmedTexts = texts
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         guard !trimmedTexts.isEmpty else { throw TranslationError.emptyText }
-        let response = try await submit(.batch(trimmedTexts), source: source, target: target, timeout: timeout)
+        let response = try await submit(.batch(trimmedTexts), source: source, target: target, strategy: strategy, timeout: timeout)
         guard case .batch(let translations) = response else { throw TranslationError.invalidResponse }
         return translations
     }
@@ -55,6 +89,7 @@ final class TranslationBridge: ObservableObject {
         _ payload: TranslationPayload,
         source: Locale.Language?,
         target: Locale.Language,
+        strategy: AppleTranslationStrategy,
         timeout: TimeInterval
     ) async throws -> TranslationPayload {
         let id = UUID()
@@ -72,6 +107,7 @@ final class TranslationBridge: ObservableObject {
                     id: id,
                     source: source,
                     target: target,
+                    strategy: strategy,
                     payload: payload,
                     continuation: continuation
                 ))
@@ -186,9 +222,6 @@ struct TranslationBridgeView: View {
         }
 
         configurationID = request.id
-        configuration = TranslationSession.Configuration(
-            source: request.source,
-            target: request.target
-        )
+        configuration = request.configuration
     }
 }

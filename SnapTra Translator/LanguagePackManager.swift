@@ -6,10 +6,11 @@ import Translation
 @available(macOS 15.0, *)
 @MainActor
 final class LanguagePackManager: ObservableObject {
-    @Published var languageStatuses: [String: LanguageAvailability.Status] = [:]
+    @Published private var languageStatuses: [AppleTranslationStrategy: [String: LanguageAvailability.Status]] = [:]
     @Published var isChecking: Bool = false
 
-    private let availability = LanguageAvailability()
+    private let fastAvailability = AppleTranslationStrategy.fast.makeLanguageAvailability()
+    private lazy var qualityAvailability = AppleTranslationStrategy.qualityPreferred.makeLanguageAvailability()
     private let commonLanguages: [String] = [
         "zh-Hans", "zh-Hant", "en", "ja", "ko", "fr", "de", "es", "it", "pt", "ru", "ar", "th", "vi"
     ]
@@ -25,14 +26,7 @@ final class LanguagePackManager: ObservableObject {
 
         for targetLang in commonLanguages {
             if sourceLanguage == targetLang { continue }
-
-            let source = Locale.Language(identifier: sourceLanguage)
-            let target = Locale.Language(identifier: targetLang)
-
-            let status = await availability.status(from: source, to: target)
-            await MainActor.run {
-                languageStatuses["\(sourceLanguage)->\(targetLang)"] = status
-            }
+            _ = await checkLanguagePairQuiet(from: sourceLanguage, to: targetLang)
         }
 
         await MainActor.run {
@@ -42,37 +36,39 @@ final class LanguagePackManager: ObservableObject {
     }
 
     /// 检查特定语言对的可用性
-    func checkLanguagePair(from sourceLanguage: String, to targetLanguage: String) async -> LanguageAvailability.Status {
-        await MainActor.run {
-            isChecking = true
-            objectWillChange.send()
-        }
-
-        let source = Locale.Language(identifier: sourceLanguage)
-        let target = Locale.Language(identifier: targetLanguage)
-        let status = await availability.status(from: source, to: target)
-
-        await MainActor.run {
-            languageStatuses["\(sourceLanguage)->\(targetLanguage)"] = status
-            isChecking = false
-            objectWillChange.send()
-        }
-
-        return status
+    func checkLanguagePair(
+        from sourceLanguage: String,
+        to targetLanguage: String,
+        strategy: AppleTranslationStrategy = .fast
+    ) async -> LanguageAvailability.Status {
+        isChecking = true
+        defer { isChecking = false }
+        return await checkLanguagePairQuiet(from: sourceLanguage, to: targetLanguage, strategy: strategy)
     }
 
     /// 快速检查单个语言对（不显示 loading 状态）
-    func checkLanguagePairQuiet(from sourceLanguage: String, to targetLanguage: String) async -> LanguageAvailability.Status {
-        let source = Locale.Language(identifier: sourceLanguage)
-        let target = Locale.Language(identifier: targetLanguage)
-        let status = await availability.status(from: source, to: target)
-        languageStatuses["\(sourceLanguage)->\(targetLanguage)"] = status
+    func checkLanguagePairQuiet(
+        from sourceLanguage: String,
+        to targetLanguage: String,
+        strategy: AppleTranslationStrategy = .fast
+    ) async -> LanguageAvailability.Status {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: sourceLanguage, targetIdentifier: targetLanguage)
+        let availability = strategy == .fast ? fastAvailability : qualityAvailability
+        let status = await availability.status(from: pair.sourceLanguage, to: pair.targetLanguage)
+        if languageStatuses[strategy]?[pair.key] != status {
+            languageStatuses[strategy, default: [:]][pair.key] = status
+        }
         return status
     }
 
     /// 获取特定语言对的状态
-    func getStatus(from sourceLanguage: String, to targetLanguage: String) -> LanguageAvailability.Status? {
-        return languageStatuses["\(sourceLanguage)->\(targetLanguage)"]
+    func getStatus(
+        from sourceLanguage: String,
+        to targetLanguage: String,
+        strategy: AppleTranslationStrategy = .fast
+    ) -> LanguageAvailability.Status? {
+        let pair = LookupLanguagePair.fixed(sourceIdentifier: sourceLanguage, targetIdentifier: targetLanguage)
+        return languageStatuses[strategy]?[pair.key]
     }
 
     /// 打开系统设置的翻译语言下载页面

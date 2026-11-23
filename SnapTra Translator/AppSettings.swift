@@ -194,6 +194,25 @@ enum SentenceTranslationPresentationMode: String, CaseIterable, Identifiable {
     }
 }
 
+enum AppleTranslationStrategy: String {
+    case fast
+    case qualityPreferred
+}
+
+struct SentencePopupSize: Equatable {
+    static let widthRange = 200.0...3840.0
+    static let heightRange = 120.0...2160.0
+    static let standard = SentencePopupSize(width: 420, maxHeight: 320)
+
+    let width: Double
+    let maxHeight: Double
+
+    init(width: Double, maxHeight: Double) {
+        self.width = min(max(width, Self.widthRange.lowerBound), Self.widthRange.upperBound)
+        self.maxHeight = min(max(maxHeight, Self.heightRange.lowerBound), Self.heightRange.upperBound)
+    }
+}
+
 enum ParagraphRegionLoadingOverlayPolicy {
     static func shouldShowLoadingOverlay(
         presentationMode: SentenceTranslationPresentationMode
@@ -229,6 +248,10 @@ enum AppSettingKey {
     static let selectedTextTranslationEnabled = "selectedTextTranslationEnabled"
     static let selectedTextClipboardFallback = "selectedTextClipboardFallback"
     static let hideOriginalTextInSentenceOverlay = "hideOriginalTextInSentenceOverlay"
+    static let showsAllSentenceTranslations = "showsAllSentenceTranslations"
+    static let sentencePopupFontSize = "sentencePopupFontSize"
+    static let sentencePopupSize = "sentencePopupSize"
+    static let appleTranslationStrategy = "appleTranslationStrategy"
     static let sentenceTranslationPresentationMode = "sentenceTranslationPresentationMode"
     static let imageTranslationSource = "imageTranslationSource"
     static let imageTranslationSourceEnabled = "imageTranslationSourceEnabled"

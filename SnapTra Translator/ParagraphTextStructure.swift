@@ -17,10 +17,35 @@ struct ParagraphTextBlock: Equatable {
     }
 
     var bodyText: String {
-        bodyLines
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+        var text = ""
+        for line in bodyLines {
+            let next = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !next.isEmpty else { continue }
+            if let last = text.last, let first = next.first {
+                if last == "\u{00AD}" {
+                    text.removeLast()
+                } else if !Self.joinsWithoutSpace(last, first) {
+                    text.append(" ")
+                }
+            }
+            text += next
+        }
+        return text
+    }
+
+    private static func joinsWithoutSpace(_ last: Character, _ first: Character) -> Bool {
+        // Chinese/Japanese wrap between characters. Korean normally wraps between words.
+        func isUnspacedScript(_ character: Character) -> Bool {
+            character.unicodeScalars.contains { scalar in
+                scalar.properties.isIdeographic
+                    || (0x3000...0x30FF).contains(scalar.value)
+                    || (0x31F0...0x31FF).contains(scalar.value)
+                    || (0xFF61...0xFF9F).contains(scalar.value)
+            }
+        }
+        return isUnspacedScript(last) || isUnspacedScript(first)
+            || "([{‘“-/".contains(last) || ",.:;!?)]}’”，。！？；：、".contains(first)
+            || "，。！？；：".contains(last)
     }
 
     var translatableText: String? {
@@ -53,21 +78,40 @@ struct ParagraphTextStructure: Equatable {
     }
 
     static func fromRecognizedLines(_ lines: [RecognizedTextLine]) -> ParagraphTextStructure {
-        let sourceLines = lines.map {
-            SourceLine(
-                text: $0.text,
-                leadingX: $0.boundingBox.minX,
-                lineHeight: $0.boundingBox.height
-            )
+        var blocks: [ParagraphTextBlock] = []
+        var previous: RecognizedTextLine?
+        var blockStartX: CGFloat = 0
+
+        for line in lines {
+            let block = parseLine(line.text)
+            if block.kind == .plainLine, let previousLine = previous, let last = blocks.last,
+               isAdjacentTextLine(previous: previousLine, next: line) {
+                let continuesBlock: Bool
+                switch last.kind {
+                case .plainLine:
+                    continuesBlock = isProseContinuation(previous: previousLine, next: line)
+                case .listItem:
+                    let indent = max(0.012, line.boundingBox.height * 0.35)
+                    continuesBlock = line.boundingBox.minX > blockStartX + indent
+                case .blankLine:
+                    continuesBlock = false
+                }
+                if continuesBlock {
+                    blocks[blocks.count - 1].bodyLines += block.bodyLines
+                    previous = line
+                    continue
+                }
+            }
+            blocks.append(block)
+            blockStartX = line.boundingBox.minX
+            previous = line
         }
-        return ParagraphTextStructure(blocks: parseRecognizedLines(sourceLines))
+        return ParagraphTextStructure(blocks: blocks)
     }
 
     static func fromText(_ text: String) -> ParagraphTextStructure {
-        let sourceLines = text
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { SourceLine(text: String($0), leadingX: nil, lineHeight: nil) }
-        return ParagraphTextStructure(blocks: parsePlainTextLines(sourceLines))
+        let blocks = text.components(separatedBy: "\n").map { parseLine($0) }
+        return ParagraphTextStructure(blocks: blocks)
     }
 
     func applyingTranslations(_ translations: [String]) -> String? {
@@ -95,82 +139,41 @@ struct ParagraphTextStructure: Equatable {
         return ParagraphTextStructure(blocks: rebuiltBlocks).renderedText
     }
 
-    private static func parseRecognizedLines(_ lines: [SourceLine]) -> [ParagraphTextBlock] {
-        var pendingBlocks: [PendingBlock] = []
-
-        for line in lines {
-            let trimmedText = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmedText.isEmpty {
-                pendingBlocks.append(PendingBlock(block: ParagraphTextBlock(kind: .blankLine, bodyLines: [])))
-                continue
-            }
-
-            if let markerMatch = markerMatch(in: trimmedText) {
-                pendingBlocks.append(
-                    PendingBlock(
-                        block: ParagraphTextBlock(
-                            kind: .listItem(marker: markerMatch.marker),
-                            bodyLines: [markerMatch.body]
-                        ),
-                        markerLeadingX: line.leadingX,
-                        markerLineHeight: line.lineHeight
-                    )
-                )
-                continue
-            }
-
-            if let index = pendingBlocks.indices.last,
-               pendingBlocks[index].block.marker != nil,
-               shouldAppendToPreviousListItem(
-                currentLeadingX: line.leadingX,
-                currentLineHeight: line.lineHeight,
-                previous: pendingBlocks[index]
-               ) {
-                pendingBlocks[index].block.bodyLines.append(trimmedText)
-                continue
-            }
-
-            pendingBlocks.append(
-                PendingBlock(
-                    block: ParagraphTextBlock(kind: .plainLine, bodyLines: [trimmedText])
-                )
-            )
+    private static func parseLine(_ text: String) -> ParagraphTextBlock {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return ParagraphTextBlock(kind: .blankLine, bodyLines: []) }
+        if let match = markerMatch(in: text) {
+            return ParagraphTextBlock(kind: .listItem(marker: match.marker), bodyLines: [match.body])
         }
-
-        return pendingBlocks.map(\.block)
+        return ParagraphTextBlock(kind: .plainLine, bodyLines: [text])
     }
 
-    private static func parsePlainTextLines(_ lines: [SourceLine]) -> [ParagraphTextBlock] {
-        lines.map { line in
-            let trimmedText = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmedText.isEmpty {
-                return ParagraphTextBlock(kind: .blankLine, bodyLines: [])
-            }
-
-            if let markerMatch = markerMatch(in: trimmedText) {
-                return ParagraphTextBlock(
-                    kind: .listItem(marker: markerMatch.marker),
-                    bodyLines: [markerMatch.body]
-                )
-            }
-
-            return ParagraphTextBlock(kind: .plainLine, bodyLines: [trimmedText])
-        }
+    private static func isAdjacentTextLine(previous: RecognizedTextLine, next: RecognizedTextLine) -> Bool {
+        let first = previous.boundingBox
+        let second = next.boundingBox
+        let minHeight = min(first.height, second.height)
+        guard minHeight > 0, first.midY - second.midY >= minHeight * 0.5,
+              max(first.height, second.height) <= minHeight * 1.4 else { return false }
+        return OCRService.shouldJoinParagraph(previous: previous, next: next)
     }
 
-    private static func shouldAppendToPreviousListItem(
-        currentLeadingX: CGFloat?,
-        currentLineHeight: CGFloat?,
-        previous: PendingBlock
-    ) -> Bool {
-        guard let currentLeadingX,
-              let markerLeadingX = previous.markerLeadingX else {
+    private static func isProseContinuation(previous: RecognizedTextLine, next: RecognizedTextLine) -> Bool {
+        let first = previous.boundingBox
+        let second = next.boundingBox
+        // A new first-line indent starts a paragraph. Centered captions can wrap at both margins.
+        let tolerance = max(0.012, first.width * 0.07)
+        if second.minX > first.minX + tolerance, abs(first.midX - second.midX) > tolerance {
             return false
         }
 
-        let lineHeight = max(previous.markerLineHeight ?? 0, currentLineHeight ?? 0)
-        let indentThreshold = max(lineHeight * 0.35, 0.012)
-        return currentLeadingX > markerLeadingX + indentThreshold
+        let text = previous.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasSuffix(":") || text.hasSuffix("：") { return false }
+        if first.width < second.width * 0.65 {
+            // A short heading or the last line of a paragraph typically leaves a ragged right edge.
+            if let last = text.last, ".!?。！？".contains(last) { return false }
+            if next.text.first?.isLowercase != true, text.last?.isPunctuation != true { return false }
+        }
+        return true
     }
 
     private static func markerMatch(in text: String) -> MarkerMatch? {
@@ -308,18 +311,6 @@ struct ParagraphTextAttributedStringBuilder {
             preferredLineHeight: preferredLineHeight
         )
     }
-}
-
-private struct SourceLine {
-    let text: String
-    let leadingX: CGFloat?
-    let lineHeight: CGFloat?
-}
-
-private struct PendingBlock {
-    var block: ParagraphTextBlock
-    var markerLeadingX: CGFloat? = nil
-    var markerLineHeight: CGFloat? = nil
 }
 
 private struct MarkerMatch {

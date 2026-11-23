@@ -1,3 +1,4 @@
+import class Translation.TranslationSession
 import XCTest
 @testable import SnapTra_Translator
 
@@ -700,6 +701,41 @@ final class OverlayDictionarySectionDisplayTests: XCTestCase {
 @MainActor
 final class TranslationBridgeCancellationTests: XCTestCase {
     private let target = Locale.Language(identifier: "en")
+
+    func testQueuedRequestsKeepTheirOwnTranslationStrategies() async throws {
+        guard #available(macOS 26.4, *) else { throw XCTSkip("Translation strategies require macOS 26.4") }
+        let bridge = TranslationBridge()
+        defer { bridge.cancelAllPendingRequests() }
+
+        let word = Task { try await bridge.translate(text: "词", source: nil, target: target) }
+        try await waitUntil { bridge.activeRequest != nil }
+        let fastRequest = try XCTUnwrap(bridge.activeRequest)
+        let batch = Task {
+            try await bridge.translateBatch(texts: ["句子"], source: nil, target: target, strategy: .qualityPreferred)
+        }
+        try await waitUntil { !bridge.queuedRequests.isEmpty }
+        let qualityRequest = try XCTUnwrap(bridge.queuedRequests.first)
+
+        XCTAssertEqual(fastRequest.configuration.preferredStrategy, .lowLatency)
+        XCTAssertEqual(qualityRequest.configuration.preferredStrategy, .highFidelity)
+        XCTAssertEqual(fastRequest.strategy.makeLanguageAvailability().preferredStrategy, .lowLatency)
+        XCTAssertEqual(qualityRequest.strategy.makeLanguageAvailability().preferredStrategy, .highFidelity)
+        bridge.finishActiveRequest(id: fastRequest.id, result: .success(.single("word")))
+        XCTAssertEqual(bridge.activeRequest?.configuration.preferredStrategy, .highFidelity)
+        bridge.finishActiveRequest(id: qualityRequest.id, result: .success(.batch(["sentence"])))
+        _ = try await (word.value, batch.value)
+    }
+
+    func testFastLanguagePackStatusIsIndependentOfSentenceStrategy() async throws {
+        guard #available(macOS 26.4, *) else { throw XCTSkip("Translation strategies require macOS 26.4") }
+        let manager = LanguagePackManager()
+        let quality = await manager.checkLanguagePairQuiet(from: "en", to: "ja", strategy: .qualityPreferred)
+        XCTAssertEqual(manager.getStatus(from: "en", to: "ja", strategy: .qualityPreferred), quality)
+        XCTAssertNil(manager.getStatus(from: "en", to: "ja"))
+        let fast = await manager.checkLanguagePairQuiet(from: "en", to: "ja")
+        XCTAssertEqual(manager.getStatus(from: "en", to: "ja"), fast)
+        XCTAssertEqual(manager.getStatus(from: "en", to: "ja", strategy: .qualityPreferred), quality)
+    }
 
     func testCancellingQueuedBatchKeepsActiveSentenceAndNextWord() async throws {
         let bridge = TranslationBridge()

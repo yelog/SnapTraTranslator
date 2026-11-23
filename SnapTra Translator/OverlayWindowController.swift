@@ -1246,6 +1246,11 @@ struct ParagraphOverlayLayout {
         let origin: CGPoint
         if let manualTopLeft {
             origin = CGPoint(x: manualTopLeft.x, y: manualTopLeft.y - size.height)
+        } else if let sourceRect, size.height > max(spaceAbove, spaceBelow),
+                  max(sourceRect.minX - insetScreenFrame.minX, insetScreenFrame.maxX - sourceRect.maxX) >= size.width + Self.gap {
+            let roomOnRight = insetScreenFrame.maxX - sourceRect.maxX
+            let x = roomOnRight >= size.width + Self.gap ? sourceRect.maxX + Self.gap : sourceRect.minX - Self.gap - size.width
+            origin = CGPoint(x: x, y: sourceRect.maxY - size.height)
         } else {
             origin = CGPoint(
                 x: sourceRect?.minX ?? (anchor.x + 12),
@@ -1262,6 +1267,55 @@ struct ParagraphOverlayLayout {
             x: min(max(origin.x, bounds.minX), max(bounds.minX, bounds.maxX - size.width)),
             y: min(max(origin.y, bounds.minY), max(bounds.minY, bounds.maxY - size.height))
         )
+    }
+}
+
+struct SentencePopupResizeHandle: NSViewRepresentable {
+    var onVerticalResize: () -> Void
+
+    func makeNSView(context: Context) -> Grip {
+        let grip = Grip()
+        grip.image = NSImage(systemSymbolName: "arrow.up.left.and.arrow.down.right", accessibilityDescription: nil)
+        grip.symbolConfiguration = .init(pointSize: 9, weight: .medium)
+        grip.contentTintColor = .secondaryLabelColor
+        return grip
+    }
+
+    func updateNSView(_ grip: Grip, context: Context) {
+        grip.toolTip = L("Resize translation panel")
+        grip.onVerticalResize = onVerticalResize
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: Grip, context: Context) -> CGSize? {
+        CGSize(width: 18, height: 18)
+    }
+
+    final class Grip: NSImageView {
+        var onVerticalResize: (() -> Void)?
+        private var controller: OverlayWindowController? { window?.windowController as? OverlayWindowController }
+
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+        override func resetCursorRects() {
+            super.resetCursorRects()
+            if #available(macOS 15.0, *) {
+                addCursorRect(bounds, cursor: .frameResize(position: .bottomRight, directions: .all))
+            } else {
+                addCursorRect(bounds, cursor: .crosshair)
+            }
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            controller?.beginPopupResize(at: NSEvent.mouseLocation)
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            controller?.resizePopup(to: NSEvent.mouseLocation, onVerticalResize: onVerticalResize)
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            controller?.endPopupResize()
+        }
     }
 }
 
@@ -1370,6 +1424,7 @@ final class OverlayWindowController: NSWindowController {
     private var lastAnchor: CGPoint?
     private var manualOrigin: CGPoint?
     private var dragStartOrigin: CGPoint?
+    private var popupResizeStart: (pointer: CGPoint, frame: CGRect, maxHeight: CGFloat)?
     private var paragraphOverlayMaxSize: CGSize?
     private var placedParagraphSourceRect: CGRect?
     private var paragraphMotion: ParagraphOverlayMotion?
@@ -1513,6 +1568,7 @@ final class OverlayWindowController: NSWindowController {
     }
 
     func hideWindowOnly() {
+        popupResizeStart = nil
         if isParagraphWordPanel {
             if let window { window.parent?.removeChildWindow(window) }
         } else {
@@ -1585,6 +1641,35 @@ final class OverlayWindowController: NSWindowController {
         dragStartOrigin = nil
     }
 
+    func beginPopupResize(at pointer: CGPoint) {
+        guard isParagraphOverlay, let window, window.isVisible else { return }
+        stopParagraphMotion()
+        window.alphaValue = 1
+        let height = model.settings.sentencePopupSize?.maxHeight ?? paragraphLayout(for: pointer).maxPanelSize.height
+        popupResizeStart = (pointer, window.frame, height)
+    }
+
+    func resizePopup(to pointer: CGPoint, onVerticalResize: (() -> Void)? = nil) {
+        guard let start = popupResizeStart, isParagraphOverlay else { return }
+        let dx = pointer.x - start.pointer.x
+        let dy = start.pointer.y - pointer.y
+        // Allow a little vertical drift while widening a short, content-sized panel.
+        let changesHeight = abs(dy) > min(12, max(4, abs(dx) / 4))
+        let size = SentencePopupSize(
+            width: (start.frame.width + dx).rounded(),
+            maxHeight: changesHeight ? (start.frame.height + dy).rounded() : start.maxHeight
+        )
+        if changesHeight { onVerticalResize?() }
+        guard model.settings.sentencePopupSize != size else { return }
+        model.settings.sentencePopupSize = size
+        refreshLayoutIfNeeded()
+    }
+
+    func endPopupResize() {
+        popupResizeStart = nil
+        model.refreshParagraphOverlayLayoutImmediately()
+    }
+
     func refreshLayoutIfNeeded(at anchor: CGPoint? = nil) {
         guard let window else { return }
         guard window.isVisible else {
@@ -1646,7 +1731,7 @@ final class OverlayWindowController: NSWindowController {
         let measuredSize = measuredContentSize()
         guard maxSize != nil else { return CGRect(origin: layout.anchor, size: measuredSize) }
 
-        let manualTopLeft = manualOrigin.map {
+        let manualTopLeft = popupResizeStart.map { CGPoint(x: $0.frame.minX, y: $0.frame.maxY) } ?? manualOrigin.map {
             CGPoint(x: $0.x, y: $0.y + (window?.frame.height ?? 0))
         }
         let frame = layout.frame(for: measuredSize, manualTopLeft: manualTopLeft)

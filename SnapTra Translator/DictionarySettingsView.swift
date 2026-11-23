@@ -643,7 +643,7 @@ struct DictionarySettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(L("Sentence Translation"))
                     .font(.headline)
-                Text(L("Drag to reorder service priority. Enabled services will be shown in the paragraph translation panel."))
+                Text(L("Drag to reorder sources. Click the source name in the popup to expand or collapse the other translations. The popup remembers your choice."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

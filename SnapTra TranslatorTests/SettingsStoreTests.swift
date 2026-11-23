@@ -50,6 +50,7 @@ final class SettingsStoreMigrationTests: XCTestCase {
         AppSettingKey.doubleTapSentenceTranslationMode,
         AppSettingKey.selectedTextTranslationEnabled,
         AppSettingKey.hideOriginalTextInSentenceOverlay,
+        AppSettingKey.showsAllSentenceTranslations,
         AppSettingKey.sentenceTranslationPresentationMode,
         AppSettingKey.imageTranslationSource,
         AppSettingKey.imageTranslationSourceEnabled,
@@ -89,6 +90,45 @@ final class SettingsStoreMigrationTests: XCTestCase {
         for key in testKeys {
             defaults.removeObject(forKey: key)
         }
+    }
+
+    func testSentencePopupPreferencesPersistAndReturnToAutomaticSize() {
+        let defaults = makeDefaults()
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+        XCTAssertNil(settings.sentencePopupSize)
+        XCTAssertEqual(settings.sentencePopupFontSize, 15.5)
+
+        let size = SentencePopupSize(width: 520, maxHeight: 260)
+        settings.sentencePopupSize = size
+        settings.sentencePopupFontSize = 18
+        let restored = SettingsStore(defaults: defaults, loginItemStatus: false)
+        XCTAssertEqual(restored.sentencePopupSize, size)
+        XCTAssertEqual(restored.sentencePopupFontSize, 18)
+
+        restored.sentencePopupSize = nil
+        XCTAssertNil(SettingsStore(defaults: defaults, loginItemStatus: false).sentencePopupSize)
+    }
+
+    func testSentenceComparisonDefaultsToExpandedAndRestoresTheLastChoice() {
+        let defaults = makeDefaults()
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+        XCTAssertTrue(settings.showsAllSentenceTranslations)
+
+        settings.showsAllSentenceTranslations = false
+        let restored = SettingsStore(defaults: defaults, loginItemStatus: false)
+        XCTAssertFalse(restored.showsAllSentenceTranslations)
+
+        restored.showsAllSentenceTranslations = true
+        XCTAssertTrue(SettingsStore(defaults: defaults, loginItemStatus: false).showsAllSentenceTranslations)
+    }
+
+    func testAppleTranslationStrategyDefaultsToFastAndRemembersQualityPreference() {
+        let defaults = makeDefaults()
+        defaults.set("unknown", forKey: AppSettingKey.appleTranslationStrategy)
+        let settings = SettingsStore(defaults: defaults, loginItemStatus: false)
+        XCTAssertEqual(settings.appleTranslationStrategy, .fast)
+        settings.appleTranslationStrategy = .qualityPreferred
+        XCTAssertEqual(SettingsStore(defaults: defaults, loginItemStatus: false).appleTranslationStrategy, .qualityPreferred)
     }
 
     func testDefaultDictionarySources() {

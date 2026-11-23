@@ -843,7 +843,7 @@ final class OCRService {
         return false
     }
 
-    nonisolated private static func mergeHorizontallyAdjacentLineFragments(
+    nonisolated static func mergeHorizontallyAdjacentLineFragments(
         in lines: [RecognizedTextLine]
     ) -> [RecognizedTextLine] {
         let sortedLines = lines
@@ -941,7 +941,7 @@ final class OCRService {
         return previousScalar.isASCII && nextScalar.isASCII && insertsAfter && insertsBefore
     }
 
-    nonisolated private static func shouldJoinParagraph(
+    nonisolated static func shouldJoinParagraph(
         previous: RecognizedTextLine,
         next: RecognizedTextLine
     ) -> Bool {
