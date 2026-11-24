@@ -7,6 +7,15 @@
         <language>en</language>
         <sparkle:edPublicKey>OJo/oEqSjtmok1HYx+XgFHLq1FkUAJs8hsDms0+Uv98=</sparkle:edPublicKey>
         <item>
+            <title>Version 1.3.11-beta.9</title>
+            <pubDate>Tue, 24 Nov 2026 07:50:04 +0000</pubDate>
+            <sparkle:version>131109</sparkle:version>
+            <sparkle:shortVersionString>1.3.11-beta.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description>&lt;h2&gt;SnapTra Translator 1.3.11-beta.9&lt;/h2&gt;&lt;h4&gt;Fixed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;convert popup resize height to CGFloat&lt;/li&gt;&lt;/ul&gt;</description>
+            <enclosure url="https://github.com/yelog/SnapTraTranslator/releases/download/v1.3.11-beta.9/SnapTra-Translator-1.3.11-beta.9.dmg" length="6322274" type="application/octet-stream" sparkle:edSignature="UPTImHMKaD8ZTAkuTZbUq6ls9970O4CPbNrjrsY46uoDsSo8/M/3IhP4X8atuGPpl4aNEA6TsS92yrTZNhAMCw==" />
+        </item>
+        <item>
             <title>Version 1.3.11-beta.6</title>
             <pubDate>Thu, 19 Nov 2026 07:42:47 +0000</pubDate>
             <sparkle:version>131106</sparkle:version>
