@@ -1644,7 +1644,9 @@ final class OverlayWindowController: NSWindowController {
         guard isParagraphOverlay, let window, window.isVisible else { return }
         stopParagraphMotion()
         window.alphaValue = 1
-        let height = model.settings.sentencePopupSize?.maxHeight ?? paragraphLayout(for: pointer).maxPanelSize.height
+        let configuredHeight = model.settings.sentencePopupSize?.maxHeight
+            ?? paragraphLayout(for: pointer).maxPanelSize.height
+        let height = CGFloat(configuredHeight)
         popupResizeStart = (pointer: pointer, frame: window.frame, maxHeight: height)
     }
 
