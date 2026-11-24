@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.11-beta.7] - 2026-11-24
+
+### Added
+- improve OCR sentence grouping and popup preferences
+- look up words by double-clicking in sentence panels
+- add text entry panel when OCR finds no text
+- refine sentence reading and manual translation
+- add master switch to disable word tracking
+
+### Changed
+- clear stale translating string metadata
+- add 1.3.11-beta.6 release entry [skip ci]
+
+### Fixed
+- restore result windows across spaces
+- improve direction detection for mixed text
+- keep sentence card motion continuous
+- scope source highlight to automatic sentence lookup
+- restore reliable cursor sentence lookup
+- isolate tests and share production store
+- keep word lookup running when disabled
+
 ## [1.3.11-beta.6] - 2026-11-19
 
 ### Changed
