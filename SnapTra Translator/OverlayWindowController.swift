@@ -1425,6 +1425,7 @@ final class OverlayWindowController: NSWindowController {
     private var manualOrigin: CGPoint?
     private var dragStartOrigin: CGPoint?
     private var popupResizeStart: (pointer: CGPoint, frame: CGRect, maxHeight: CGFloat)?
+    private var activeSpaceRestorationWorkItem: DispatchWorkItem?
     private var paragraphOverlayMaxSize: CGSize?
     private var placedParagraphSourceRect: CGRect?
     private var paragraphMotion: ParagraphOverlayMotion?
@@ -1499,9 +1500,8 @@ final class OverlayWindowController: NSWindowController {
     /// no longer frontmost in the newly active Space.
     func reassertForActiveSpace() {
         guard let window else { return }
-        window.collectionBehavior = Self.allSpacesCollectionBehavior
         guard window.isVisible else { return }
-        window.orderFrontRegardless()
+        orderFrontRestoringSpaceMembershipIfNeeded()
     }
 
     func show(
@@ -1521,7 +1521,6 @@ final class OverlayWindowController: NSWindowController {
 
         let layout = isParagraphOverlay ? paragraphLayout(for: anchor) : nil
         let targetFrame = measuredFrame(for: anchor, paragraphLayout: layout)
-        window.collectionBehavior = Self.allSpacesCollectionBehavior
 
         var pendingEntrance: ParagraphReadingCardEntrance?
         if !wasVisible {
@@ -1552,7 +1551,7 @@ final class OverlayWindowController: NSWindowController {
         if let parent, window.parent !== parent {
             parent.addChildWindow(window, ordered: .above)
         }
-        window.orderFrontRegardless()
+        orderFrontRestoringSpaceMembershipIfNeeded()
         if let pendingEntrance, let layout {
             startParagraphMotion(
                 to: targetFrame,
@@ -1684,6 +1683,9 @@ final class OverlayWindowController: NSWindowController {
         let layout = isParagraphOverlay ? paragraphLayout(for: effectiveAnchor) : nil
         let targetFrame = measuredFrame(for: effectiveAnchor, paragraphLayout: layout)
         updateVisibleFrame(targetFrame, paragraphLayout: layout)
+        if !window.isOnActiveSpace {
+            orderFrontRestoringSpaceMembershipIfNeeded()
+        }
     }
 
     func hide() {
@@ -1712,6 +1714,66 @@ final class OverlayWindowController: NSWindowController {
         let size = measuredContentSize()
         let origin = anchoredOrigin(for: anchor, size: size, in: visibleScreenFrame(for: anchor))
         return CGRect(origin: origin, size: size)
+    }
+
+    private func orderFrontRestoringSpaceMembershipIfNeeded() {
+        guard let window else { return }
+
+        // A pending restoration means the window is temporarily using
+        // moveToActiveSpace. Keep the temporary behavior until the next main
+        // queue pass so WindowServer can register the new Space association.
+        if activeSpaceRestorationWorkItem != nil {
+            window.orderFrontRegardless()
+            return
+        }
+
+        window.collectionBehavior = Self.allSpacesCollectionBehavior
+        window.orderFrontRegardless()
+
+        // AppKit can continue reporting the previous Space as active until
+        // WindowServer completes the order operation. Validate on the next
+        // main queue pass before deciding whether recovery is necessary.
+        let validation = DispatchWorkItem { [weak self, weak window] in
+            guard let self,
+                  let window,
+                  self.window === window else {
+                return
+            }
+            self.activeSpaceRestorationWorkItem = nil
+            guard window.isVisible, !window.isOnActiveSpace else { return }
+            self.moveToActiveSpaceAndScheduleAllSpacesRestoration(for: window)
+        }
+        activeSpaceRestorationWorkItem = validation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: validation)
+    }
+
+    private func moveToActiveSpaceAndScheduleAllSpacesRestoration(for window: NSWindow) {
+        // Exiting another app's full-screen Space can strand an ordered window
+        // on the old desktop even though collectionBehavior still reports
+        // canJoinAllSpaces. Moving to the active Space first makes AppKit
+        // rebuild that private association. Restore all-Spaces membership on
+        // the next main queue pass, after WindowServer has accepted the move.
+        window.collectionBehavior = [
+            .moveToActiveSpace,
+            .fullScreenAuxiliary,
+            .stationary,
+        ]
+        window.orderFrontRegardless()
+
+        let restoration = DispatchWorkItem { [weak self, weak window] in
+            guard let self,
+                  let window,
+                  self.window === window else {
+                return
+            }
+            self.activeSpaceRestorationWorkItem = nil
+            window.collectionBehavior = Self.allSpacesCollectionBehavior
+            if window.isVisible {
+                window.orderFrontRegardless()
+            }
+        }
+        activeSpaceRestorationWorkItem = restoration
+        DispatchQueue.main.async(execute: restoration)
     }
 
     private func paragraphLayout(for anchor: CGPoint) -> ParagraphOverlayLayout {

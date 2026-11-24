@@ -42,6 +42,40 @@ final class SentenceReadingCardTests: XCTestCase {
         XCTAssertFalse(emptyTextEntry.waitsForFirstParagraphOutput(hidesOriginalText: true))
     }
 
+    func testWakeRecoveryDoesNotClearResultPresentedAfterWake() async throws {
+        let model = try makeModel()
+        defer { model.dismissOverlay() }
+        model.settings.continuousTranslation = false
+        model.settings.playWordPronunciation = false
+        model.settings.copyWord = false
+        model.settings.dictionarySources = []
+
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceCenter.post(name: NSWorkspace.willSleepNotification, object: NSWorkspace.shared)
+        workspaceCenter.post(name: NSWorkspace.didWakeNotification, object: NSWorkspace.shared)
+
+        let screenFrame = try XCTUnwrap(NSScreen.main?.visibleFrame)
+        model.updateOverlay(
+            state: .result(OverlayContent(
+                word: "lantern",
+                phonetic: nil,
+                primaryTranslationState: .ready("灯笼", isFallback: false),
+                usesCompactPrimaryTranslationStyle: true
+            )),
+            anchor: CGPoint(x: screenFrame.midX, y: screenFrame.midY)
+        )
+        workspaceCenter.post(name: NSWorkspace.screensDidWakeNotification, object: NSWorkspace.shared)
+        workspaceCenter.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: NSWorkspace.shared)
+
+        try await Task.sleep(for: .milliseconds(1_000))
+
+        guard case .result(let content) = model.overlayState else {
+            return XCTFail("Wake recovery cleared the new result")
+        }
+        XCTAssertEqual(content.word, "lantern")
+        XCTAssertTrue(model.overlayWindowController.isVisible)
+    }
+
     private func makeModel(suite: String = "SentenceReadingCardTests.\(UUID().uuidString)") throws -> AppModel {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }

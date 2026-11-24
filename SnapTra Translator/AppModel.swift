@@ -633,6 +633,7 @@ final class AppModel: ObservableObject {
     private var localParagraphMouseMonitor: Any?
     private var debounceWorkItem: DispatchWorkItem?
     private var overlayLayoutRefreshWorkItem: DispatchWorkItem?
+    private var systemWakeRecoveryTask: Task<Void, Never>?
     private var lastOcrPosition: CGPoint?
     private var tapKeptOverlayReleaseLocation: CGPoint?
     private var translationServiceInitialized = false
@@ -3538,6 +3539,12 @@ final class AppModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        workspaceNotifications.publisher(for: NSWorkspace.sessionDidResignActiveNotification)
+            .sink { [weak self] _ in
+                self?.prepareForSystemSleep()
+            }
+            .store(in: &cancellables)
+
         workspaceNotifications.publisher(for: NSWorkspace.sessionDidBecomeActiveNotification)
             .sink { [weak self] _ in
                 self?.scheduleSystemWakeRecovery()
@@ -3597,6 +3604,7 @@ final class AppModel: ObservableObject {
     }
 
     private func prepareForSystemSleep() {
+        cancelSystemWakeRecovery()
         captureService.invalidateCache()
         isHotkeyActive = false
         hotkeyManager.resetState()
@@ -3609,21 +3617,27 @@ final class AppModel: ObservableObject {
     }
 
     private func scheduleSystemWakeRecovery() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-            self?.recoverAfterSystemWake()
+        systemWakeRecoveryTask?.cancel()
+        systemWakeRecoveryTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(800))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self else { return }
+            self.systemWakeRecoveryTask = nil
+            self.recoverAfterSystemWake()
         }
     }
 
     private func recoverAfterSystemWake() {
-        clearSelectedTextReplacementSession()
-        isHotkeyActive = false
-        hotkeyManager.resetState()
-        stopMouseTracking()
-        cancelActiveLookupWork()
-        hideOverlay()
-        captureService.invalidateCache()
         restartHotkey()
         permissions.refreshStatus()
+    }
+
+    private func cancelSystemWakeRecovery() {
+        systemWakeRecoveryTask?.cancel()
+        systemWakeRecoveryTask = nil
     }
 
     private func handleScreenConfigurationChange() {
